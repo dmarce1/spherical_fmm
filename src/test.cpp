@@ -336,8 +336,8 @@ void ewald_compute(double& pot, double& fx, double& fy, double& fz, double dx0, 
 	}
 }
 
-template<class T, int P>
-void M2L_ewald2(double& r2, double& h2, T alpha) {
+template<class T>
+void ewald_limits(double& r2, double& h2, double alpha) {
 	r2 = 0;
 	h2 = 0;
 	const auto threesqr = [](int i) {
@@ -353,29 +353,29 @@ void M2L_ewald2(double& r2, double& h2, T alpha) {
 		return false;
 	};
 
-	T dx = 0.01;
+	double dx = 0.01;
 
 	int R2 = 1;
 	while (1) {
-		T m = T(0);
+		double m = double(0);
 		const int e = sqrt(R2);
-		for (T x0 = 0; x0 < 0.5; x0 += dx) {
-			for (T y0 = x0; y0 < 0.5; y0 += dx) {
-				for (T z0 = y0; z0 < 0.5; z0 += dx) {
+		for (double x0 = 0; x0 < 0.5; x0 += dx) {
+			for (double y0 = x0; y0 < 0.5; y0 += dx) {
+				for (double z0 = y0; z0 < 0.5; z0 += dx) {
 					for (int xi = 0; xi <= e; xi++) {
 						for (int yi = xi; yi <= e; yi++) {
 							for (int zi = yi; zi <= e; zi++) {
 								if (xi * xi + yi * yi + zi * zi != R2) {
 									continue;
 								}
-								const T x = x0 - xi;
-								const T y = y0 - yi;
-								const T z = z0 - zi;
-								const T r0 = sqrt(x0 * x0 + y0 * y0 + z0 * z0);
-								if (r0 != T(0)) {
-									const T r = sqrt(x * x + y * y + z * z);
-									T a = r0 * erfc(alpha * r) / r;
-									m = std::max(m, abs(a));
+								const double x = x0 - xi;
+								const double y = y0 - yi;
+								const double z = z0 - zi;
+								const double r0 = sqrt(x0 * x0 + y0 * y0 + z0 * z0);
+								if (r0 != double(0)) {
+									const double r = sqrt(x * x + y * y + z * z);
+									double a = r0 * erfc(alpha * r) / r;
+									m = std::max(m, fabs(a));
 								}
 							}
 						}
@@ -394,26 +394,26 @@ void M2L_ewald2(double& r2, double& h2, T alpha) {
 	r2 = R2;
 	R2 = 1;
 	while (1) {
-		T m = T(0);
+		double m = double(0);
 		const int e = sqrt(R2);
 		int n = 0;
-		for (T x0 = 0; x0 < 0.5; x0 += dx) {
-			for (T y0 = x0; y0 < 0.5; y0 += dx) {
-				for (T z0 = y0; z0 < 0.5; z0 += dx) {
+		for (double x0 = 0; x0 < 0.5; x0 += dx) {
+			for (double y0 = x0; y0 < 0.5; y0 += dx) {
+				for (double z0 = y0; z0 < 0.5; z0 += dx) {
 					for (int xi = 0; xi <= e; xi++) {
 						for (int yi = xi; yi <= e; yi++) {
 							for (int zi = yi; zi <= e; zi++) {
 								if (xi * xi + yi * yi + zi * zi != R2) {
 									continue;
 								}
-								const T x = x0 - xi;
-								const T y = y0 - yi;
-								const T z = z0 - zi;
-								const T h2 = xi * xi + yi * yi + zi * zi;
-								const T hdotx = x * xi + y * yi + z * zi;
-								const T r = sqrt(x * x + y * y + z * z);
-								T a = r * abs(cos(2.0 * M_PI * hdotx) * exp(-M_PI * M_PI * h2 / (alpha * alpha)) / (h2 * sqrt(M_PI)));
-								m = std::max(m, abs(a));
+								const double x = x0 - xi;
+								const double y = y0 - yi;
+								const double z = z0 - zi;
+								const double h2 = xi * xi + yi * yi + zi * zi;
+								const double hdotx = x * xi + y * yi + z * zi;
+								const double r = sqrt(x * x + y * y + z * z);
+								double a = r *fabs(cos(2.0 * M_PI * hdotx) * exp(-M_PI * M_PI * h2 / (alpha * alpha)) / (h2 * sqrt(M_PI)));
+								m = std::max(m, fabs(a));
 							}
 						}
 					}

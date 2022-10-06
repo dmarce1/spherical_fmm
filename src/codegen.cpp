@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <complex>
 #include <set>
+#include <algorithm>
 
 using complex = std::complex<double>;
 
@@ -103,6 +104,101 @@ void tprint(const char* str) {
 		}
 		fprintf(fp, "%s", str);
 	}
+}
+
+template<class T>
+void ewald_limits(int& r2, int& h2, double alpha) {
+	r2 = 0;
+	h2 = 0;
+	const auto threesqr = [](int i) {
+		for( int x = 0; x <= i; x++ ) {
+			for( int y = 0; y <= i; y++) {
+				for( int z = 0; z <= i; z++) {
+					if( x*x + y*y + z*z == i ) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	};
+
+	double dx = 0.01;
+	int R2 = 1;
+	while (1) {
+		double m = double(0);
+		const int e = sqrt(R2);
+		for (double x0 = 0; x0 < 0.5; x0 += dx) {
+			for (double y0 = x0; y0 < 0.5; y0 += dx) {
+				for (double z0 = y0; z0 < 0.5; z0 += dx) {
+					for (int xi = 0; xi <= e; xi++) {
+						for (int yi = xi; yi <= e; yi++) {
+							for (int zi = yi; zi <= e; zi++) {
+								if (xi * xi + yi * yi + zi * zi != R2) {
+									continue;
+								}
+								const double x = x0 - xi;
+								const double y = y0 - yi;
+								const double z = z0 - zi;
+								const double r0 = sqrt(x0 * x0 + y0 * y0 + z0 * z0);
+								if (r0 != double(0)) {
+									const double r = sqrt(x * x + y * y + z * z);
+									double a = r0 * erfc(alpha * r) / r;
+									m = std::max(m, fabs(a));
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if (m < std::numeric_limits<T>::epsilon()) {
+			break;
+		}
+		while (!threesqr(++R2))
+			;
+	}
+	while (!threesqr(--R2))
+		;
+	r2 = R2;
+	R2 = 1;
+	while (1) {
+		double m = double(0);
+		const int e = sqrt(R2);
+		int n = 0;
+		for (double x0 = 0; x0 < 0.5; x0 += dx) {
+			for (double y0 = x0; y0 < 0.5; y0 += dx) {
+				for (double z0 = y0; z0 < 0.5; z0 += dx) {
+					for (int xi = 0; xi <= e; xi++) {
+						for (int yi = xi; yi <= e; yi++) {
+							for (int zi = yi; zi <= e; zi++) {
+								if (xi * xi + yi * yi + zi * zi != R2) {
+									continue;
+								}
+								const double x = x0 - xi;
+								const double y = y0 - yi;
+								const double z = z0 - zi;
+								const double h2 = xi * xi + yi * yi + zi * zi;
+								const double hdotx = x * xi + y * yi + z * zi;
+								const double r = sqrt(x * x + y * y + z * z);
+								double a = r * fabs(cos(2.0 * M_PI * hdotx) * exp(-M_PI * M_PI * h2 / (alpha * alpha)) / (h2 * sqrt(
+								M_PI)));
+								m = std::max(m, fabs(a));
+							}
+						}
+					}
+				}
+			}
+		}
+		if (m < std::numeric_limits<T>::epsilon()) {
+			break;
+		}
+		while (!threesqr(++R2))
+			;
+	}
+	while (!threesqr(--R2))
+		;
+	h2 = R2;
 }
 
 enum arg_type {
@@ -448,7 +544,7 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 				tprint("A[%i] = %s[%i];\n", m + P, name, index(n, m));
 			}
 		}
-		std::vector < std::vector<std::pair<float, int>>>ops(2 * n + 1);
+		std::vector<std::vector<std::pair<float, int>>>ops(2 * n + 1);
 		int mmax = n;
 		if (m_restrict && mmax > (P) - n) {
 			mmax = (P + 1) - n;
@@ -1073,7 +1169,15 @@ int m2l_norot(int P, int Q) {
 	return flops;
 }
 
-int ewald_greens(int P) {
+int ewald_greens(int P, double alpha) {
+	int R2, H2;
+	if (std::string(type) == "float") {
+		ewald_limits<float>(R2, H2, alpha);
+	} else {
+		ewald_limits<double>(R2, H2, alpha);
+	}
+	int R = sqrt(R2);
+	int H = sqrt(H2);
 	if (!periodic) {
 		return 0;
 	}
@@ -1085,16 +1189,15 @@ int ewald_greens(int P) {
 	//flops += greens(P);
 	//set_tprint(c);
 
-	constexpr double alpha = 2.0;
 	tprint("T Gr[%i];\n", exp_sz(P));
 	set_tprint(false);
 	flops += greens(P);
 	set_tprint(c);
 	int cnt = 0;
-	for (int ix = -3; ix <= 3; ix++) {
-		for (int iy = -3; iy <= 3; iy++) {
-			for (int iz = -3; iz <= 3; iz++) {
-				if (ix * ix + iy * iy + iz * iz > 3.1 * 3.1) {
+	for (int ix = -R; ix <= R; ix++) {
+		for (int iy = -R; iy <= R; iy++) {
+			for (int iz = -R; iz <= R; iz++) {
+				if (ix * ix + iy * iy + iz * iz > R2) {
 					continue;
 				}
 				cnt++;
@@ -1104,10 +1207,10 @@ int ewald_greens(int P) {
 	flops *= cnt;
 	bool first = true;
 	tprint("T sw;\n");
-	for (int ix = -3; ix <= 3; ix++) {
-		for (int iy = -3; iy <= 3; iy++) {
-			for (int iz = -3; iz <= 3; iz++) {
-				if (ix * ix + iy * iy + iz * iz > 3.46 * 3.46) {
+	for (int ix = -R; ix <= R; ix++) {
+		for (int iy = -R; iy <= R; iy++) {
+			for (int iz = -R; iz <= R; iz++) {
+				if (ix * ix + iy * iy + iz * iz > R2) {
 					continue;
 				}
 				tprint("{\n");
@@ -1190,13 +1293,16 @@ int ewald_greens(int P) {
 			}
 		}
 	}
+
+
+
 	tprint("T cosphi, sinphi, hdotx, phi;\n");
 
-	for (int hx = -2; hx <= 2; hx++) {
-		for (int hy = -2; hy <= 2; hy++) {
-			for (int hz = -2; hz <= 2; hz++) {
+	for (int hx = -H; hx <= H; hx++) {
+		for (int hy = -H; hy <= H; hy++) {
+			for (int hz = -H; hz <= H; hz++) {
 				const int h2 = hx * hx + hy * hy + hz * hz;
-				if (h2 <= 8 && h2 > 0) {
+				if (h2 <= H2 && h2 > 0) {
 					const double h = sqrt(h2);
 					bool init = false;
 					if (hx) {
@@ -2559,6 +2665,7 @@ int main() {
 	deindent();
 	tprint("}\n");
 	tprint("\n");
+	std::vector<double> alphas(pmax + 1);
 	for (int b = 0; b < 2; b++) {
 		nophi = b != 0;
 		std::vector<int> pc_flops(pmax + 1);
@@ -2572,9 +2679,17 @@ int main() {
 		std::vector<int> cc_rot(pmax + 1);
 		std::vector<int> m2m_rot(pmax + 1);
 		std::vector<int> l2l_rot(pmax + 1);
+
 		set_tprint(false);
-		fprintf(stderr, "%2s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s %8s %8s %8s\n", "p", "M2L", "eff", "-r", "M2P", "eff", "-r",
-				"P2L", "eff", "M2M", "eff", "-r", "L2L", "eff", "-r", "P2M", "eff", "L2P", "eff", "CC_ewald", "green", "m2l");
+		fprintf(stderr, "%2s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s ", "p", "M2L", "eff", "-r", "M2P", "eff", "-r", "P2L", "eff",
+				"M2M", "eff", "-r", "L2L", "eff", "-r", "P2M", "eff", "L2P", "eff");
+		if (b == 0) {
+			fprintf(stderr, " %8s %8s %8s %8s\n", "CC_ewald", "green", "m2l", "alpha");
+		} else {
+			fprintf(stderr, " \n");
+
+		}
+		int eflopsg;
 		for (int P = pmin; P <= pmax; P++) {
 			auto r0 = m2l_norot(P, P);
 			auto r1 = m2l_rot1(P, P);
@@ -2631,13 +2746,30 @@ int main() {
 			}
 			l2p_flops[P] = L2P(P);
 			p2m_flops[P] = P2M(P - 1);
-			int eflopsg = ewald_greens(P);
 			int eflopsm = m2lg(P, P);
+			if (b == 0) {
+				double best_alpha;
+				int best_ops = 1000000000;
+				for (double alpha = 1.0; alpha <= 3.0; alpha += 0.05) {
+					int ops = ewald_greens(P, alpha);
+					if (ops < best_ops) {
+						best_ops = ops;
+						best_alpha = alpha;
+					}
+				}
+				alphas[P] = best_alpha;
+				eflopsg = ewald_greens(P, best_alpha);
 
-			fprintf(stderr, "%2i %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f %8i %8i %8i\n", P, cc_flops[P],
+			}
+			fprintf(stderr, "%2i %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f ", P, cc_flops[P],
 					cc_flops[P] / pow(P + 1, 3), cc_rot[P], pc_flops[P], pc_flops[P] / pow(P + 1, 2), pc_rot[P], cp_flops[P], cp_flops[P] / pow(P + 1, 2),
 					m2m_flops[P], m2m_flops[P] / pow(P + 1, 3), m2m_rot[P], l2l_flops[P], l2l_flops[P] / pow(P + 1, 3), l2l_rot[P], p2m_flops[P],
-					p2m_flops[P] / pow(P + 1, 2), l2p_flops[P], l2p_flops[P] / pow(P + 1, 2), eflopsg + eflopsm, eflopsg, eflopsm);
+					p2m_flops[P] / pow(P + 1, 2), l2p_flops[P], l2p_flops[P] / pow(P + 1, 2));
+			if (b == 0) {
+				fprintf(stderr, " %8i %8i %8i %f \n", eflopsg + eflopsm, eflopsg, eflopsm, alphas[P]);
+			} else {
+				fprintf(stderr, "\n");
+			}
 		}
 		set_tprint(true);
 		if (b == 0)
@@ -2703,13 +2835,13 @@ int main() {
 			L2P(P);
 			P2M(P - 1);
 			if (b == 0)
-				ewald_greens(P);
+				ewald_greens(P, alphas[P]);
 			m2lg(P, P);
 			m2l_ewald(P);
 		}
 	}
 //	printf("./generated_code/include/spherical_fmm.hpp");
-	fflush (stdout);
+	fflush(stdout);
 	set_file("./generated_code/include/spherical_fmm.hpp");
 	tprint(inter_header.c_str());
 	set_file("./generated_code/src/interface.cpp");
