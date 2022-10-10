@@ -19,7 +19,8 @@ static bool fmaops = true;
 static bool periodic = true;
 static int pmin = 3;
 static int pmax = 12;
-static const char* type = "float";
+static const char* type = "double";
+static const int divops = 4;
 static const char* prefix = "";
 static std::string inter_src = "#include \"spherical_fmm.hpp\"\n\n";
 static std::string inter_header = "\n\nenum fmm_calcpot_type {FMM_CALC_POT, FMM_NOCALC_POT};\n\n";
@@ -28,7 +29,6 @@ const double ewald_r2 = (2.6 + 0.5 * sqrt(3));
 const int ewald_h2 = 8;
 
 static FILE* fp = nullptr;
-
 int exp_sz(int P) {
 	if (periodic) {
 		return (P + 1) * (P + 1) + 1;
@@ -104,6 +104,51 @@ void tprint(const char* str) {
 		}
 		fprintf(fp, "%s", str);
 	}
+}
+
+int do_rsqrt(const char* xin, const char* yout) {
+	if (std::string(type) == "float") {
+		tprint("{\n");
+		indent();
+		tprint("T xxx = %s + T(%.16e);\n", xin, std::numeric_limits<float>::min());
+		tprint("int i = *((int*) &xxx);\n");
+		tprint("i >>= 1;\n");
+		tprint("i = 0x5F3759DF - i;\n");
+		tprint("%s = *((float*) &i);\n", yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		deindent();
+		tprint("}\n");
+		return 15 - 3 * fmaops;
+	} else if (std::string(type) == "double") {
+		tprint("{\n");
+		indent();
+		tprint("T xxx = %s + T(%.16e);\n", xin, std::numeric_limits<float>::min());
+		tprint("long long i = *((long long*) &xxx);\n");
+		tprint("i >>= 1;\n");
+		tprint("i = 0x5FE6EB50C7B537A9 - i;\n");
+		tprint("%s = *((double*) &i);\n", yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		tprint("%s *= FMA(T(-0.5), xxx * %s * %s, T(1.5));\n", yout, yout, yout);
+		deindent();
+		tprint("}\n");
+		return 20 - 4 * fmaops;
+	}
+}
+
+int do_sqrt(const char* xin, const char* yout) {
+	int flops = 0;
+	if (std::string(type) == "float") {
+		flops += do_rsqrt(xin, yout);
+	} else if (std::string(type) == "double") {
+		flops += do_rsqrt(xin, yout);
+	}
+	tprint("%s = T(1) / %s;\n", yout, yout);
+	flops += divops;
+	return flops;
 }
 
 template<class T>
@@ -631,10 +676,12 @@ int greens_body(int P, const char* M = nullptr) {
 	} else {
 		tprint("const T r2inv = T(1) / r2;\n");
 	}
-	flops += 4;
-	tprint("O[0] = SQRT(r2inv);\n");
+	flops += do_rsqrt("r2", "O[0]");
+	if (M) {
+		tprint("O[0] *= %s;\n", M);
+		flops++;
+	}
 	tprint("O[%i] = T(0);\n", (P + 1) * (P + 1));
-	flops += 4;
 	tprint("x *= r2inv;\n");
 	tprint("y *= r2inv;\n");
 	tprint("z *= r2inv;\n");
@@ -897,9 +944,8 @@ int greens(int P) {
 int greens_xz(int P) {
 	int flops = 0;
 	func_header("greens_xz", P, false, false, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
-	tprint("O[0] = SQRT(r2inv);\n");
+	flops += do_sqrt("r2inv", "O[0]");
 	tprint("O[%i] = T(0);\n", (P + 1) * (P + 1));
-	flops += 4;
 	tprint("x *= r2inv;\n");
 	flops += 1;
 	tprint("z *= r2inv;\n");
@@ -965,22 +1011,19 @@ int m2l_rot1(int P, int Q) {
 	set_tprint(false);
 	flops += greens_xz(P);
 	set_tprint(tpo);
-	/*	tprint("for( int n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
-	 indent();
-	 tprint("L[n] = T(0);\n");
-	 deindent();
-	 tprint("}\n");*/
 	tprint("const T R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T R = SQRT(R2);\n");
-	flops += 4;
-	tprint("const T Rzero = T(R<T(1e-37));\n");
+	tprint("const T Rzero = T(R2<T(1e-37));\n");
 	flops++;
 	tprint("const T r2 = FMA(z, z, R2);\n");
 	tprint("const T rzero = T(r2<T(1e-37));\n");
 	flops++;
-	tprint("const T Rinv = T(1) / (R + Rzero);\n");
-	flops += 5;
+	tprint("T tmp1 = R2 + Rzero;\n");
+	flops++;
+	tprint("T Rinv;\n");
+	flops += do_rsqrt("R2", "Rinv");
+	tprint("T R = T(1) / Rinv;\n");
+	flops += divops;
 	tprint("const T r2inv = T(1) / (r2+rzero);\n");
 	flops += 7 - fmaops;
 	tprint("T cosphi = FMA(x, Rinv, Rzero);\n");
@@ -1211,8 +1254,8 @@ int ewald_greens(int P, double alpha) {
 	indent();
 	tprint("const T r2 = x0 * x0 + y0 * y0 + z0 * z0;\n");
 	flops += 5;
-	tprint("const T r = sqrt(r2);\n");
-	flops += 4;
+	tprint("T r;\n");
+	flops += do_sqrt("r2", "r");
 	tprint("greens_%s_P%i(Gr, x0, y0, z0);\n", type, P);
 	tprint("T gamma1 = T(%.16e) * erfc(T(%.16e) * r);\n", sqrt(M_PI), alpha);
 	flops += 10;
@@ -1271,8 +1314,8 @@ int ewald_greens(int P, double alpha) {
 	flops += cnt;
 	tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 3 * cnt;
-	tprint("const T r = sqrt(r2);\n");
-	flops += 4 * cnt;
+	tprint("T r;\n");
+	flops += do_sqrt("r2", "r");
 	tprint("greens_%s_P%i(Gr, x, y, z);\n", type, P);
 	tprint("T gamma1 = T(%.16e) * erfc(T(%.16e) * r);\n", -sqrt(M_PI), alpha);
 	flops += 10 * cnt;
@@ -1533,7 +1576,7 @@ int ewald_greens(int P, double alpha) {
 			auto op = j->second;
 			if (op.size()) {
 				int sgn = op[0].first > 0 ? 1 : -1;
-				if( sgn > 0 ) {
+				if (sgn > 0) {
 					tprint("G[%i] = FMA(T(+%.16e), ", ii, sgn * j->first);
 				} else {
 					tprint("G[%i] = FMA(T(%.16e), ", ii, sgn * j->first);
@@ -1594,17 +1637,22 @@ int m2l_rot2(int P, int Q) {
 
 	tprint("const T R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T R = SQRT(R2);\n");
-	flops += 4;
-	tprint("const T Rzero = T(R<T(1e-37));\n");
-	tprint("const T Rinv = T(1) / (R + Rzero);\n");
-	flops += 5;
+	tprint("T R, Rinv;\n");
+	tprint("const T Rzero = T(R2<T(1e-37));\n");
+	flops++;
+	tprint("const T tmp1 = R2 + Rzero;\n");
+	flops++;
+	flops += do_rsqrt("tmp1", "Rinv");
+	tprint("R = T(1) / Rinv;\n");
+	flops += divops;
 	tprint("const T r2 = (FMA(z, z, R2));\n");
 	tprint("const T rzero = T(r2<T(1e-37));\n");
 	tprint("const T r2inv = T(1) / r2;\n");
-	flops += 6 - fmaops;
-	tprint("const T rinv = T(1) / sqrt(r2 + rzero);\n");
-	flops += 5;
+	flops += 3 + divops - fmaops;
+	tprint("const T r2przero = (r2 + rzero);");
+	flops += 1;
+	tprint("T rinv;\n");
+	flops += do_rsqrt("r2przero", "rinv");
 	tprint("T cosphi0;\n");
 	tprint("T cosphi;\n");
 	tprint("T sinphi0;\n");
@@ -1931,16 +1979,13 @@ int M2M_rot1(int P) {
 	func_header("M2M", P + 1, nophi, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
 	tprint("const T R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T R = SQRT(R2);\n");
-	flops += 4;
-	tprint("const T Rzero = (R<T(1e-37));\n");
+	tprint("T R, Rinv, tmp1;");
+	tprint("const T Rzero = (R2<T(1e-37));\n");
+	tprint("tmp1 = R2 + Rzero;\n");
+	flops += do_rsqrt("tmp1", "Rinv");
 	flops++;
-	tprint("const T Rinv = T(1) / (R + Rzero);\n");
-	flops += 5;
-	tprint("const T r2 = FMA(z, z, R2);\n");
-	tprint("const T rzero = (r2<T(1e-37));\n");
-	tprint("const T r2inv = T(1) / (r2 + rzero);\n");
-	flops += 6 - fmaops;
+	tprint("R = T(1) / Rinv;\n");
+	flops += divops;
 	tprint("T cosphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
 	tprint("T sinphi = -y * Rinv;\n");
@@ -2086,17 +2131,23 @@ int M2M_rot2(int P) {
 	func_header("M2M", P + 1, nophi, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
 	tprint("const T R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T R = SQRT(R2);\n");
-	flops += 4;
-	tprint("const T r = SQRT(FMA(z, z, R2));\n");
-	flops += 6 - fmaops;
-	tprint("const T Rzero = T(R<T(1e-37));");
-	tprint("const T rzero = T(r<T(1e-37));");
-	flops += 2;
-	tprint("const T Rinv = T(1) / (R + Rzero);\n");
-	flops += 5;
-	tprint("const T rinv = T(1) / (r + rzero);\n");
-	flops += 5;
+	tprint("T R, Rinv, tmp1;");
+	tprint("const T Rzero = T(R2<T(1e-37));");
+	flops++;
+	tprint("tmp1 = R2 + Rzero;\n");
+	flops++;
+	flops += do_rsqrt("tmp1", "Rinv");
+	tprint("T r2 = FMA(z, z, R2);\n");
+	flops += 2 - fmaops;
+	tprint("const T rzero = T(r2<T(1e-37));");
+	flops += 1;
+	tprint("T r, rinv;\n");
+	tprint("tmp1 = r2 + rzero;\n");
+	flops += do_rsqrt("tmp1", "rinv");
+	tprint("R = T(1) / Rinv;\n");
+	flops += divops;
+	tprint("r = T(1) / rinv;\n");
+	flops += divops;
 	tprint("T cosphi = y * Rinv;\n");
 	flops++;
 	tprint("T sinphi = FMA(x, Rinv, Rzero);\n");
@@ -2332,15 +2383,17 @@ int L2L_rot1(int P) {
 	tprint("T Y[%i];\n", half_exp_sz(P));
 	tprint("const T R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T R = SQRT(R2);\n");
-	flops += 4;
-	tprint("const T Rzero = (R<T(1e-37));\n");
+	tprint("T R, Rinv, tmp1;");
+	tprint("const T Rzero = (R2<T(1e-37));\n");
+	tprint("tmp1 = R2 + Rzero;\n");
+	flops += do_rsqrt("tmp1", "Rinv");
 	flops++;
-	tprint("const T Rinv = T(1) / (R + Rzero);\n");
-	flops += 5;
+	tprint("R = T(1) / Rinv;\n");
+	flops += divops;
 	tprint("T cosphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
 	tprint("T sinphi = -y * Rinv;\n");
+	flops += 2;
 	flops += z_rot(P, "L", false, false, false);
 	const auto yindex = [](int l, int m) {
 		return l*(l+1)/2+m;
@@ -2483,22 +2536,27 @@ int L2L_rot2(int P) {
 	func_header("L2L", P, nophi, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
 	tprint("const T R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T R = SQRT(R2);\n");
-	flops += 4;
-	tprint("const T r = SQRT(R2 + z * z);\n");
-	flops += 6;
-	tprint("const T Rzero = T(R<T(1e-37));");
-	tprint("const T rzero = T(r<T(1e-37));");
-	flops += 2;
-	tprint("const T Rinv = T(1) / (R + Rzero);\n");
-	flops += 5;
-	tprint("const T rinv = T(1) / (r + rzero);\n");
-	flops += 5;
+	tprint("T R, Rinv, tmp1;");
+	tprint("const T Rzero = T(R2<T(1e-37));");
+	flops++;
+	tprint("tmp1 = R2 + Rzero;\n");
+	flops++;
+	flops += do_rsqrt("tmp1", "Rinv");
+	tprint("T r2 = FMA(z, z, R2);\n");
+	flops += 2 - fmaops;
+	tprint("const T rzero = T(r2<T(1e-37));");
+	flops += 1;
+	tprint("T r, rinv;\n");
+	tprint("tmp1 = r2 + rzero;\n");
+	flops += do_rsqrt("tmp1", "rinv");
+	tprint("R = T(1) / Rinv;\n");
+	flops += divops;
+	tprint("r = T(1) / rinv;\n");
+	flops += divops;
 	tprint("T cosphi = y * Rinv;\n");
 	flops++;
 	tprint("T sinphi = FMA(x, Rinv, Rzero);\n");
-	flops += 1 - fmaops;
-	flops += 1;
+	flops += 2 - fmaops;
 	flops += z_rot(P, "L", false, false, false);
 	flops += xz_swap(P, "L", true, false, false, false);
 	tprint("T cosphi0 = cosphi;\n");
@@ -2888,7 +2946,7 @@ int main() {
 			if (b == 0) {
 				double best_alpha;
 				int best_ops = 1000000000;
-				for (double alpha = 1.0; alpha <= 3.0; alpha += 0.05) {
+				for (double alpha = 1.9; alpha <= 2.6; alpha += 0.1) {
 					int ops = ewald_greens(P, alpha);
 
 //					printf( "%i %e %i\n", P, alpha, ops);
