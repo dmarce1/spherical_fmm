@@ -10,7 +10,7 @@
 template<class T>
 using complex = std::complex<T>;
 
-using real = double;
+using real = float;
 
 double rand1() {
 	return (double) (rand() + 0.5) / (RAND_MAX);
@@ -708,20 +708,20 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M_double(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M_float(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] *= (0.5);
 			}
-			M2M_double(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M_float(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 				L0[n] = (0);
 			}
 			//	g0 = g1 = g2 = 0.0;
 			//		M2L_ewald3<real,P>( L0, M, x1, y1, z1);
-			M2L_ewald_double(P, L, M, x1, y1, z1, FMM_CALC_POT);
-			L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-			L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+			M2L_ewald_float(P, L, M, x1, y1, z1, FMM_CALC_POT);
+			L2L_float(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+			L2P_float(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			for (int l = 0; l <= P; l++) {
 				for (int m = -l; m <= l; m++) {
@@ -769,9 +769,9 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M_double(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M_float(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
 
-			M2M_double(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M_float(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 			}
@@ -780,15 +780,15 @@ real test_M2L(test_type type, real theta = 0.5) {
 				L2[l] = 0.0;
 			}
 			if (type == CC) {
-				M2L_double(P, L, M, x1, y1, z1, FMM_CALC_POT);
-				L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				M2L_float(P, L, M, x1, y1, z1, FMM_CALC_POT);
+				L2L_float(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+				L2P_float(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			} else if (type == PC) {
-				M2P_double(P, L2, M, x1, y1, z1, FMM_CALC_POT);
+				M2P_float(P, L2, M, x1, y1, z1, FMM_CALC_POT);
 			} else if (type == CP) {
-				P2L_double(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
-				L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				P2L_float(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
+				L2L_float(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+				L2P_float(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -1106,6 +1106,20 @@ double erf_double(double x) {
 	}
 }
 
+float erfc_float(float x) {
+	float erfc0;
+	float exp0 = expf(-x * x);
+	float t = float(1) / (float(1) + 0.3275911 * x);
+	erfc0 = float(1.061405429);
+	erfc0 = fmaf(erfc0, t, float(-1.453152027));
+	erfc0 = fmaf(erfc0, t, float(1.421413741));
+	erfc0 = fmaf(erfc0, t, float(-0.284496736));
+	erfc0 = fmaf(erfc0, t, float(0.254829592));
+	erfc0 *= t;
+	erfc0 *= exp0;
+	return erfc0;
+}
+
 double exp_double(double x0) {
 	constexpr int N = 18;
 	constexpr const_factorial<N> factorial;
@@ -1158,6 +1172,12 @@ double rsqrt_double(double x) {
 }
 
 int main() {
+/*	for (double r = 0.0; r < 2.4 * sqrt(3.75); r += 0.05) {
+		float e = erfc_float(r);
+		float e0 = erfcf(r);
+		printf("%e %e %e %e\n", r, e, e0, (e / e0 - 1.0f));
+	}
+	return 0;*/
 	run_tests<13, 3> run;
 	printf("M2L\n");
 	run(CC);
