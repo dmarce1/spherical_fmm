@@ -10,7 +10,7 @@
 template<class T>
 using complex = std::complex<T>;
 
-using real = float;
+using real = double;
 
 double rand1() {
 	return (double) (rand() + 0.5) / (RAND_MAX);
@@ -108,23 +108,23 @@ spherical_expansion<T, P> spherical_regular_harmonic(T x, T y, T z) {
 int cindex(int l, int m) {
 	return l * (l + 1) / 2 + m;
 }
-std::vector<complex<float>> spherical_singular_harmonic2(int P, float x, float y, float z) {
-	const float r2 = x * x + y * y + z * z;
-	const float r2inv = float(1) / r2;
-	complex<float> R = complex<float>(x, y);
-	std::vector<complex<float>> O((P + 1) * (P + 1));
-	O[cindex(0, 0)] = complex<float>(sqrt(r2inv), float(0));
+std::vector<complex<double>> spherical_singular_harmonic2(int P, double x, double y, double z) {
+	const double r2 = x * x + y * y + z * z;
+	const double r2inv = double(1) / r2;
+	complex<double> R = complex<double>(x, y);
+	std::vector<complex<double>> O((P + 1) * (P + 1));
+	O[cindex(0, 0)] = complex<double>(sqrt(r2inv), double(0));
 	R *= r2inv;
 	z *= r2inv;
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
-			O[cindex(m, m)] = O[cindex(m - 1, m - 1)] * R * float(2 * m - 1);
+			O[cindex(m, m)] = O[cindex(m - 1, m - 1)] * R * double(2 * m - 1);
 		}
 		if (m + 1 <= P) {
-			O[cindex(m + 1, m)] = float(2 * m + 1) * z * O[cindex(m, m)];
+			O[cindex(m + 1, m)] = double(2 * m + 1) * z * O[cindex(m, m)];
 		}
 		for (int n = m + 2; n <= P; n++) {
-			O[cindex(n, m)] = (float(2 * n - 1) * z * O[cindex(n - 1, m)] - float((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
+			O[cindex(n, m)] = (double(2 * n - 1) * z * O[cindex(n - 1, m)] - double((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
 		}
 	}
 	return O;
@@ -155,7 +155,7 @@ spherical_expansion<T, P> spherical_singular_harmonic(T x, T y, T z) {
 
 template<class T, int P>
 void greens(T* G, T x, T y, T z) {
-	auto G0 = spherical_singular_harmonic<float, P>(x, y, z);
+	auto G0 = spherical_singular_harmonic<double, P>(x, y, z);
 	for (int l = 0; l <= P; l++) {
 		for (int m = 0; m <= l; m++) {
 			if (m == 0) {
@@ -430,7 +430,7 @@ enum test_type {
 	CC, PC, CP, EWALD
 };
 
-template<class T, int P>
+/*template<class T, int P>
 void M2L_ewald3(T* L, const T* M, T x0, T y0, T z0) {
 	constexpr T alpha = 2.f;
 	const auto index = [](int l, int m) {
@@ -500,8 +500,8 @@ void M2L_ewald3(T* L, const T* M, T x0, T y0, T z0) {
 					T pipow = 1.f / sqrt(M_PI);
 					for (int l = 0; l <= P; l++) {
 						for (int m = 0; m <= l; m++) {
-							const float phi = T(2.0 * M_PI) * hdotx;
-							float Rx, Ry, ax, ay, bx, by;
+							const double phi = T(2.0 * M_PI) * hdotx;
+							double Rx, Ry, ax, ay, bx, by;
 							sincosf(phi, &Ry, &Rx);
 							if (m == 0) {
 								ax = G0[index(l, m)] * Rx;
@@ -663,7 +663,7 @@ void M2L_ewald3(T* L, const T* M, T x0, T y0, T z0) {
 
 //	M2L_ewald<real>(L2, M, x0, y0, z0);
 //	L = L2;
-}
+}*/
 
 template<int P>
 
@@ -708,20 +708,20 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M_float(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M_double(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] *= (0.5);
 			}
-			M2M_float(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M_double(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 				L0[n] = (0);
 			}
 			//	g0 = g1 = g2 = 0.0;
 			//		M2L_ewald3<real,P>( L0, M, x1, y1, z1);
-			M2L_ewald_float(P, L, M, x1, y1, z1, FMM_CALC_POT);
-			L2L_float(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-			L2P_float(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+			M2L_ewald_double(P, L, M, x1, y1, z1, FMM_CALC_POT);
+			L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+			L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			for (int l = 0; l <= P; l++) {
 				for (int m = -l; m <= l; m++) {
@@ -769,9 +769,9 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M_float(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M_double(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
 
-			M2M_float(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M_double(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 			}
@@ -780,15 +780,15 @@ real test_M2L(test_type type, real theta = 0.5) {
 				L2[l] = 0.0;
 			}
 			if (type == CC) {
-				M2L_float(P, L, M, x1, y1, z1, FMM_CALC_POT);
-				L2L_float(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P_float(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				M2L_double(P, L, M, x1, y1, z1, FMM_CALC_POT);
+				L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+				L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			} else if (type == PC) {
-				M2P_float(P, L2, M, x1, y1, z1, FMM_CALC_POT);
+				M2P_double(P, L2, M, x1, y1, z1, FMM_CALC_POT);
 			} else if (type == CP) {
-				P2L_float(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
-				L2L_float(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P_float(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				P2L_double(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
+				L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+				L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -913,271 +913,9 @@ constexpr T const_S(int n, int m0, T x, T y, T z) {
 	return Ox;
 }
 
-float sqrt_float(float x) {
-	int e = (int&) x;
-	e += (~0x3F100000 + 1);
-	e >>= 1;
-	e += 0x3F100000;
-	float y = (float&) e;
-	y = 0.5f * (y + x / y);
-	y = 0.5f * (y + x / y);
-	y = 0.5f * (y + x / y);
-	y = 0.5f * (y + x / y);
-	return y;
-}
-
-double sqrt_double(double x) {
-	long long e = (long long&) x;
-	e += (~(long long) 0x3FF0000000000000 + 1);
-	e >>= 1;
-	e += (long long) 0x3FF0000000000000;
-	double y = (double&) e;
-	y = 0.5 * (y + x / y);
-	y = 0.5 * (y + x / y);
-	y = 0.5 * (y + x / y);
-	y = 0.5 * (y + x / y);
-	return y;
-}
-
-void sincos_float(float x, float* s, float* c) {
-	constexpr const_factorial<11> factorial;
-	int ssgn = (((int&) x & 0x80000000) >> 30) - 1;
-	int j = ((int&) x & 0x7FFFFFFF);
-	x = (float&) j;
-	int i = x * float(1.0 / M_PI);
-	x -= i * float(M_PI);
-	x -= float(M_PI * 0.5);
-	float x2 = x * x;
-	*c = -1.0 / factorial(11);
-	*s = -1.0 / factorial(10);
-	*c = fmaf(*c, x2, 1.0 / factorial(9));
-	*s = fmaf(*s, x2, 1.0 / factorial(8));
-	*c = fmaf(*c, x2, -1.0 / factorial(7));
-	*s = fmaf(*s, x2, -1.0 / factorial(6));
-	*c = fmaf(*c, x2, 1.0 / factorial(5));
-	*s = fmaf(*s, x2, 1.0 / factorial(4));
-	*c = fmaf(*c, x2, -1.0 / factorial(3));
-	*s = fmaf(*s, x2, -1.0 / factorial(2));
-	*c = fmaf(*c, x2, 1.0 / factorial(1));
-	*s = fmaf(*s, x2, 1.0 / factorial(0));
-	*c *= x;
-	int k = (((i & 1) << 1) - 1);
-	*s *= ssgn * k;
-	*c *= k;
-}
-
-void sincos_double(double x, double* s, double* c) {
-	constexpr const_factorial<21> factorial;
-	long long int ssgn = (((long long int&) x & 0x8000000000000000LL) >> 62LL) - 1LL;
-	long long int j = ((long long int&) x & 0x7FFFFFFFFFFFFFFFLL);
-	x = (double&) j;
-	long long int i = x * double(1.0 / M_PI);
-	x -= i * M_PI;
-	x -= double(M_PI * 0.5);
-	double x2 = x * x;
-	*c = 1.0 / factorial(21);
-	*s = 1.0 / factorial(20);
-	*c = fma(*c, x2, -1.0 / factorial(19));
-	*s = fma(*s, x2, -1.0 / factorial(18));
-	*c = fma(*c, x2, 1.0 / factorial(17));
-	*s = fma(*s, x2, 1.0 / factorial(16));
-	*c = fma(*c, x2, -1.0 / factorial(15));
-	*s = fma(*s, x2, -1.0 / factorial(14));
-	*c = fma(*c, x2, 1.0 / factorial(13));
-	*s = fma(*s, x2, 1.0 / factorial(12));
-	*c = fma(*c, x2, -1.0 / factorial(11));
-	*s = fma(*s, x2, -1.0 / factorial(10));
-	*c = fma(*c, x2, 1.0 / factorial(9));
-	*s = fma(*s, x2, 1.0 / factorial(8));
-	*c = fma(*c, x2, -1.0 / factorial(7));
-	*s = fma(*s, x2, -1.0 / factorial(6));
-	*c = fma(*c, x2, 1.0 / factorial(5));
-	*s = fma(*s, x2, 1.0 / factorial(4));
-	*c = fma(*c, x2, -1.0 / factorial(3));
-	*s = fma(*s, x2, -1.0 / factorial(2));
-	*c = fma(*c, x2, 1.0 / factorial(1));
-	*s = fma(*s, x2, 1.0 / factorial(0));
-	*c *= x;
-	long long int k = (((i & 1) << 1) - 1);
-	*s *= ssgn * k;
-	*c *= k;
-}
-
-constexpr double dfactorial(int n) {
-	if (n == 1 || n == 0) {
-		return 1;
-	} else {
-		return n * dfactorial(n - 2);
-	}
-}
-
-constexpr double factorial(int n) {
-	if (n == 0) {
-		return 1;
-	} else {
-		return n * factorial(n - 1);
-	}
-}
-
-constexpr double cnk(int n, int k) {
-	return factorial(n) * factorial(2 * n + 1 - k) * 0.5 / (factorial(n - k) * factorial(k + 1) * factorial(2 * n + 1));
-}
-
-constexpr double pki(int k, int i) {
-	return nonepow<double>(i + k) * factorial(k) / (factorial(i) * factorial(k - 2 * i)) * pow(2, (k - 2 * i));
-}
-
-using polynomial = std::vector<double>;
-
-polynomial poly_mult(polynomial a, polynomial b) {
-	polynomial c(a.size() + b.size(), 0.0);
-	for (int i = 0; i < a.size(); i++) {
-		for (int j = 0; j < b.size(); j++) {
-			c[i + j] += a[i] * b[j];
-		}
-	}
-	return c;
-}
-
-polynomial poly_add(polynomial a, polynomial b) {
-	polynomial c(std::max(a.size(), b.size()), 0.0);
-	for (int i = 0; i < c.size(); i++) {
-		if (i >= a.size()) {
-			c[i] = b[i];
-		} else if (i >= b.size()) {
-			c[i] = a[i];
-		} else {
-			c[i] = a[i] + b[i];
-		}
-	}
-	return c;
-}
-
-double poly_eval(polynomial a, double x) {
-	double y = 0.0;
-	y = a.back();
-	for (int i = a.size() - 2; i >= 0; i--) {
-		y = fma(x, y, double(a[i]));
-	}
-	return y;
-}
-
-polynomial pkx(int k) {
-	polynomial y;
-	for (int i = 0; i <= k / 2; i++) {
-		if (y.size() <= k - 2 * i) {
-			y.resize(k - 2 * i + 1, 0.0);
-		}
-		y[k - 2 * i] += pki(k, i);
-	}
-	return y;
-}
-
-double erf_double(double x);
-
-double erfc_double(double x) {
-	if (x < 4.05) {
-		return 1.0 - erf_double(x);
-	} else {
-		double y;
-		double q = 1.0 / (2.0 * x * x);
-		const int N = 11;
-		y = nonepow<double>(N) * dfactorial(2 * N - 1);
-		for (int n = N - 1; n >= 1; n--) {
-			y = fma(y, q, nonepow<double>(n) * dfactorial(2 * n - 1));
-		}
-		y *= q;
-		return exp(-x * x) / x / sqrt(M_PI) * (1.0 + y);
-	}
-}
-
-double erf_double(double x) {
-	if (x >= 4.05) {
-		return 1.0 - erfc_double(x);
-	} else {
-		const int N = 59;
-		double y;
-		double q = (2.0 * x * x);
-		y = 1.0 / dfactorial(2 * N + 1);
-		for (int n = N - 1; n >= 0; n--) {
-			y = fma(y, q, 1.0 / dfactorial(2 * n + 1));
-		}
-		return exp(-x * x) * x * 2.0 / sqrt(M_PI) * y;
-	}
-}
-
-float erfc_float(float x) {
-	float erfc0;
-	float exp0 = expf(-x * x);
-	float t = float(1) / (float(1) + 0.3275911 * x);
-	erfc0 = float(1.061405429);
-	erfc0 = fmaf(erfc0, t, float(-1.453152027));
-	erfc0 = fmaf(erfc0, t, float(1.421413741));
-	erfc0 = fmaf(erfc0, t, float(-0.284496736));
-	erfc0 = fmaf(erfc0, t, float(0.254829592));
-	erfc0 *= t;
-	erfc0 *= exp0;
-	return erfc0;
-}
-
-double exp_double(double x0) {
-	constexpr int N = 18;
-	constexpr const_factorial<N> factorial;
-	long long int k = x0 / 0.6931471805599453094172 + 0.5;
-	k -= x0 < 0.0;
-	double x = x0 - k * 0.6931471805599453094172;
-	double y = 1.0 / factorial(N);
-	for (int i = N - 1; i >= 0; i--) {
-		y = y * x + 1.0 / factorial(i);
-	}
-	k = (k + (long long) 1023) << (long long) 52;
-	return y * (double&) (k);
-}
-
-double exp_float(double x0) {
-	constexpr int N = 7;
-	constexpr const_factorial<N> factorial;
-	int k = x0 / 0.6931471805599453094172 + 0.5;
-	k -= x0 < 0.0;
-	double x = x0 - k * 0.6931471805599453094172;
-	double y = 1.0 / factorial(N);
-	for (int i = N - 1; i >= 0; i--) {
-		y = y * x + 1.0 / factorial(i);
-	}
-	k = (k + 127) << 23;
-	return y * (float&) (k);
-}
-
-float rsqrt_float(float x) {
-	int i = *((int*) &x);
-	i >>= 1;
-	i = 0x5F3759DF - i;
-	float y = *((float*) &i);
-	y *= fmaf(-0.5, x * y * y, 1.5);
-	y *= fmaf(-0.5, x * y * y, 1.5);
-	y *= fmaf(-0.5, x * y * y, 1.5);
-	return y;
-}
-
-double rsqrt_double(double x) {
-	long long i = *((long long*) &x);
-	i >>= 1;
-	i = 0x5FE6EB50C7B537A9 - i;
-	double y = *((double*) &i);
-	y *= fma(-0.5, x * y * y, 1.5);
-	y *= fma(-0.5, x * y * y, 1.5);
-	y *= fma(-0.5, x * y * y, 1.5);
-	y *= fma(-0.5, x * y * y, 1.5);
-	return y;
-}
 
 int main() {
-/*	for (double r = 0.0; r < 2.4 * sqrt(3.75); r += 0.05) {
-		float e = erfc_float(r);
-		float e0 = erfcf(r);
-		printf("%e %e %e %e\n", r, e, e0, (e / e0 - 1.0f));
-	}
-	return 0;*/
+//	return 0;
 	run_tests<13, 3> run;
 	printf("M2L\n");
 	run(CC);
