@@ -1477,7 +1477,7 @@ int main() {
 //}
 //	printf("%i %i %e\n", N1_min, N2_min, err_min);
 	//return 0;
-	run_tests<21, 3> run;
+	run_tests<25, 3> run;
 	printf("M2L\n");
 	run(CC);
 	printf("M2P\n");

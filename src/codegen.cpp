@@ -18,7 +18,7 @@ static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
 static int pmin = 3;
-static int pmax = 20;
+static int pmax = 25;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -3258,13 +3258,13 @@ int main() {
 				if (P > 1) {
 					switch (pc_rot[P]) {
 					case 0:
-						m2l_rot1(P, 1);
+						m2l_norot(P, 1);
 						break;
 					case 1:
 						m2l_rot1(P, 1);
 						break;
 					case 2:
-						m2l_rot1(P, 1);
+						m2l_rot2(P, 1);
 						break;
 					};
 				}
