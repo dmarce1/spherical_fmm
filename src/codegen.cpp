@@ -18,7 +18,7 @@ static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
 static int pmin = 3;
-static int pmax = 12;
+static int pmax = 20;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -32,7 +32,7 @@ const int ewald_h2 = 8;
 
 static FILE* fp = nullptr;
 int exp_sz(int P) {
-	if (periodic) {
+	if (periodic && P > 1) {
 		return (P + 1) * (P + 1) + 1;
 	} else {
 		return (P + 1) * (P + 1);
@@ -121,7 +121,7 @@ double factorial(int n) {
 }
 
 int do_exp(const char* in, const char* out) {
-	if (type == "double") {
+	if (std::string(type) == "double") {
 		tprint("{\n");
 		indent();
 		constexpr int N = 18;
@@ -139,7 +139,7 @@ int do_exp(const char* in, const char* out) {
 		deindent();
 		tprint("}\n");
 		return 4 + divops + 17 * (2 - fmaops);
-	} else if (type == "float") {
+	} else if (std::string(type) == "float") {
 		tprint("{\n");
 		indent();
 		constexpr int N = 7;
@@ -170,39 +170,9 @@ int do_erfcexp(const char* in, const char* erfc0, const char* exp0) {
 	tprint("const T nx2 = -x2;\n");
 	flops += 2;
 	flops += do_exp("nx2", exp0);
-	if (type == "double") {
-		tprint("if( %s < T(4.05) ) {\n", in);
-		indent();
-		{
-			const int N = 59;
-			tprint("T q = T(2) * x2;\n");
-			flops++;
-			tprint("%s = T(%.16e);\n", erfc0, 1.0 / dfactorial(2 * N + 1));
-			for (int n = N - 1; n >= 0; n--) {
-				tprint("%s = FMA(%s, q, T(%.16e));\n", erfc0, erfc0, 1.0 / dfactorial(2 * n + 1));
-				flops += (2 - fmaops);
-			}
-			tprint("%s *= %s * %s * T(%.16e);\n", erfc0, exp0, in, 2.0 / sqrt(M_PI));
-			flops += 3;
-			tprint("%s = T(1) - %s;\n", erfc0, erfc0);
-			flops++;
-		}
-		deindent();
-		tprint("} else {\n");
-		indent();
-		const int N = 11;
-		tprint("T q = T(1) / (T(2) * x2);\n");
-		flops += 1 + divops;
-		tprint("%s = T(%.16e);\n", erfc0, nonepow(N) * dfactorial(2 * N + 1));
-		for (int n = N - 1; n >= 1; n--) {
-			tprint("%s = FMA(%s, q, T(%.16e));\n", erfc0, erfc0, nonepow(n) * dfactorial(2 * n + 1));
-			flops += (2 - fmaops);
-		}
-		tprint("%s = %s / %s * T(%.16e) * (T(1) + %s);\n", erfc0, exp0, in, 1.0 / sqrt(M_PI), erfc0);
-		flops += 4 + divops;
-
-		deindent();
-		tprint("}\n");
+	if (std::string(type) == "double") {
+		flops += 92 - 39 * fmaops;
+		tprint("erfc0 = erfc_double(%s);\n", in);
 		deindent();
 		tprint("}\n");
 	} else {
@@ -230,7 +200,7 @@ int do_erfcexp(const char* in, const char* erfc0, const char* exp0) {
 int do_sincos(const char* in, const char* sout, const char* cout) {
 	tprint("{\n");
 	indent();
-	if (type == "float") {
+	if (std::string(type) == "float") {
 		tprint("V ssgn = V((((U&) %s & U(0x80000000)) >> U(30)) - U(1));\n", in);
 		tprint("V j = V(((U&) %s & U(0x7FFFFFFF)));\n", in);
 		tprint("%s = (T&) j;\n", in);
@@ -299,7 +269,7 @@ int do_sincos(const char* in, const char* sout, const char* cout) {
 }
 
 int do_rsqrt(const char* xin, const char* yout) {
-	if (type == "float") {
+	if (std::string(type) == "float") {
 		tprint("{\n");
 		indent();
 		tprint("T xxx = %s + T(%.16e);\n", xin, std::numeric_limits<float>::min());
@@ -313,7 +283,7 @@ int do_rsqrt(const char* xin, const char* yout) {
 		deindent();
 		tprint("}\n");
 		return 15 - 3 * fmaops;
-	} else if (type == "double") {
+	} else if (std::string(type) == "double") {
 		tprint("{\n");
 		indent();
 		tprint("T xxx = %s + T(%.16e);\n", xin, std::numeric_limits<double>::min());
@@ -333,9 +303,9 @@ int do_rsqrt(const char* xin, const char* yout) {
 
 int do_sqrt(const char* xin, const char* yout) {
 	int flops = 0;
-	if (type == "float") {
+	if (std::string(type) == "float") {
 		flops += do_rsqrt(xin, yout);
-	} else if (type == "double") {
+	} else if (std::string(type) == "double") {
 		flops += do_rsqrt(xin, yout);
 	}
 	tprint("%s = T(1) / %s;\n", yout, yout);
@@ -551,6 +521,7 @@ void func_header(const char* func, int P, bool nopot, bool pub, Args&& ...args) 
 //		printf("%s ", file_name.c_str());
 		set_file(file_name);
 		tprint("#include \"spherical_fmm.hpp\"\n");
+		tprint("#include \"erfc_double.hpp\"\n");
 		tprint("#include <stdio.h>\n");
 		tprint("#include \"detail/spherical_fmm.hpp\"\n");
 		tprint("\n");
@@ -1135,7 +1106,7 @@ int greens_xz(int P) {
 	int flops = 0;
 	func_header("greens_xz", P, false, false, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
 	flops += do_sqrt("r2inv", "O[0]");
-	tprint("O[%i] = T(0);\n", (P + 1) * (P + 1));
+	tprint("O[%i] = T(0);\n", (P + 2) * (P + 1) / 2 );
 	tprint("x *= r2inv;\n");
 	flops += 1;
 	tprint("z *= r2inv;\n");
@@ -1211,7 +1182,7 @@ int m2l_rot1(int P, int Q) {
 	tprint("T tmp1 = R2 + Rzero;\n");
 	flops++;
 	tprint("T Rinv;\n");
-	flops += do_rsqrt("R2", "Rinv");
+	flops += do_rsqrt("tmp1", "Rinv");
 	tprint("T R = T(1) / Rinv;\n");
 	flops += divops;
 	tprint("const T r2inv = T(1) / (r2+rzero);\n");
@@ -1402,6 +1373,102 @@ int m2l_norot(int P, int Q) {
 	return flops;
 }
 
+double gamma(double x) {
+	if (x > 1.0) {
+		return tgamma(x);
+	} else {
+		return gamma(1.0 + x) / x;
+	}
+}
+
+double hypergeo(double a, int i) {
+	double y = 0.0;
+	int done = 0;
+	int n = i / 2;
+	const auto g1 = gamma(0.5 + n);
+	const auto g2 = gamma(1.0 + n);
+	const auto g3 = gamma(1.0 - 0.5 * i + n);
+	const auto g4 = gamma(1.5 - 0.5 * i + n);
+	auto z = (g1 / g3) * (g2 / g4) / (gamma(0.5) * gamma(1.0)) * pow(-a * a, n) / factorial(n);
+	y += z;
+	for (++n;; n++) {
+		z *= (n - 0.5);
+		z /= (n - 0.5 * i);
+		z /= (n - 0.5 * i + 0.5);
+		z *= -a * a;
+		y += z;
+		if (y) {
+			if (fabs(z / y) < (2 - done) * std::numeric_limits<double>::epsilon()) {
+				done++;
+				if (done == 2) {
+					break;
+				}
+			} else {
+				done = 0;
+			}
+		}
+	}
+	return y;
+}
+
+int erfc_double_create(int i2, double alpha) {
+	double a = alpha * sqrt(i2);
+	double xmax = alpha * (sqrt(i2) + sqrt(0.75));
+	double xmin = std::max(alpha * (sqrt(i2) - sqrt(0.75)), 0.0);
+	int flops = 0;
+	tprint("const auto erfcexp%i = [](T x, T& y, T& z) { \n", i2);
+	indent();
+
+	xmax -= a;
+	xmin -= a;
+	const double b = 1.0;
+	std::vector<double> c0;
+	c0.push_back((a + b) * exp(a * a) * erfc(a));
+	double qm2 = exp(a * a) * erfc(a);
+	double qm1 = -2.0 / sqrt(M_PI) + 2 * a * exp(a * a) * erfc(a);
+	double q;
+	double ymax, ymin;
+	int cnt = 0;
+	const auto c = qm2 + (a + b) * qm1;
+	c0.push_back(c);
+	for (int n = 2;; n++) {
+		q = 2 * (a * qm1 + qm2) / n;
+		const auto c = qm1 + (a + b) * q;
+		qm2 = qm1;
+		qm1 = q;
+		ymax = c * exp(-(xmax + a) * (xmax + a)) / (a + xmax + b) * pow(xmax, n);
+		ymin = c * exp(-(xmin + a) * (xmin + a)) / (a + xmin + b) * pow(xmin, n);
+		if (std::max(std::abs(ymax),std::abs(ymin)) < std::numeric_limits<double>::epsilon()) {
+			cnt++;
+			if (cnt == 2) {
+				break;
+			}
+		} else {
+			cnt = 0;
+		}
+		//	printf("%i %i %e\n", i2, n, c);
+		c0.push_back(c);
+	}
+	tprint("const T x2 = x * x;\n");
+	flops++;
+	tprint("const T nx2 = -x2;\n");
+	flops += 2;
+	flops += do_exp("nx2", "z");
+	tprint("const T x0 = x;\n");
+	tprint("x -= T(%.16e);\n", a);
+	tprint("y = T(%.16e);\n", c0.back());
+	c0.pop_back();
+	while (c0.size()) {
+		tprint("y = FMA(y, x, T(%.16e));\n", c0.back());
+		c0.pop_back();
+	}
+	tprint("y *= z / (x0 + T(%.16e));\n", b);
+
+	deindent();
+	tprint("};\n");
+	return flops;
+}
+
 int ewald_greens(int P, double alpha) {
 	int R2, H2;
 	if (type == "float") {
@@ -1421,7 +1488,12 @@ int ewald_greens(int P, double alpha) {
 	//set_tprint(false);
 	//flops += greens(P);
 	//set_tprint(c);
-
+	std::vector<int> erfc_flops(R2 + 1, 0);
+	if (type != "float") {
+		for (int i2 = 0; i2 <= R2; i2++) {
+			erfc_flops[i2] = erfc_double_create(i2, alpha);
+		}
+	}
 	tprint("T Gr[%i];\n", exp_sz(P));
 	set_tprint(false);
 	flops += greens(P);
@@ -1441,11 +1513,6 @@ int ewald_greens(int P, double alpha) {
 	bool first = true;
 	int eflops;
 	tprint("T sw;\n");
-	tprint("const auto erfcexp = [](T x, T& erfc0, T& exp0) {\n");
-	indent();
-	eflops = do_erfcexp("x", "erfc0", "exp0");
-	deindent();
-	tprint("};\n");
 	tprint("{\n");
 	indent();
 	tprint("const T r2 = x0 * x0 + y0 * y0 + z0 * z0;\n");
@@ -1456,15 +1523,19 @@ int ewald_greens(int P, double alpha) {
 	tprint("T xxx = T(%.16e) * r;\n", alpha);
 	flops++;
 	tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-	tprint("erfcexp(xxx, gamma1, exp0);\n");
-	flops += eflops;
+	if (type == "float") {
+		flops += do_erfcexp("xxx", "gamma1", "exp0");
+	} else {
+		tprint("erfcexp0(xxx, gamma1, exp0);\n");
+		flops += erfc_flops[0];
+	}
 	tprint("gamma1 *= T(%.16e);\n", sqrt(M_PI));
 	flops += 1;
 	tprint("const T xfac = T(%.16e) * r2;\n", alpha * alpha);
 	flops += 1;
 	tprint("T xpow = T(%.16e) * r;\n", alpha);
 	flops++;
-	double gamma0inv = 1.0f / sqrt(M_PI);
+	double gamma0inv = 1.0 / sqrt(M_PI);
 	tprint("T gamma;\n");
 	tprint("sw = r2 > T(0);\n");
 	flops += 1;
@@ -1493,67 +1564,77 @@ int ewald_greens(int P, double alpha) {
 	tprint("}\n");
 	first = false;
 
-	tprint("for (int ix = -%i; ix <= %i; ix++) {\n", R, R);
-	indent();
-	tprint("for (int iy = -%i; iy <= %i; iy++) {\n", R, R);
-	indent();
-	tprint("for (int iz = -%i; iz <= %i; iz++) {\n", R, R);
-	indent();
-	tprint("int ii = ix * ix + iy * iy + iz * iz;\n");
-	tprint("if (ii > %i || ii == 0) {\n", R2);
-	indent();
-	tprint("continue;\n");
-	deindent();
-	tprint("}\n");
-	tprint("const T x = x0 - T(ix);\n");
-	flops += cnt;
-	tprint("const T y = y0 - T(iy);\n");
-	flops += cnt;
-	tprint("const T z = z0 - T(iz);\n");
-	flops += cnt;
-	tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
-	flops += 3 * cnt;
-	tprint("T r;\n");
-	flops += do_sqrt("r2", "r");
-	tprint("greens_%s_P%i(Gr, x, y, z);\n", type.c_str(), P);
-
-	tprint("T xxx = T(%.16e) * r;\n", alpha);
-	flops += cnt;
-	tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-	tprint("erfcexp(xxx, gamma1, exp0);\n");
-	flops += cnt * eflops;
-	tprint("gamma1 *= T(%.16e);\n", -sqrt(M_PI));
-	flops += cnt;
-	tprint("const T xfac = T(%.16e) * r2;\n", alpha * alpha);
-	flops += cnt;
-	tprint("T xpow = T(%.16e) * r;\n", alpha);
-	flops++;
-	tprint("T gamma0inv = T(%.16e);\n", 1.0f / sqrt(M_PI));
-	tprint("T gamma;\n");
-	for (int l = 0; l <= P; l++) {
-		tprint("gamma = gamma1 * gamma0inv;\n");
-		flops += cnt;
-		for (int m = -l; m <= l; m++) {
-			tprint("G[%i] = FMA(gamma, Gr[%i], G[%i]);\n", index(l, m), index(l, m), index(l, m));
-			flops += (2 - fmaops) * cnt;
-		}
-		if (l != P) {
-			tprint("gamma0inv *= T(%.16e);\n", 1.0 / -(l + 0.5));
-			tprint("gamma1 = FMA(T(%.16e), gamma1, -xpow * exp0);\n", l + 0.5);
-			flops += (4 - fmaops) * cnt;
-			if (l != P - 1) {
-				tprint("xpow *= xfac;\n");
-				flops += cnt;
+	for (int ix = -R; ix <= R; ix++) {
+		for (int iy = -R; iy <= R; iy++) {
+			for (int iz = -R; iz <= R; iz++) {
+				int ii = ix * ix + iy * iy + iz * iz;
+				if (ii > R2 || ii == 0) {
+					continue;
+				}
+				tprint("{\n");
+				indent();
+				if (ix == 0) {
+					tprint("const T& x = x0;\n");
+				} else {
+					tprint("const T x = x0 - T(%i);\n", ix);
+					flops++;
+				}
+				if (iy == 0) {
+					tprint("const T& y = y0;\n");
+				} else {
+					tprint("const T y = y0 - T(%i);\n", iy);
+					flops++;
+				}
+				if (iz == 0) {
+					tprint("const T& z = z0;\n");
+				} else {
+					tprint("const T z = z0 - T(%i);\n", iz);
+					flops++;
+				}
+				tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
+				flops += 3 * 1;
+				tprint("T r;\n");
+				flops += do_sqrt("r2", "r");
+				tprint("greens_%s_P%i(Gr, x, y, z);\n", type.c_str(), P);
+				tprint("T xxx = T(%.16e) * r;\n", alpha);
+				flops += 1;
+				tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
+				if (type == "float") {
+					flops += do_erfcexp("xxx", "gamma1", "exp0");
+				} else {
+					tprint("erfcexp%i(xxx, gamma1, exp0);\n", ii);
+					flops += erfc_flops[ii];
+				}
+				tprint("gamma1 *= T(%.16e);\n", -sqrt(M_PI));
+				flops += 1;
+				tprint("const T xfac = T(%.16e) * r2;\n", alpha * alpha);
+				flops += 1;
+				tprint("T xpow = T(%.16e) * r;\n", alpha);
+				flops++;
+				double gamma0inv = 1.0 / sqrt(M_PI);
+				tprint("T gamma;\n");
+				for (int l = 0; l <= P; l++) {
+					tprint("gamma = gamma1 * T(%.16e);\n", gamma0inv);
+					flops += 1;
+					for (int m = -l; m <= l; m++) {
+						tprint("G[%i] = FMA(gamma, Gr[%i], G[%i]);\n", index(l, m), index(l, m), index(l, m));
+						flops += (2 - fmaops) * 1;
+					}
+					if (l != P) {
+						gamma0inv *= 1.0 / -(l + 0.5);
+						tprint("gamma1 = FMA(T(%.16e), gamma1, -xpow * exp0);\n", l + 0.5);
+						flops += (4 - fmaops) * 1;
+						if (l != P - 1) {
+							tprint("xpow *= xfac;\n");
+							flops += 1;
+						}
+					}
+				}
+				deindent();
+				tprint("}\n");
 			}
 		}
 	}
-
-	deindent();
-	tprint("}\n");
-	deindent();
-	tprint("}\n");
-	deindent();
-	tprint("}\n");
 	int rflops = flops;
 	const auto name = [](const char* base, int hx, int hy, int hz) {
 		std::string s = base;
@@ -1664,9 +1745,9 @@ int ewald_greens(int P, double alpha) {
 					const auto G0 = spherical_singular_harmonic(P, (double) hx, (double) hy, (double) hz);
 					flops++;
 					flops += 8;
-					double gamma0inv = 1.0f / sqrt(M_PI);
-					double hpow = 1.f / h;
-					double pipow = 1.f / sqrt(M_PI);
+					double gamma0inv = 1.0 / sqrt(M_PI);
+					double hpow = 1. / h;
+					double pipow = 1. / sqrt(M_PI);
 					for (int l = 0; l <= P; l++) {
 						for (int m = 0; m <= l; m++) {
 							double c0 = gamma0inv * hpow * pipow * exp(-h * h * double(M_PI * M_PI) / (alpha * alpha));
@@ -1702,7 +1783,7 @@ int ewald_greens(int P, double alpha) {
 								}
 							}
 						}
-						gamma0inv /= l + 0.5f;
+						gamma0inv /= l + 0.5;
 						hpow *= h * h;
 						pipow *= M_PI;
 
@@ -3041,7 +3122,7 @@ int main() {
 	const char* uitypenames[] = { "unsigned", "unsigned long long" };
 	const int ntypenames = 2;
 
-	for (int ti = 0; ti < ntypenames; ti++) {
+	for (int ti = 1; ti < ntypenames; ti++) {
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
@@ -3177,13 +3258,13 @@ int main() {
 				if (P > 1) {
 					switch (pc_rot[P]) {
 					case 0:
-						m2l_norot(P, 1);
+						m2l_rot1(P, 1);
 						break;
 					case 1:
 						m2l_rot1(P, 1);
 						break;
 					case 2:
-						m2l_rot2(P, 1);
+						m2l_rot1(P, 1);
 						break;
 					};
 				}
