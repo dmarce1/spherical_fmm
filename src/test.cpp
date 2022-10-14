@@ -249,7 +249,7 @@ spherical_expansion<T, P> spherical_expansion_ref_M2L(spherical_expansion<T, P -
 #include <fenv.h>
 
 void ewald_compute(long double& pot, long double& fx, long double& fy, long double& fz, long double dx0, long double dx1, long double dx2) {
-	const long double cons1 = (long double)(4.0L / sqrtl(4.0L*atanl(1)));
+	const long double cons1 = (long double) (4.0L / sqrtl(4.0L * atanl(1)));
 	fx = 0.0;
 	fy = 0.0;
 	fz = 0.0;
@@ -301,7 +301,7 @@ void ewald_compute(long double& pot, long double& fx, long double& fy, long doub
 				}
 			}
 		}
-		pot += (long double)(atanl(1));
+		pot += (long double) (atanl(1));
 		for (int xi = -4; xi <= +4; xi++) {
 			for (int yi = -4; yi <= +4; yi++) {
 				for (int zi = -4; zi <= +4; zi++) {
@@ -311,10 +311,10 @@ void ewald_compute(long double& pot, long double& fx, long double& fy, long doub
 					const long double h2 = sqr(hx, hy, hz);
 					if (h2 > 0.0L && h2 <= 20) {
 						const long double hdotx = dx0 * hx + dx1 * hy + dx2 * hz;
-						const long double omega = (long double)(8.0L * atanl(1)) * hdotx;
+						const long double omega = (long double) (8.0L * atanl(1)) * hdotx;
 						long double c, s;
 						sincosl(omega, &s, &c);
-						const long double c0 = -1.L / h2 * exp((long double)(-sqr(4.0L*atanl(1)) * 0.25L) * h2) * (long double)(1.L / (4.0L*atanl(1)));
+						const long double c0 = -1.L / h2 * exp((long double) (-sqr(4.0L * atanl(1)) * 0.25L) * h2) * (long double) (1.L / (4.0L * atanl(1)));
 						const long double c1 = -s * 8.0L * atanl(1) * c0;
 						pot += c0 * c;
 						fx -= c1 * hx;
@@ -734,10 +734,10 @@ real test_M2L(test_type type, real theta = 0.5) {
 			//		printf( "%e %e %e\n", fx, fy, fz);
 			//	abort();
 			//		printf( "%e %e %e\n", phi, L0[0], phi/ L0[0]);
-			const double fa = sqrt(fx*fx+fy*fy+fz*fz);
+			const double fa = sqrt(fx * fx + fy * fy + fz * fz);
 			const double fn = sqrt(sqr(L2[3], L2[1], L2[2]));
-		//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(fa-fn);
+			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
+			err += fabs(fa - fn);
 			norm += fabs(fa);
 
 		} else {
@@ -796,13 +796,13 @@ real test_M2L(test_type type, real theta = 0.5) {
 			const real dz = (z2 + z1) - z0;
 			const real r = sqrt(sqr(dx, dy, dz));
 			const real phi = 1.0 / r;
-			const real fx = dx / (r*r*r);
-			const real fy = dy / (r*r*r);
-			const real fz = dz / (r*r*r);
-			const double fa = sqrt(fx*fx+fy*fy+fz*fz);
+			const real fx = dx / (r * r * r);
+			const real fy = dy / (r * r * r);
+			const real fz = dz / (r * r * r);
+			const double fa = sqrt(fx * fx + fy * fy + fz * fz);
 			const double fn = sqrt(sqr(L2[3], L2[1], L2[2]));
-		//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(fa-fn);
+			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
+			err += fabs(fa - fn);
 			norm += fabs(fa);
 		}
 	}
@@ -1156,8 +1156,6 @@ void erfc_double_create(int i) {
 	} while (err > std::numeric_limits<double>::epsilon());
 }
 
-
-
 double erf_double(double x);
 
 static int N1 = 58;
@@ -1434,33 +1432,58 @@ double rsqrt_double(double x) {
 	y *= fma(-0.5, x * y * y, 1.5);
 	return y;
 }
+
 double erfc2_double(double x) {
-	constexpr int N = 45;
-	constexpr double a = (2);
-	static double c0[N + 1];
-	static bool init = false;
-	double b = 1;
-	if (!init) {
-		double q[N + 1];
-		init = true;
-		c0[0] = (a+b) * exp(a * a) * erfc(a);
-		q[0] = exp(a * a) * erfc(a);
-		q[1] = -2.0 / sqrt(M_PI) + 2 * a * exp(a * a) * erfc(a);
-		for (int n = 2; n <= N; n++) {
-			q[n] = 2 * (a * q[n - 1] + q[n - 2]) / n;
+	constexpr double x0 = 1.0;
+	constexpr double x1 = 4.7;
+	if (x < x0) {
+		constexpr int N = 17;
+		const double q = 2.0 * x * x;
+		double y = 1.0 / dfactorial(2 * N + 1);
+		for (int n = N - 1; n >= 0; n--) {
+			y = fma(y, q, 1.0 / dfactorial(2 * n + 1));
 		}
-		for (int n = 1; n <= N; n++) {
-			c0[n] = q[n - 1] + (a+b) * q[n];
-			printf("%i %e\n", n, c0[n]);
+		y *= 2.0 / sqrt(M_PI) * x * exp(-x * x);
+		y = 1.0 - y;
+		return y;
+	} else if (x < x1) {
+		constexpr int N = 35;
+		constexpr double a = (x1-x0) * 0.5 + x0;
+		static double c0[N + 1];
+		static bool init = false;
+		if (!init) {
+			double q[N + 1];
+			init = true;
+			c0[0] = (a) * exp(a * a) * erfc(a);
+			q[0] = exp(a * a) * erfc(a);
+			q[1] = -2.0 / sqrt(M_PI) + 2 * a * exp(a * a) * erfc(a);
+			for (int n = 2; n <= N; n++) {
+				q[n] = 2 * (a * q[n - 1] + q[n - 2]) / n;
+			}
+			for (int n = 1; n <= N; n++) {
+				c0[n] = q[n - 1] + (a) * q[n];
+			}
 		}
+		x -= a;
+		double y = c0[N];
+		for (int n = N - 1; n >= 0; n--) {
+			y = fma(y, x, c0[n]);
+		}
+		return y * exp(-(x + a) * (x + a)) / (a + x);
+	} else {
+		constexpr int N = x1 * x1 + 0.5;
+		double q = 1.0 / (2.0 * x * x);
+		double y = dfactorial(2 * N - 1) * nonepow(N);
+		for (int i = N - 1; i >= 1; i--) {
+			y = fma(y, q, dfactorial(2 * i - 1) * nonepow(i));
+		}
+		y *= q;
+		y += 1.0;
+		y *= exp(-x * x) / sqrt(M_PI) / x;
+		return y;
 	}
-	x -= a;
-	double y = c0[N];
-	for (int n = N - 1; n >= 0; n--) {
-		y = fma(y, x, c0[n]);
-	}
-	return y * exp(-(x+a) * (x+a)) / (a+x+b);
 }
+
 int main() {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
@@ -1471,17 +1494,21 @@ int main() {
 	double err_min = 1e99, shft_min, shft;
 	//for (N1 = 3; N1 <= 100; N1++) {
 	//	for (N2 = 3; N2 <= 100; N2++) {
-	double emax = 0.0;
-	for (double r = 0.0; r < 4.0; r += 0.05) {
+	double emax1 = 0.0;
+	double emax2 = 0.0;
+	for (double r = 0.00; r < 8; r += 0.1) {
 		double e1;
 		e1 = erfc2_double(r);
-		double e0 = erfc(r);
-		double err1 = fabs((e1 - e0));
-		emax = std::max(emax, err1);
-		printf("%e %e %e %e\n", r, e0, e1, fabs((e1 - e0)));
+		long double e0 = erfcl(r);
+		double err1 = fabs((e1 - e0)/e0);
+		double err2 = fabs((e1 - e0));
+		emax1 = std::max(emax1, err1);
+		emax2 = std::max(emax2, err2);
+		printf("%e %e %e %e %e\n", r, e0, e1, err1, err2);
 	}
-	printf("%e\n", emax);
-
+	printf("%e\n", emax1);
+	printf("%e\n", emax2);
+	return 0.0;
 //	}
 //}
 //	printf("%i %i %e\n", N1_min, N2_min, err_min);

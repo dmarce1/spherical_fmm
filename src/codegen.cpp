@@ -14,6 +14,11 @@ using complex = std::complex<double>;
 static int ntab = 0;
 static int tprint_on = true;
 
+#define VEC_DOUBLE
+#define VEC_FLOAT
+#define VEC_DOUBLE_SIZE 4
+#define VEC_FLOAT_SIZE 8
+
 static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
@@ -26,6 +31,18 @@ static const int divops = 4;
 static const char* prefix = "";
 static std::string inter_src = "#include \"spherical_fmm.hpp\"\n\n";
 static std::string inter_header = "\n\nenum fmm_calcpot_type {FMM_CALC_POT, FMM_NOCALC_POT};\n\n";
+
+static bool is_float(std::string str) {
+	return str == "float" || str == "vec_float";
+}
+
+static bool is_double(std::string str) {
+	return str == "double" || str == "vec_double";
+}
+
+static bool is_vec(std::string str) {
+	return str == "vec_double" || str == "vec_float";
+}
 
 const double ewald_r2 = (2.6 + 0.5 * sqrt(3));
 const int ewald_h2 = 8;
@@ -121,7 +138,7 @@ double factorial(int n) {
 }
 
 int do_exp(const char* in, const char* out) {
-	if (std::string(type) == "double") {
+	if (is_double (type)) {
 		tprint("{\n");
 		indent();
 		constexpr int N = 18;
@@ -139,7 +156,7 @@ int do_exp(const char* in, const char* out) {
 		deindent();
 		tprint("}\n");
 		return 4 + divops + 17 * (2 - fmaops);
-	} else if (std::string(type) == "float") {
+	} else {
 		tprint("{\n");
 		indent();
 		constexpr int N = 7;
@@ -170,37 +187,30 @@ int do_erfcexp(const char* in, const char* erfc0, const char* exp0) {
 	tprint("const T nx2 = -x2;\n");
 	flops += 2;
 	flops += do_exp("nx2", exp0);
-	if (std::string(type) == "double") {
-		flops += 92 - 39 * fmaops;
-		tprint("erfc0 = erfc_double(%s);\n", in);
-		deindent();
-		tprint("}\n");
-	} else {
-		tprint("T t = T(1) / (T(1) + 0.3275911 * %s);\n", in);
-		flops += divops + 2;
-		tprint("%s = T(1.061405429);\n", erfc0);
-		tprint("%s = FMA(%s, t, T(-1.453152027));\n", erfc0, erfc0);
-		flops += 2 - fmaops;
-		tprint("%s = FMA(%s, t, T(1.421413741));\n", erfc0, erfc0);
-		flops += 2 - fmaops;
-		tprint("%s = FMA(%s, t, T(-0.284496736));\n", erfc0, erfc0);
-		flops += 2 - fmaops;
-		tprint("%s = FMA(%s, t, T(0.254829592));\n", erfc0, erfc0);
-		flops += 2 - fmaops;
-		tprint("%s *= t;\n", erfc0);
-		flops += 1;
-		tprint("%s *= %s;\n", erfc0, exp0);
-		flops += 1;
-		deindent();
-		tprint("}\n");
-	}
+	tprint("T t = T(1) / (T(1) + 0.3275911 * %s);\n", in);
+	flops += divops + 2;
+	tprint("%s = T(1.061405429);\n", erfc0);
+	tprint("%s = FMA(%s, t, T(-1.453152027));\n", erfc0, erfc0);
+	flops += 2 - fmaops;
+	tprint("%s = FMA(%s, t, T(1.421413741));\n", erfc0, erfc0);
+	flops += 2 - fmaops;
+	tprint("%s = FMA(%s, t, T(-0.284496736));\n", erfc0, erfc0);
+	flops += 2 - fmaops;
+	tprint("%s = FMA(%s, t, T(0.254829592));\n", erfc0, erfc0);
+	flops += 2 - fmaops;
+	tprint("%s *= t;\n", erfc0);
+	flops += 1;
+	tprint("%s *= %s;\n", erfc0, exp0);
+	flops += 1;
+	deindent();
+	tprint("}\n");
 	return flops;
 }
 
 int do_sincos(const char* in, const char* sout, const char* cout) {
 	tprint("{\n");
 	indent();
-	if (std::string(type) == "float") {
+	if (is_float(type)) {
 		tprint("V ssgn = V((((U&) %s & U(0x80000000)) >> U(30)) - U(1));\n", in);
 		tprint("V j = V(((U&) %s & U(0x7FFFFFFF)));\n", in);
 		tprint("%s = (T&) j;\n", in);
@@ -269,7 +279,7 @@ int do_sincos(const char* in, const char* sout, const char* cout) {
 }
 
 int do_rsqrt(const char* xin, const char* yout) {
-	if (std::string(type) == "float") {
+	if (is_float(type)) {
 		tprint("{\n");
 		indent();
 		tprint("T xxx = %s + T(%.16e);\n", xin, std::numeric_limits<float>::min());
@@ -283,7 +293,7 @@ int do_rsqrt(const char* xin, const char* yout) {
 		deindent();
 		tprint("}\n");
 		return 15 - 3 * fmaops;
-	} else if (std::string(type) == "double") {
+	} else if (is_double(type)) {
 		tprint("{\n");
 		indent();
 		tprint("T xxx = %s + T(%.16e);\n", xin, std::numeric_limits<double>::min());
@@ -303,9 +313,9 @@ int do_rsqrt(const char* xin, const char* yout) {
 
 int do_sqrt(const char* xin, const char* yout) {
 	int flops = 0;
-	if (std::string(type) == "float") {
+	if (is_float(type)) {
 		flops += do_rsqrt(xin, yout);
-	} else if (std::string(type) == "double") {
+	} else if (is_double(type)) {
 		flops += do_rsqrt(xin, yout);
 	}
 	tprint("%s = T(1) / %s;\n", yout, yout);
@@ -521,7 +531,6 @@ void func_header(const char* func, int P, bool nopot, bool pub, Args&& ...args) 
 //		printf("%s ", file_name.c_str());
 		set_file(file_name);
 		tprint("#include \"spherical_fmm.hpp\"\n");
-		tprint("#include \"erfc_double.hpp\"\n");
 		tprint("#include <stdio.h>\n");
 		tprint("#include \"detail/spherical_fmm.hpp\"\n");
 		tprint("\n");
@@ -1513,7 +1522,7 @@ int erfc_double_create(int i2, double alpha) {
 
 int ewald_greens(int P, double alpha) {
 	int R2, H2;
-	if (type == "float") {
+	if (is_float(type)) {
 		ewald_limits<float>(R2, H2, alpha);
 	} else {
 		ewald_limits<double>(R2, H2, alpha);
@@ -1531,7 +1540,7 @@ int ewald_greens(int P, double alpha) {
 	//flops += greens(P);
 	//set_tprint(c);
 	std::vector<int> erfc_flops(R2 + 1, 0);
-	if (type != "float") {
+	if (is_double(type)) {
 		tprint("\n");
 		tprint("const auto exp = [](T x) {\n");
 		indent();
@@ -1549,7 +1558,9 @@ int ewald_greens(int P, double alpha) {
 	flops += greens(P);
 	set_tprint(c);
 	int cnt = 0;
-	erfc_flops[0] = erfc_double_create(0, alpha);
+	if (type != "float") {
+		erfc_flops[0] = erfc_double_create(0, alpha);
+	}
 	for (int ix = -R; ix <= R; ix++) {
 		for (int iy = -R; iy <= R; iy++) {
 			for (int iz = -R; iz <= R; iz++) {
@@ -1557,8 +1568,10 @@ int ewald_greens(int P, double alpha) {
 				if (i2 > R2 && i2 != 0) {
 					continue;
 				}
-				if (erfc_flops[i2] == 0) {
-					erfc_flops[i2] = erfc_double_create(i2, alpha);
+				if (type != "float") {
+					if (erfc_flops[i2] == 0) {
+						erfc_flops[i2] = erfc_double_create(i2, alpha);
+					}
 				}
 				cnt++;
 			}
@@ -1578,7 +1591,7 @@ int ewald_greens(int P, double alpha) {
 	tprint("T xxx = T(%.16e) * r;\n", alpha);
 	flops++;
 	tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-	if (type == "float") {
+	if (type == std::string("float")) {
 		flops += do_erfcexp("xxx", "gamma1", "exp0");
 	} else {
 		tprint("erfcexp0(xxx, gamma1, exp0);\n");
@@ -1654,7 +1667,7 @@ int ewald_greens(int P, double alpha) {
 					tprint("T xxx = T(%.16e) * r;\n", alpha);
 					flops += 1;
 					tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-					if (type == "float") {
+					if (type == std::string("float")) {
 						flops += do_erfcexp("xxx", "gamma1", "exp0");
 					} else {
 						tprint("erfcexp%i(xxx, gamma1, exp0);\n", ii);
@@ -1672,7 +1685,7 @@ int ewald_greens(int P, double alpha) {
 						tprint("gamma = gamma1 * T(%.16e);\n", gamma0inv);
 						flops += 1;
 						for (int m = -l; m <= l; m++) {
-							if( first ) {
+							if (first) {
 								tprint("Greal[%i] = gamma * Gr[%i];\n", index(l, m), index(l, m));
 								flops += 1;
 							} else {
@@ -1967,7 +1980,7 @@ int ewald_greens(int P, double alpha) {
 				}
 				if (tprint_on) {
 					if (first) {
-						fprintf(fp, ");\n", ii);
+						fprintf(fp, ");\n");
 					} else {
 						fprintf(fp, ", Gfour[%i]);\n", ii);
 					}
@@ -1978,7 +1991,7 @@ int ewald_greens(int P, double alpha) {
 	}
 	for (int i = 0; i < (P + 1) * (P + 1); i++) {
 		tprint("G[%i] += Greal[%i] + Gfour[%i];\n", i, i, i);
-		flops+=2;
+		flops += 2;
 	}
 	tprint("G[%i] = T(%.16e);\n", (P + 1) * (P + 1), (4.0 * M_PI / 3.0));
 	if (!nophi) {
@@ -3202,12 +3215,174 @@ int main() {
 	deindent();
 	tprint("}\n");
 	tprint("\n");
+
+#if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
+	fprintf(fp, "\n"
+			"#define create_binary_op(type, op) \\\n"
+			"		inline type operator op (const type& u ) const { \\\n"
+			"			type w; \\\n"
+			"			w.v = v op u.v; \\\n"
+			"			return w; \\\n"
+			"		} \\\n"
+			"		inline type& operator op##= (const type& u ) { \\\n"
+			"			*this = *this op u; \\\n"
+			"			return *this; \\\n"
+			"		}\n"
+			"\n"
+			"#define create_unary_op(type, op) \\\n"
+			"		inline type operator op () const { \\\n"
+			"			type w; \\\n"
+			"			w.v = op v; \\\n"
+			"			return w; \\\n"
+			"		}\n"
+			"\n"
+			"#define create_convert_op_prot(type,otype) \\\n"
+			"		inline type##_vec(const otype##_vec&); \\\n"
+			"		inline type##_vec(const otype&); \\\n"
+			"		inline type##_vec& operator=(const otype##_vec&); \\\n"
+			"		inline type##_vec& operator=(const otype&)\n"
+			"\n"
+			"#define create_convert_op_def(type,otype) \\\n"
+			"	inline type##_vec::type##_vec(const otype##_vec& other) { \\\n"
+			"		v = __builtin_convertvector(other.v, vtype); \\\n"
+			"	} \\\n"
+			"	inline type##_vec& type##_vec::operator=(const otype##_vec& other) { \\\n"
+			"		v = __builtin_convertvector(other.v, vtype); \\\n"
+			"		return *this; \\\n"
+			"	}\n"
+			"\n"
+			"#define create_broadcast_op(type) \\\n"
+			"	inline type##_vec(const type& other) { \\\n"
+			"		v = other - vtype{}; \\\n"
+			"	} \\\n"
+			"	inline type##_vec& operator=(const type& other) { \\\n"
+			"		v = other - vtype{}; \\\n"
+			"		return *this; \\\n"
+			"	}\n"
+			"\n"
+			"#define create_compare_op_prot(type, op) \\\n"
+			"	inline type##_vec operator op (const type##_vec&) const\n"
+			"\n"
+			"#define create_compare_op_def(type, op) \\\n"
+			"	inline type##_vec type##_vec::operator op (const type##_vec& other) const { \\\n"
+			"		type##_vec w; \\\n"
+			"		w.v = (-(v op other.v)); \\\n"
+			"		return w; \\\n"
+			"	}\n"
+			"\n"
+			"#define create_vec_types_fwd(type)              \\\n"
+			"	class type##_vec\n"
+			"\n"
+			"#define create_rvec_types(type, sitype, uitype, size)              \\\n"
+			"	class type##_vec {                                           \\\n"
+			"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
+			"		vtype v;  \\\n"
+			"	public: \\\n"
+			"	inline constexpr type##_vec() : v() {} \\\n"
+			"	create_binary_op(type##_vec, +); \\\n"
+			"	create_binary_op(type##_vec, -); \\\n"
+			"	create_binary_op(type##_vec, *); \\\n"
+			"	create_binary_op(type##_vec, /); \\\n"
+			"	create_unary_op(type##_vec, +); \\\n"
+			"	create_unary_op(type##_vec, -); \\\n"
+			"	create_convert_op_prot(type, sitype); \\\n"
+			"	create_convert_op_prot(type, uitype); \\\n"
+			"	create_broadcast_op(type); \\\n"
+			"	create_compare_op_prot(type, <); \\\n"
+			"	create_compare_op_prot(type, >); \\\n"
+			"	create_compare_op_prot(type, <=); \\\n"
+			"	create_compare_op_prot(type, >=); \\\n"
+			"	create_compare_op_prot(type, ==); \\\n"
+			"	create_compare_op_prot(type, !=); \\\n"
+			"	friend class sitype##_vec; \\\n"
+			"	friend class uitype##_vec; \\\n"
+			"}\n"
+			"\n"
+			"#define create_ivec_types(type, otype, rtype, size)              \\\n"
+			"	class type##_vec {                                           \\\n"
+			"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
+			"		vtype v;  \\\n"
+			"	public: \\\n"
+			"	inline constexpr type##_vec() : v() {} \\\n"
+			"	create_binary_op(type##_vec, +); \\\n"
+			"	create_binary_op(type##_vec, -); \\\n"
+			"	create_binary_op(type##_vec, *); \\\n"
+			"	create_binary_op(type##_vec, /); \\\n"
+			"	create_binary_op(type##_vec, &); \\\n"
+			"	create_binary_op(type##_vec, ^); \\\n"
+			"	create_binary_op(type##_vec, |); \\\n"
+			"	create_binary_op(type##_vec, >>); \\\n"
+			"	create_binary_op(type##_vec, <<); \\\n"
+			"	create_unary_op(type##_vec, +); \\\n"
+			"	create_unary_op(type##_vec, -); \\\n"
+			"	create_unary_op(type##_vec, ~); \\\n"
+			"	create_broadcast_op(type); \\\n"
+			"	create_convert_op_prot(type, rtype); \\\n"
+			"	create_convert_op_prot(type, otype); \\\n"
+			"	create_compare_op_prot(type, <); \\\n"
+			"	create_compare_op_prot(type, >); \\\n"
+			"	create_compare_op_prot(type, <=); \\\n"
+			"	create_compare_op_prot(type, >=); \\\n"
+			"	create_compare_op_prot(type, ==); \\\n"
+			"	create_compare_op_prot(type, !=); \\\n"
+			"	friend class rtype##_vec; \\\n"
+			"	friend class otype##_vec; \\\n"
+			"}\n"
+			"\n"
+			"#define create_rvec_types_def(type, sitype, uitype, size)\\\n"
+			"		create_convert_op_def(type, sitype); \\\n"
+			"		create_convert_op_def(type, uitype)\n"
+			"\n"
+			"#define create_ivec_types_def(type, otype, rtype, size)              \\\n"
+			"		create_convert_op_def(type, rtype); \\\n"
+			"		create_convert_op_def(type, otype)\n"
+			"\n"
+			"#define create_vec_types(rtype, sitype, uitype, size) \\\n"
+			"		create_vec_types_fwd(rtype); \\\n"
+			"		create_vec_types_fwd(uitype); \\\n"
+			"		create_vec_types_fwd(sitype); \\\n"
+			"		create_rvec_types(rtype, sitype, uitype, size); \\\n"
+			"		create_ivec_types(uitype, sitype, rtype, size); \\\n"
+			"		create_ivec_types(sitype, uitype, rtype, size); \\\n"
+			"		create_rvec_types_def(rtype, sitype, uitype, size); \\\n"
+			"		create_ivec_types_def(uitype, sitype, rtype, size); \\\n"
+			"		create_ivec_types_def(sitype, uitype, rtype, size); \\\n"
+			"		create_compare_op_def(rtype, <); \\\n"
+			"		create_compare_op_def(rtype, >); \\\n"
+			"		create_compare_op_def(rtype, <=); \\\n"
+			"		create_compare_op_def(rtype, >=); \\\n"
+			"		create_compare_op_def(rtype, ==); \\\n"
+			"		create_compare_op_def(rtype, !=); \\\n"
+			"		create_compare_op_def(uitype, <); \\\n"
+			"		create_compare_op_def(uitype, >); \\\n"
+			"		create_compare_op_def(uitype, <=); \\\n"
+			"		create_compare_op_def(uitype, >=); \\\n"
+			"		create_compare_op_def(uitype, ==); \\\n"
+			"		create_compare_op_def(uitype, !=); \\\n"
+			"		create_compare_op_def(sitype, <); \\\n"
+			"		create_compare_op_def(sitype, >); \\\n"
+			"		create_compare_op_def(sitype, <=); \\\n"
+			"		create_compare_op_def(sitype, >=); \\\n"
+			"		create_compare_op_def(sitype, ==); \\\n"
+			"		create_compare_op_def(sitype, !=)\n\n");
+#endif
+
+#ifdef VEC_DOUBLE
+	fprintf(fp, "#include <cstdint>\n\n", VEC_DOUBLE_SIZE);
+	fprintf(fp, "#define VEC_DOUBLE_SIZE %i\n\n", VEC_DOUBLE_SIZE);
+	fprintf(fp, "create_vec_types(double, int64_t, uint64_t, VEC_DOUBLE_SIZE);\n\n");
+#endif
+#ifdef VEC_FLOAT
+	fprintf(fp, "#define VEC_FLOAT_SIZE %i\n\n", VEC_FLOAT_SIZE);
+	fprintf(fp, "create_vec_types(float, int, unsigned, VEC_FLOAT_SIZE);\n\n");
+#endif
+
 	const char* rtypenames[] = { "float", "double" };
 	const char* sitypenames[] = { "int", "long long" };
 	const char* uitypenames[] = { "unsigned", "unsigned long long" };
 	const int ntypenames = 2;
 
-	for (int ti = 1; ti < ntypenames; ti++) {
+	for (int ti = 0; ti < ntypenames; ti++) {
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
