@@ -248,8 +248,8 @@ spherical_expansion<T, P> spherical_expansion_ref_M2L(spherical_expansion<T, P -
 
 #include <fenv.h>
 
-void ewald_compute(double& pot, double& fx, double& fy, double& fz, double dx0, double dx1, double dx2) {
-	const double cons1 = double(4.0f / sqrtf(M_PI));
+void ewald_compute(long double& pot, long double& fx, long double& fy, long double& fz, long double dx0, long double dx1, long double dx2) {
+	const long double cons1 = (long double)(4.0L / sqrtl(4.0L*atanl(1)));
 	fx = 0.0;
 	fy = 0.0;
 	fz = 0.0;
@@ -257,43 +257,43 @@ void ewald_compute(double& pot, double& fx, double& fy, double& fz, double dx0, 
 	const auto r2 = sqr(dx0, dx1, dx2);  // 5
 
 	if (r2 > 0.) {
-		const double dx = dx0;
-		const double dy = dx1;
-		const double dz = dx2;
-		const double r2 = sqr(dx, dy, dz);
-		const double r = sqrt(r2);
-		const double rinv = 1. / r;
-		const double r2inv = rinv * rinv;
-		const double r3inv = r2inv * rinv;
-		double exp0 = exp(-4.0 * r2);
-		double erf0 = erf(2.0 * r);
-		const double expfactor = cons1 * r * exp0;
-		const double d0 = erf0 * rinv;
-		const double d1 = (expfactor - erf0) * r3inv;
+		const long double dx = dx0;
+		const long double dy = dx1;
+		const long double dz = dx2;
+		const long double r2 = sqr(dx, dy, dz);
+		const long double r = sqrtl(r2);
+		const long double rinv = 1.L / r;
+		const long double r2inv = rinv * rinv;
+		const long double r3inv = r2inv * rinv;
+		long double exp0 = expl(-4.0L * r2);
+		long double erf0 = erfl(2.0L * r);
+		const long double expfactor = cons1 * r * exp0;
+		const long double d0 = erf0 * rinv;
+		const long double d1 = (expfactor - erf0) * r3inv;
 		pot += d0;
 		fx -= dx * d1;
 		fy -= dy * d1;
 		fz -= dz * d1;
-		for (int xi = -3; xi <= +3; xi++) {
-			for (int yi = -3; yi <= +3; yi++) {
-				for (int zi = -3; zi <= +3; zi++) {
+		for (int xi = -4; xi <= +4; xi++) {
+			for (int yi = -4; yi <= +4; yi++) {
+				for (int zi = -4; zi <= +4; zi++) {
 					const bool center = sqr(xi, yi, zi) == 0;
-					if (center || sqr(xi, yi, zi) > 12) {
+					if (center || sqr(xi, yi, zi) > 20) {
 						continue;
 					}
-					const double dx = dx0 - xi;
-					const double dy = dx1 - yi;
-					const double dz = dx2 - zi;
-					const double r2 = sqr(dx, dy, dz);
-					const double r = sqrt(r2);
-					const double rinv = 1. / r;
-					const double r2inv = rinv * rinv;
-					const double r3inv = r2inv * rinv;
-					double exp0 = exp(-4.0 * r2);
-					double erfc0 = erfc(2.0 * r);
-					const double expfactor = cons1 * r * exp0;
-					const double d0 = -erfc0 * rinv;
-					const double d1 = (expfactor + erfc0) * r3inv;
+					const long double dx = dx0 - xi;
+					const long double dy = dx1 - yi;
+					const long double dz = dx2 - zi;
+					const long double r2 = sqr(dx, dy, dz);
+					const long double r = sqrtl(r2);
+					const long double rinv = 1.L / r;
+					const long double r2inv = rinv * rinv;
+					const long double r3inv = r2inv * rinv;
+					long double exp0 = expl(-4.0L * r2);
+					long double erfc0 = erfcl(2.0L * r);
+					const long double expfactor = cons1 * r * exp0;
+					const long double d0 = -erfc0 * rinv;
+					const long double d1 = (expfactor + erfc0) * r3inv;
 					pot += d0;
 					fx -= dx * d1;
 					fy -= dy * d1;
@@ -301,21 +301,21 @@ void ewald_compute(double& pot, double& fx, double& fy, double& fz, double dx0, 
 				}
 			}
 		}
-		pot += double(M_PI / 4.);
-		for (int xi = -3; xi <= +3; xi++) {
-			for (int yi = -3; yi <= +3; yi++) {
-				for (int zi = -3; zi <= +3; zi++) {
-					const double hx = xi;
-					const double hy = yi;
-					const double hz = zi;
-					const double h2 = sqr(hx, hy, hz);
-					if (h2 > 0.0 && h2 <= 13) {
-						const double hdotx = dx0 * hx + dx1 * hy + dx2 * hz;
-						const double omega = double(2.0 * M_PI) * hdotx;
-						double c, s;
-						sincos(omega, &s, &c);
-						const double c0 = -1. / h2 * exp(double(-M_PI * M_PI * 0.25f) * h2) * double(1. / M_PI);
-						const double c1 = -s * 2.0 * M_PI * c0;
+		pot += (long double)(atanl(1));
+		for (int xi = -4; xi <= +4; xi++) {
+			for (int yi = -4; yi <= +4; yi++) {
+				for (int zi = -4; zi <= +4; zi++) {
+					const long double hx = xi;
+					const long double hy = yi;
+					const long double hz = zi;
+					const long double h2 = sqr(hx, hy, hz);
+					if (h2 > 0.0L && h2 <= 20) {
+						const long double hdotx = dx0 * hx + dx1 * hy + dx2 * hz;
+						const long double omega = (long double)(8.0L * atanl(1)) * hdotx;
+						long double c, s;
+						sincosl(omega, &s, &c);
+						const long double c0 = -1.L / h2 * exp((long double)(-sqr(4.0L*atanl(1)) * 0.25L) * h2) * (long double)(1.L / (4.0L*atanl(1)));
+						const long double c1 = -s * 8.0L * atanl(1) * c0;
 						pot += c0 * c;
 						fx -= c1 * hx;
 						fy -= c1 * hy;
@@ -325,7 +325,7 @@ void ewald_compute(double& pot, double& fx, double& fy, double& fz, double dx0, 
 			}
 		}
 	} else {
-		pot += 2.837291f;
+		pot += 2.837291L;
 	}
 }
 
@@ -674,7 +674,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 
 	real err2 = 0.0;
 	real norm = 0.0;
-	double phi, fx, fy, fz;
+	long double phi, fx, fy, fz;
 	for (int i = 0; i < N; i++) {
 		if (type == EWALD) {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
@@ -734,8 +734,11 @@ real test_M2L(test_type type, real theta = 0.5) {
 			//		printf( "%e %e %e\n", fx, fy, fz);
 			//	abort();
 			//		printf( "%e %e %e\n", phi, L0[0], phi/ L0[0]);
-			err += fabs((phi - L2[0]));
-			norm += fabs(phi);
+			const double fa = sqrt(fx*fx+fy*fy+fz*fz);
+			const double fn = sqrt(sqr(L2[3], L2[1], L2[2]));
+		//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
+			err += fabs(fa-fn);
+			norm += fabs(fa);
 
 		} else {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
@@ -793,8 +796,14 @@ real test_M2L(test_type type, real theta = 0.5) {
 			const real dz = (z2 + z1) - z0;
 			const real r = sqrt(sqr(dx, dy, dz));
 			const real phi = 1.0 / r;
-			err += fabs((L2[0] - phi));
-			norm += fabs(phi);
+			const real fx = dx / (r*r*r);
+			const real fy = dy / (r*r*r);
+			const real fz = dz / (r*r*r);
+			const double fa = sqrt(fx*fx+fy*fy+fz*fz);
+			const double fn = sqrt(sqr(L2[3], L2[1], L2[2]));
+		//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
+			err += fabs(fa-fn);
+			norm += fabs(fa);
 		}
 	}
 	err /= norm;
@@ -1477,13 +1486,13 @@ int main() {
 //}
 //	printf("%i %i %e\n", N1_min, N2_min, err_min);
 	//return 0;
-	run_tests<25, 3> run;
-	printf("M2L\n");
-	run(CC);
+	run_tests<16, 3> run;
 	printf("M2P\n");
 	run(PC);
-	printf("P2L\n");
-	run(CP);
+	printf("M2L\n");
+	run(CC);
 	printf("EWALD\n");
 	run(EWALD);
+	printf("P2L\n");
+	run(CP);
 }
