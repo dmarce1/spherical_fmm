@@ -10,7 +10,7 @@
 template<class T>
 using complex = std::complex<T>;
 
-#define TEST_TYPE_FLOAT
+#define TEST_TYPE_DOUBLE
 
 #ifdef TEST_TYPE_FLOAT
 using real = float;

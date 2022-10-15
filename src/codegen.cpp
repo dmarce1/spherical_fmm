@@ -1299,7 +1299,7 @@ int ewald_greens(int P, double alpha) {
 	tprint("T xxx = T(%.20e) * r;\n", alpha);
 	flops++;
 	tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-	tprint("erfcexp_%s(xxx, gamma1, exp0);\n", type.c_str());
+	tprint("erfcexp_%s(xxx, &gamma1, &exp0);\n", type.c_str());
 	flops += erfcexp_flops;
 	tprint("gamma1 *= T(%.20e);\n", sqrt(M_PI));
 	flops += 1;
@@ -1372,7 +1372,7 @@ int ewald_greens(int P, double alpha) {
 					tprint("T xxx = T(%.20e) * r;\n", alpha);
 					flops += 1;
 					tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-					tprint("erfcexp_%s(xxx, gamma1, exp0);\n", type.c_str());
+					tprint("erfcexp_%s(xxx, &gamma1, &exp0);\n", type.c_str());
 					tprint("gamma1 *= T(%.20e);\n", -sqrt(M_PI));
 					flops += 1;
 					tprint("const T xfac = T(%.20e) * r2;\n", alpha * alpha);
@@ -1495,7 +1495,7 @@ int ewald_greens(int P, double alpha) {
 				}
 				tprint("phi = T(%.20e) * hdotx;\n", 2.0 * M_PI);
 				flops++;
-				tprint("sincos_%s(phi, %s, %s);\n", type.c_str(), sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
+				tprint("sincos_%s(phi, &%s, &%s);\n", type.c_str(), sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
 				flops += sincos_flops;
 			}
 		}
@@ -2896,23 +2896,33 @@ void math_functions() {
 	if (fp) {
 		fclose(fp);
 	}
-	const char* sout = "s";
-	const char* cout = "c";
+	const char* sout = "*s";
+	const char* cout = "*c";
 #ifdef FLOAT
 	fp = fopen("./generated_code/include/math_float.h", "wt");
 	tprint("#ifndef SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("#define SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("\n");
+	tprint("#ifdef __cplusplus\n");
+	tprint("extern \"C\" {\n");
+	tprint("#endif\n");
 	tprint("float rsqrt_float( float );\n");
 	tprint("float sqrt_float( float );\n");
-	tprint("void sincos_float( float, float&, float& );\n");
-	tprint("void erfcexp_float( float, float&, float& );\n");
+	tprint("void sincos_float( float, float*, float* );\n");
+	tprint("void erfcexp_float( float, float*, float* );\n");
+	tprint("#ifdef __cplusplus\n");
+	tprint("}\n");
+	tprint("#endif\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_float.cpp", "wt");
+	fp = fopen("./generated_code/src/math_float.c", "wt");
 	tprint("\n");
 	tprint("#include <math.h>\n");
+	tprint("\n");
+	tprint("#define TCAST(a) ((float)(a))\n");
+	tprint("#define UCAST(a) ((unsigned)(a))\n");
+	tprint("#define VCAST(a) ((int)(a))\n");
 	tprint("\n");
 	tprint("typedef float T;\n");
 	tprint("typedef unsigned U;\n");
@@ -2920,49 +2930,50 @@ void math_functions() {
 	tprint("\n");
 	tprint("T rsqrt_float( T x ) {\n");
 	indent();
-	tprint("x += T(%.20e);\n", std::numeric_limits<float>::min());
-	tprint("V i = *((V*) &x);\n");
-	tprint("i >>= V(1);\n");
-	tprint("i = V(0x5F3759DF) - i;\n");
-	tprint("T y = *((T*) &i);\n");
-	tprint("y *= fmaf(T(-0.5), x * y * y, T(1.5));\n");
-	tprint("y *= fmaf(T(-0.5), x * y * y, T(1.5));\n");
-	tprint("y *= fmaf(T(-0.5), x * y * y, T(1.5));\n");
+	tprint("V i;\n");
+	tprint("T y;\n");
+	tprint("x += TCAST(%.20e);\n", std::numeric_limits<float>::min());
+	tprint("i = *((V*) &x);\n");
+	tprint("i >>= VCAST(1);\n");
+	tprint("i = VCAST(0x5F3759DF) - i;\n");
+	tprint("y = *((T*) &i);\n");
+	tprint("y *= fmaf(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fmaf(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fmaf(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
 	tprint("return y;\n");
 	deindent();
 	tprint("}\n");
 	tprint("\n");
 	tprint("T sqrt_float(float x) {\n");
 	indent();
-	tprint("return T(1) / rsqrt_float(x);\n");
+	tprint("return TCAST(1) / rsqrt_float(x);\n");
 	deindent();
 	tprint("}\n");
 	tprint("\n");
-	tprint("void sincos_float( T x, T& s, T& c ) {\n");
+	tprint("void sincos_float( T x, T* s, T* c ) {\n");
 	indent();
-	tprint("V ssgn = V((((U&) x & U(0x80000000)) >> U(30)) - U(1));\n");
-	tprint("V j = V(((U&) x & U(0x7FFFFFFF)));\n");
-	tprint("x = (T&) j;\n");
-	tprint("V i = x * T(%.20e);\n", 1.0 / M_PI);
-	tprint("x -= i * T(%.20e);\n", M_PI);
-	tprint("x -= T(%.20e);\n", 0.5 * M_PI);
-	tprint("T x2 = x * x;\n");
-	tprint("%s = T(%.20e);\n", cout, -1.0 / factorial(11));
-	tprint("%s = T(%.20e);\n", sout, -1.0 / factorial(10));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(9));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(8));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(7));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(6));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(5));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(4));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(3));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(2));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(1));
-	tprint("%s = fmaf(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(0));
+	tprint( "V ssgn, j, i, k;\n");
+	tprint( "T x2;\n");
+	tprint("ssgn = VCAST(((*((U*) &x) & UCAST(0x80000000)) >> UCAST(30)) - UCAST(1));\n");
+	tprint("j = VCAST((*((U*) &x) & UCAST(0x7FFFFFFF)));\n");
+	tprint("x = *((T*) &j);\n");
+	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
+	tprint("x -= i * TCAST(%.20e);\n", M_PI);
+	tprint("x -= TCAST(%.20e);\n", 0.5 * M_PI);
+	tprint("x2 = x * x;\n");
+	{
+		constexpr int N = 11;
+		tprint("%s = TCAST(%.20e);\n", cout, nonepow(N / 2) / factorial(N));
+		tprint("%s = TCAST(%.20e);\n", sout, cout, nonepow((N - 1) / 2) / factorial(N - 1));
+		for (int n = N - 2; n >= 0; n -= 2) {
+			tprint("%s = fmaf(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
+			tprint("%s = fmaf(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
+		}
+	}
 	tprint("%s *= x;\n", cout);
-	tprint("V k = (((i & V(1)) << V(1)) - V(1));\n");
-	tprint("%s *= T(ssgn * k);\n", sout);
-	tprint("%s *= T(k);\n", cout);
+	tprint("k = (((i & VCAST(1)) << VCAST(1)) - VCAST(1));\n");
+	tprint("%s *= TCAST(ssgn * k);\n", sout);
+	tprint("%s *= TCAST(k);\n", cout);
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -2971,15 +2982,17 @@ void math_functions() {
 	{
 		indent();
 		constexpr int N = 7;
-		tprint("V k =  x / T(0.6931471805599453094172) + T(0.5);\n"); // 1 + divops
-		tprint("k -= x < T(0);\n");
-		tprint("T xxx = x - k * T(0.6931471805599453094172);\n");
-		tprint("T y = T(%.20e);\n", 1.0 / factorial(N));
+		tprint( "V k;\n");
+		tprint( "T y, xxx;\n");
+		tprint("k =  x / TCAST(0.6931471805599453094172) + TCAST(0.5);\n"); // 1 + divops
+		tprint("k -= x < TCAST(0);\n");
+		tprint("xxx = x - k * TCAST(0.6931471805599453094172);\n");
+		tprint("y = TCAST(%.20e);\n", 1.0 / factorial(N));
 		for (int i = N - 1; i >= 0; i--) {
-			tprint("y = fmaf(y, xxx, T(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
+			tprint("y = fmaf(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
 		}
-		tprint("k = (k + V(127)) << V(23);\n");
-		tprint("y *= (T&) (k);\n"); //1
+		tprint("k = (k + VCAST(127)) << VCAST(23);\n");
+		tprint("y *= *((T*) (&k));\n"); //1
 		tprint("return y;\n");
 		deindent();
 		tprint("}\n");
@@ -2987,38 +3000,38 @@ void math_functions() {
 	}
 	{
 
-		tprint("void erfcexp_float( T x, T& erfc0, T& exp0 ) {\n");
+		tprint("void erfcexp_float( T x, T* erfc0, T* exp0 ) {\n");
 		indent();
-		tprint("const T x2 = x * x;\n");
-		tprint("const T nx2 = -x2;\n");
-		tprint("T q, x0;\n");
-		tprint("exp0 = exp_float(nx2);\n");
+		tprint("T x2, nx2, q, x0;\n");
+		tprint("x2 = x * x;\n");
+		tprint("nx2 = -x2;\n");
+		tprint("*exp0 = exp_float(nx2);\n");
 
 		constexpr double x0 = 2.75;
-		tprint("if (x < T(%.20e) ) {\n", x0);
+		tprint("if (x < TCAST(%.20e) ) {\n", x0);
 		{
 			indent();
 			constexpr int N = 25;
-			tprint("q = T(2) * x * x;\n");
-			tprint("erfc0 = T(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
+			tprint("q = TCAST(2) * x * x;\n");
+			tprint("*erfc0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
 			for (int n = N - 1; n >= 0; n--) {
-				tprint("erfc0 = fmaf(erfc0, q, T(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
+				tprint("*erfc0 = fmaf(*erfc0, q, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
 			}
-			tprint("erfc0 *= T(%.20e) * x * exp0;\n", 2.0 / sqrt(M_PI));
-			tprint("erfc0 = T(1) - erfc0;\n");
+			tprint("*erfc0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
+			tprint("*erfc0 = TCAST(1) - *erfc0;\n");
 			deindent();
 		}
 		tprint("} else  {\n");
 		{
 			indent();
 			constexpr int N = x0 * x0 + 0.5;
-			tprint("q = T(1) / (T(2) * x * x);\n");
-			tprint("erfc0 = T(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
+			tprint("q = TCAST(1) / (TCAST(2) * x * x);\n");
+			tprint("*erfc0 = TCAST(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
 			for (int i = N - 1; i >= 1; i--) {
-				tprint("erfc0 = fmaf(erfc0, q, T(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
+				tprint("*erfc0 = fmaf(*erfc0, q, TCAST(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
 			}
-			tprint("erfc0 = fmaf(erfc0, q, T(1));\n");
-			tprint("erfc0 *= exp0 * T(%.20e) / x;\n", 1.0 / sqrt(M_PI));
+			tprint("*erfc0 = fmaf(*erfc0, q, TCAST(1));\n");
+			tprint("*erfc0 *= *exp0 * TCAST(%.20e) / x;\n", 1.0 / sqrt(M_PI));
 			deindent();
 		}
 		tprint("}\n");
@@ -3033,16 +3046,26 @@ void math_functions() {
 	tprint("#ifndef SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("#define SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("\n");
+	tprint("#ifdef __cplusplus\n");
+	tprint("extern \"C\" {\n");
+	tprint("#endif\n");
 	tprint("double rsqrt_double( double );\n");
 	tprint("double sqrt_double( double );\n");
-	tprint("void sincos_double( double, double&, double& );\n");
-	tprint("void erfcexp_double( double, double&, double& );\n");
+	tprint("void sincos_double( double, double*, double* );\n");
+	tprint("void erfcexp_double( double, double*, double* );\n");
+	tprint("#ifdef __cplusplus\n");
+	tprint("}\n");
+	tprint("#endif\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_double.cpp", "wt");
+	fp = fopen("./generated_code/src/math_double.c", "wt");
 	tprint("\n");
 	tprint("#include <math.h>\n");
+	tprint("\n");
+	tprint("#define TCAST(a) ((double)(a))\n");
+	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
+	tprint("#define VCAST(a) ((long long)(a))\n");
 	tprint("\n");
 	tprint("typedef double T;\n");
 	tprint("typedef unsigned long long U;\n");
@@ -3050,60 +3073,51 @@ void math_functions() {
 	tprint("\n");
 	tprint("double rsqrt_double( T x ) {\n");
 	indent();
-	tprint("x += T(%.20e);\n", std::numeric_limits<double>::min());
-	tprint("V i = *((V*) &x);\n");
-	tprint("i >>= V(1);\n");
-	tprint("i = V(0x5FE6EB50C7B537A9) - i;\n");
-	tprint("T y = *((T*) &i);\n");
-	tprint("y *= fma(T(-0.5), x * y * y, T(1.5));\n");
-	tprint("y *= fma(T(-0.5), x * y * y, T(1.5));\n");
-	tprint("y *= fma(T(-0.5), x * y * y, T(1.5));\n");
-	tprint("y *= fma(T(-0.5), x * y * y, T(1.5));\n");
+	tprint("V i;\n");
+	tprint("T y;\n");
+	tprint("x += TCAST(%.20e);\n", std::numeric_limits<double>::min());
+	tprint("i = *((V*) &x);\n");
+	tprint("i >>= VCAST(1);\n");
+	tprint("i = VCAST(0x5FE6EB50C7B537A9) - i;\n");
+	tprint("y = *((T*) &i);\n");
+	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
 	tprint("return y;\n");
 	deindent();
 	tprint("}\n");
 	tprint("\n");
 	tprint("T sqrt_double(T x) {\n");
 	indent();
-	tprint("return T(1) / rsqrt_double(x);\n");
+	tprint("return TCAST(1) / rsqrt_double(x);\n");
 	deindent();
 	tprint("}\n");
 	tprint("\n");
-	tprint("void sincos_double( T x, T& s, T& c ) {\n");
+	tprint("void sincos_double( T x, T* s, T* c ) {\n");
 	indent();
-	tprint("V ssgn = V((((U&) x & U(0x8000000000000000LL)) >> U(62LL)) - U(1LL));\n");
-	tprint("V j = V(((U&) x & U(0x7FFFFFFFFFFFFFFFLL)));\n");
-	tprint("x = (T&) j;\n");
-	tprint("V i = x * T(%.20e);\n", 1.0 / M_PI);
-	tprint("x -= i * T(%.20e);\n", M_PI);
-	tprint("x -= T(%.20e);\n", 0.5 * M_PI);
-	tprint("T x2 = x * x;\n");
-	tprint("%s = T(%.20e);\n", cout, 1.0 / factorial(21));
-	tprint("%s = T(%.20e);\n", sout, 1.0 / factorial(20));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(19));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(18));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(17));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(16));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(15));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(14));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(13));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(12));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(11));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(10));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(9));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(8));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(7));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(6));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(5));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(4));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, -1.0 / factorial(3));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, -1.0 / factorial(2));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", cout, cout, 1.0 / factorial(1));
-	tprint("%s = fma(%s, x2, T(%.20e));\n", sout, sout, 1.0 / factorial(0));
+	tprint("V ssgn, j, i, k;\n");
+	tprint("T x2;\n");
+	tprint("ssgn = VCAST(((*((U*) &x) & UCAST(0x8000000000000000LL)) >> UCAST(62LL)) - UCAST(1LL));\n");
+	tprint("j = VCAST((*((U*) &x) & UCAST(0x7FFFFFFFFFFFFFFFLL)));\n");
+	tprint("x = *((T*) &j);\n");
+	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
+	tprint("x -= i * TCAST(%.20e);\n", M_PI);
+	tprint("x -= TCAST(%.20e);\n", 0.5 * M_PI);
+	tprint("x2 = x * x;\n");
+	{
+		constexpr int N = 21;
+		tprint("%s = TCAST(%.20e);\n", cout, nonepow(N / 2) / factorial(N));
+		tprint("%s = TCAST(%.20e);\n", sout, cout, nonepow((N - 1) / 2) / factorial(N - 1));
+		for (int n = N - 2; n >= 0; n -= 2) {
+			tprint("%s = fmaf(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
+			tprint("%s = fmaf(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
+		}
+	}
 	tprint("%s *= x;\n", cout);
-	tprint("V k = (((i & V(1)) << V(1)) - V(1));\n");
-	tprint("%s *= T(ssgn * k);\n", sout);
-	tprint("%s *= T(k);\n", cout);
+	tprint("k = (((i & VCAST(1)) << VCAST(1)) - VCAST(1));\n");
+	tprint("%s *= TCAST(ssgn * k);\n", sout);
+	tprint("%s *= TCAST(k);\n", cout);
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -3111,43 +3125,45 @@ void math_functions() {
 	{
 		indent();
 		constexpr int N = 18;
-		tprint("V k =  x / T(0.6931471805599453094172) + T(0.5);\n"); // 1 + divops
-		tprint("k -= x < T(0);\n");
-		tprint("T xxx = x - k * T(0.6931471805599453094172);\n");
-		tprint("T y = T(%.20e);\n", 1.0 / factorial(N));
+		tprint("V k;\n");
+		tprint("T xxx, y;\n");
+		tprint("k =  x / TCAST(0.6931471805599453094172) + TCAST(0.5);\n"); // 1 + divops
+		tprint("k -= x < TCAST(0);\n");
+		tprint("xxx = x - k * TCAST(0.6931471805599453094172);\n");
+		tprint("y = TCAST(%.20e);\n", 1.0 / factorial(N));
 		for (int i = N - 1; i >= 0; i--) {
-			tprint("y = fma(y, xxx, T(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
+			tprint("y = fma(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
 		}
-		tprint("k = (k + V(1023)) << V(52);\n");
-		tprint("y *= (T&) (k);\n"); //1
+		tprint("k = (k + VCAST(1023)) << VCAST(52);\n");
+		tprint("y *= *((T*) (&k));\n"); //1
 		tprint("return y;\n");
 		deindent();
 		tprint("}\n");
 		tprint("\n");
 	}
-	tprint("void erfcexp_double( T x, T& erfc0, T& exp0 ) {\n");
+	tprint("void erfcexp_double( T x, T* erfc0, T* exp0 ) {\n");
 	indent();
-	tprint("const T x2 = x * x;\n");
-	tprint("const T nx2 = -x2;\n");
-	tprint("T q, x0;\n");
-	tprint("exp0 = exp_double(nx2);\n");
+	tprint( "T x2, nx2, q, x0;\n");
+	tprint("x2 = x * x;\n");
+	tprint("nx2 = -x2;\n");
+	tprint("*exp0 = exp_double(nx2);\n");
 
 	constexpr double x0 = 1.0;
 	constexpr double x1 = 4.7;
-	tprint("if (x < T(%.20e) ) {\n", x0);
+	tprint("if (x < TCAST(%.20e) ) {\n", x0);
 	{
 		indent();
 		constexpr int N = 17;
-		tprint("q = T(2) * x * x;\n");
-		tprint("erfc0 = T(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
+		tprint("q = TCAST(2) * x * x;\n");
+		tprint("*erfc0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
 		for (int n = N - 1; n >= 0; n--) {
-			tprint("erfc0 = fma(erfc0, q, T(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
+			tprint("*erfc0 = fma(*erfc0, q, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
 		}
-		tprint("erfc0 *= T(%.20e) * x * exp0;\n", 2.0 / sqrt(M_PI));
-		tprint("erfc0 = T(1) - erfc0;\n");
+		tprint("*erfc0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
+		tprint("*erfc0 = TCAST(1) - *erfc0;\n");
 		deindent();
 	}
-	tprint("} else if (x < T(%.20e) ) {\n", x1);
+	tprint("} else if (x < TCAST(%.20e) ) {\n", x1);
 	indent();
 	{
 		constexpr int N = 35;
@@ -3168,25 +3184,25 @@ void math_functions() {
 			}
 		}
 		tprint("x0 = x;\n");
-		tprint("x -= T(%.20e);\n", a);
-		tprint("erfc0 = T(%.20e);\n", c0[N]);
+		tprint("x -= TCAST(%.20e);\n", a);
+		tprint("*erfc0 = TCAST(%.20e);\n", c0[N]);
 		for (int n = N - 1; n >= 0; n--) {
-			tprint("erfc0 = fma(erfc0, x, T(%.20e));\n", c0[n]);
+			tprint("*erfc0 = fma(*erfc0, x, TCAST(%.20e));\n", c0[n]);
 		}
-		tprint("erfc0 *= exp0 / x0;\n");
+		tprint("*erfc0 *= *exp0 / x0;\n");
 		deindent();
 	}
 	tprint("} else  {\n");
 	{
 		indent();
 		constexpr int N = x1 * x1 + 0.5;
-		tprint("q = T(1) / (T(2) * x * x);\n");
-		tprint("erfc0 = T(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
+		tprint("q = TCAST(1) / (TCAST(2) * x * x);\n");
+		tprint("*erfc0 = TCAST(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
 		for (int i = N - 1; i >= 1; i--) {
-			tprint("erfc0 = fma(erfc0, q, T(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
+			tprint("*erfc0 = fma(*erfc0, q, TCAST(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
 		}
-		tprint("erfc0 = fma(erfc0, q, T(1));\n");
-		tprint("erfc0 *= exp0 * T(%.20e) / x;\n", 1.0 / sqrt(M_PI));
+		tprint("*erfc0 = fma(*erfc0, q, TCAST(1));\n");
+		tprint("*erfc0 *= *exp0 * TCAST(%.20e) / x;\n", 1.0 / sqrt(M_PI));
 		deindent();
 	}
 	tprint("}\n");
@@ -3244,7 +3260,7 @@ int main() {
 	const char* uitypenames[] = { "unsigned", "unsigned long long" };
 	const int ntypenames = 2;
 
-	for (int ti = 0; ti < 1; ti++) {
+	for (int ti = 0; ti < ntypenames; ti++) {
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
