@@ -356,7 +356,7 @@ void func_header(const char* func, int P, bool nopot, bool pub, Args&& ...args) 
 		set_file(file_name);
 		tprint("#include <stdio.h>\n");
 		tprint("#include \"spherical_fmm.h\"\n");
-		tprint("#include \"math_%s.h\"\n",type.c_str());
+		tprint("#include \"math_%s.h\"\n", type.c_str());
 		tprint("#include \"detail/spherical_fmm.h\"\n");
 		tprint("\n");
 		tprint("%s {\n", func_name.c_str());
@@ -671,7 +671,7 @@ int greens_body(int P, const char* M = nullptr) {
 	} else {
 		tprint("const T r2inv = T(1) / r2;\n");
 	}
-	tprint( "O[0] = rsqrt_%s(r2);\n", type.c_str());
+	tprint("O[0] = rsqrt_%s(r2);\n", type.c_str());
 	flops += rsqrt_flops;
 	if (M) {
 		tprint("O[0] *= %s;\n", M);
@@ -940,7 +940,7 @@ int greens(int P) {
 int greens_xz(int P) {
 	int flops = 0;
 	func_header("greens_xz", P, false, false, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
-	tprint( "O[0] = sqrt_%s(r2inv);\n", type.c_str());
+	tprint("O[0] = sqrt_%s(r2inv);\n", type.c_str());
 	flops += sqrt_flops;
 	tprint("O[%i] = T(0);\n", (P + 2) * (P + 1) / 2);
 	tprint("x *= r2inv;\n");
@@ -1018,7 +1018,7 @@ int m2l_rot1(int P, int Q) {
 	tprint("T tmp1 = R2 + Rzero;\n");
 	flops++;
 	tprint("T Rinv;\n");
-	tprint( "Rinv = rsqrt_%s(tmp1);\n", type.c_str());
+	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops + rsqrt_flops;
 	tprint("T R = T(1) / Rinv;\n");
 	flops += divops;
@@ -1248,7 +1248,6 @@ double hypergeo(double a, int i) {
 	return y;
 }
 
-
 int ewald_greens(int P, double alpha) {
 	int R2, H2;
 	if (is_float(type)) {
@@ -1295,12 +1294,12 @@ int ewald_greens(int P, double alpha) {
 	tprint("const T r2 = x0 * x0 + y0 * y0 + z0 * z0;\n");
 	flops += 5;
 	tprint("T r;\n");
-	tprint("r = sqrt_%s(r2);\n",type.c_str());
+	tprint("r = sqrt_%s(r2);\n", type.c_str());
 	tprint("greens_%s_P%i(Gr, x0, y0, z0);\n", type.c_str(), P);
 	tprint("T xxx = T(%.20e) * r;\n", alpha);
 	flops++;
 	tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-	tprint( "erfcexp_%s(xxx, gamma1, exp0);\n", type.c_str());
+	tprint("erfcexp_%s(xxx, gamma1, exp0);\n", type.c_str());
 	flops += erfcexp_flops;
 	tprint("gamma1 *= T(%.20e);\n", sqrt(M_PI));
 	flops += 1;
@@ -1367,13 +1366,13 @@ int ewald_greens(int P, double alpha) {
 					tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
 					flops += 3 * 1;
 					tprint("T r;\n");
-					tprint( "r = sqrt_%s(r2);\n", type.c_str());
+					tprint("r = sqrt_%s(r2);\n", type.c_str());
 					flops += sqrt_flops;
 					tprint("greens_%s_P%i(Gr, x, y, z);\n", type.c_str(), P);
 					tprint("T xxx = T(%.20e) * r;\n", alpha);
 					flops += 1;
 					tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-					tprint( "erfcexp_%s(xxx, gamma1, exp0);\n", type.c_str());
+					tprint("erfcexp_%s(xxx, gamma1, exp0);\n", type.c_str());
 					tprint("gamma1 *= T(%.20e);\n", -sqrt(M_PI));
 					flops += 1;
 					tprint("const T xfac = T(%.20e) * r2;\n", alpha * alpha);
@@ -1496,7 +1495,7 @@ int ewald_greens(int P, double alpha) {
 				}
 				tprint("phi = T(%.20e) * hdotx;\n", 2.0 * M_PI);
 				flops++;
-				tprint("sincos_%s(phi, %s, %s);\n",type.c_str(), sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
+				tprint("sincos_%s(phi, %s, %s);\n", type.c_str(), sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
 				flops += sincos_flops;
 			}
 		}
@@ -1729,7 +1728,7 @@ int m2l_rot2(int P, int Q) {
 	flops++;
 	tprint("const T tmp1 = R2 + Rzero;\n");
 	flops++;
-	tprint( "Rinv = rsqrt_%s(tmp1);\n", type.c_str());
+	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
 	tprint("R = T(1) / Rinv;\n");
 	flops += divops;
@@ -2234,7 +2233,7 @@ int M2M_rot2(int P) {
 	flops += 1;
 	tprint("T r, rinv;\n");
 	tprint("tmp1 = r2 + rzero;\n");
-	tprint( "rinv = rsqrt_%s(tmp1);\n", type.c_str());
+	tprint("rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
 	tprint("R = T(1) / Rinv;\n");
 	flops += divops;
@@ -2624,7 +2623,6 @@ int L2L_rot1(int P) {
 	return flops;
 }
 
-
 int L2L_rot2(int P) {
 	int flops = 0;
 	func_header("L2L", P, nophi, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
@@ -2643,7 +2641,7 @@ int L2L_rot2(int P) {
 	flops += 1;
 	tprint("T r, rinv;\n");
 	tprint("tmp1 = r2 + rzero;\n");
-	tprint( "rinv = rsqrt_%s(tmp1);\n", type.c_str());
+	tprint("rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
 	tprint("R = T(1) / Rinv;\n");
 	flops += divops;
@@ -2894,7 +2892,6 @@ int P2M(int P) {
 	return flops + 3;
 }
 
-
 void math_functions() {
 	if (fp) {
 		fclose(fp);
@@ -2905,12 +2902,12 @@ void math_functions() {
 	fp = fopen("./generated_code/include/math_float.h", "wt");
 	tprint("#ifndef SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("#define SPHERICAL_FMM_MATH_FLOAT\n");
-	tprint( "\n");
+	tprint("\n");
 	tprint("float rsqrt_float( float );\n");
 	tprint("float sqrt_float( float );\n");
 	tprint("void sincos_float( float, float&, float& );\n");
 	tprint("void erfcexp_float( float, float&, float& );\n");
-	tprint( "\n");
+	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
 	fp = fopen("./generated_code/src/math_float.cpp", "wt");
@@ -2988,36 +2985,59 @@ void math_functions() {
 		tprint("}\n");
 		tprint("\n");
 	}
+	{
 
-	tprint("void erfcexp_float( T x, T& erfc0, T& exp0 ) {\n");
-	indent();
-	tprint("const T x2 = x * x;\n");
-	tprint("const T nx2 = -x2;\n");
-	tprint("exp0 = exp_float(nx2);\n");
-	tprint("T t = T(1) / (T(1) + 0.3275911 * x);\n");
-	tprint("erfc0 = T(1.061405429);\n");
-	tprint("erfc0 = fmaf(erfc0, t, T(-1.453152027));\n");
-	tprint("erfc0 = fmaf(erfc0, t, T(1.421413741));\n");
-	tprint("erfc0 = fmaf(erfc0, t, T(-0.284496736));\n");
-	tprint("erfc0 = fmaf(erfc0, t, T(0.254829592));\n");
-	tprint("erfc0 *= t;\n");
-	tprint("erfc0 *= exp0;\n");
-	deindent();
-	tprint("}\n");
-	tprint("\n");
+		tprint("void erfcexp_float( T x, T& erfc0, T& exp0 ) {\n");
+		indent();
+		tprint("const T x2 = x * x;\n");
+		tprint("const T nx2 = -x2;\n");
+		tprint("T q, x0;\n");
+		tprint("exp0 = exp_float(nx2);\n");
 
+		constexpr double x0 = 2.75;
+		tprint("if (x < T(%.20e) ) {\n", x0);
+		{
+			indent();
+			constexpr int N = 25;
+			tprint("q = T(2) * x * x;\n");
+			tprint("erfc0 = T(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
+			for (int n = N - 1; n >= 0; n--) {
+				tprint("erfc0 = fmaf(erfc0, q, T(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
+			}
+			tprint("erfc0 *= T(%.20e) * x * exp0;\n", 2.0 / sqrt(M_PI));
+			tprint("erfc0 = T(1) - erfc0;\n");
+			deindent();
+		}
+		tprint("} else  {\n");
+		{
+			indent();
+			constexpr int N = x0 * x0 + 0.5;
+			tprint("q = T(1) / (T(2) * x * x);\n");
+			tprint("erfc0 = T(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
+			for (int i = N - 1; i >= 1; i--) {
+				tprint("erfc0 = fmaf(erfc0, q, T(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
+			}
+			tprint("erfc0 = fmaf(erfc0, q, T(1));\n");
+			tprint("erfc0 *= exp0 * T(%.20e) / x;\n", 1.0 / sqrt(M_PI));
+			deindent();
+		}
+		tprint("}\n");
+		deindent();
+		tprint("}\n");
+		tprint("\n");
+	}
 	fclose(fp);
 #endif
 #ifdef DOUBLE
 	fp = fopen("./generated_code/include/math_double.h", "wt");
 	tprint("#ifndef SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("#define SPHERICAL_FMM_MATH_DOUBLE\n");
-	tprint( "\n");
+	tprint("\n");
 	tprint("double rsqrt_double( double );\n");
 	tprint("double sqrt_double( double );\n");
 	tprint("void sincos_double( double, double&, double& );\n");
 	tprint("void erfcexp_double( double, double&, double& );\n");
-	tprint( "\n");
+	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
 	fp = fopen("./generated_code/src/math_double.cpp", "wt");
@@ -3204,7 +3224,6 @@ int main() {
 	tprint("}\n");
 	tprint("\n");
 
-
 	static int rsqrt_float_flops = 15 - 3 * fmaops;
 	static int rsqrt_double_flops = 15 - 3 * fmaops;
 	static int sqrt_float_flops = 15 - 3 * fmaops + divops;
@@ -3213,19 +3232,19 @@ int main() {
 	static int sincos_double_flops = 41 - fmaops * 20;
 	static int exp_double_flops = 4 + divops + 17 * (2 - fmaops);
 	static int exp_float_flops = 4 + divops + 7 * (2 - fmaops);
-	static int erfcexp_float_flops = exp_float_flops + divops + 14 - 4 * fmaops;
+	static int erfcexp_float_flops = exp_float_flops + 56 - 24 * fmaops;
 	static int erfcexp_double_flops = exp_double_flops + 72 - 35 * fmaops + divops;
 
-	const int rsqrt_flops_array[] = {rsqrt_float_flops, rsqrt_double_flops};
-	const int sqrt_flops_array[] = {sqrt_float_flops, sqrt_double_flops};
-	const int sincos_flops_array[] = {sincos_float_flops, sincos_double_flops};
-	const int erfcexp_flops_array[] = {erfcexp_float_flops, erfcexp_double_flops};
+	const int rsqrt_flops_array[] = { rsqrt_float_flops, rsqrt_double_flops };
+	const int sqrt_flops_array[] = { sqrt_float_flops, sqrt_double_flops };
+	const int sincos_flops_array[] = { sincos_float_flops, sincos_double_flops };
+	const int erfcexp_flops_array[] = { erfcexp_float_flops, erfcexp_double_flops };
 	const char* rtypenames[] = { "float", "double" };
 	const char* sitypenames[] = { "int", "long long" };
 	const char* uitypenames[] = { "unsigned", "unsigned long long" };
 	const int ntypenames = 2;
 
-	for (int ti = 0; ti < ntypenames; ti++) {
+	for (int ti = 0; ti < 1; ti++) {
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];

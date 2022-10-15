@@ -10,7 +10,39 @@
 template<class T>
 using complex = std::complex<T>;
 
+#define TEST_TYPE_FLOAT
+
+#ifdef TEST_TYPE_FLOAT
+using real = float;
+#define M2M M2M_float
+#define M2P M2P_float
+#define P2L P2L_float
+#define P2M P2M_float
+#define M2L M2L_float
+#define M2L_ewald M2L_ewald_float
+#define L2L L2L_float
+#define L2P L2P_float
+#endif
+#ifdef TEST_TYPE_DOUBLE
 using real = double;
+#define M2M M2M_double
+#define M2P M2P_double
+#define P2L P2L_double
+#define P2M P2M_double
+#define M2L M2L_double
+#define M2L_ewald M2L_ewald_double
+#define L2L L2L_double
+#define L2P L2P_double
+#endif
+
+constexpr double dfactorial(int n) {
+	if (n == 1 || n == 0) {
+		return 1;
+	} else {
+		return n * dfactorial(n - 2);
+	}
+}
+
 
 double rand1() {
 	return (double) (rand() + 0.5) / (RAND_MAX);
@@ -671,7 +703,6 @@ real test_M2L(test_type type, real theta = 0.5) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_INVALID);
 	feenableexcept(FE_OVERFLOW);
-
 	real err2 = 0.0;
 	real norm = 0.0;
 	long double phi, fx, fy, fz;
@@ -706,20 +737,20 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M_double(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] *= (0.5);
 			}
-			M2M_double(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 				L0[n] = (0);
 			}
 			//	g0 = g1 = g2 = 0.0;
 			//		M2L_ewald3<real,P>( L0, M, x1, y1, z1);
-			M2L_ewald_double(P, L, M, x1, y1, z1, FMM_CALC_POT);
-			L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-			L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+			M2L_ewald(P, L, M, x1, y1, z1, FMM_CALC_POT);
+			L2L(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+			L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			for (int l = 0; l <= P; l++) {
 				for (int m = -l; m <= l; m++) {
@@ -770,9 +801,9 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M_double(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
 
-			M2M_double(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 			}
@@ -781,15 +812,15 @@ real test_M2L(test_type type, real theta = 0.5) {
 				L2[l] = 0.0;
 			}
 			if (type == CC) {
-				M2L_double(P, L, M, x1, y1, z1, FMM_CALC_POT);
-				L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				M2L(P, L, M, x1, y1, z1, FMM_CALC_POT);
+				L2L(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+				L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			} else if (type == PC) {
-				M2P_double(P, L2, M, x1, y1, z1, FMM_CALC_POT);
+				M2P(P, L2, M, x1, y1, z1, FMM_CALC_POT);
 			} else if (type == CP) {
-				P2L_double(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
-				L2L_double(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P_double(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				P2L(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
+				L2L(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
+				L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -827,372 +858,38 @@ struct run_tests<NMAX, NMAX> {
 	}
 };
 
-bool close21(double a) {
-	return std::abs(1.0 - a) < 1.0e-20;
-}
-
-template<int Nmax>
-struct const_factorial {
-	double y[Nmax + 1];
-	constexpr const_factorial() :
-			y() {
-		y[0] = 1.0;
-		for (int i = 1; i <= Nmax; i++) {
-			y[i] = i * y[i - 1];
+float erfc2_float(float x) {
+	constexpr float x0 = 2.75;
+	if (x < x0) {
+		constexpr int N = 25;
+		const float q = 2.0 * x * x;
+		float y = 1.0 / dfactorial(2 * N + 1);
+		for (int n = N - 1; n >= 0; n--) {
+			y = fma(y, q, 1.0 / dfactorial(2 * n + 1));
 		}
-	}
-	constexpr double operator()(int n) const {
-		return y[n];
-	}
-};
-
-constexpr double const_exp(double x0) {
-	constexpr int N = 12;
-	if (x0 < 0.0) {
-		return 1.0 / const_exp(-x0);
+		y *= (float)(2.0 / sqrt(M_PI)) * x * expf(-x * x);
+		y = 1.0f - y;
+		return y;
 	} else {
-		constexpr const_factorial<N> factorial;
-		int k = x0 / 0.6931471805599453094172 + 0.5;
-		double x = x0 - k * 0.6931471805599453094172;
-		double y = 1.0 / factorial(N);
-		for (int i = N - 1; i >= 0; i--) {
-			y = y * x + 1.0 / factorial(i);
+		constexpr int N = x0 * x0 + 0.5;
+		float q = 1.0 / (2.0 * x * x);
+		float y = dfactorial(2 * N - 1) * nonepow(N);
+		for (int i = N - 1; i >= 1; i--) {
+			y = fma(y, q, dfactorial(2 * i - 1) * nonepow(i));
 		}
-		return y * (1 << k);
+		y *= q;
+		y += 1.0;
+		y *= exp(-x * x) / sqrt(M_PI) / x;
+		return y;
 	}
 }
-
-constexpr int ewald_real_size() {
-	int i = 0;
-	for (int xi = -4; xi <= +4; xi++) {
-		for (int yi = -4; yi <= +4; yi++) {
-			for (int zi = -4; zi <= +4; zi++) {
-				const int r2 = xi * xi + yi * yi + zi * zi;
-				if (r2 < 3.1 * 3.1 && r2 > 0) {
-					i++;
-				}
-			}
-		}
-	}
-	return i;
-}
-
-constexpr int ewald_four_size() {
-	int i = 0;
-	for (int xi = -2; xi <= +2; xi++) {
-		for (int yi = -2; yi <= +2; yi++) {
-			for (int zi = -2; zi <= +2; zi++) {
-				const int r2 = xi * xi + yi * yi + zi * zi;
-				if (r2 <= 8 && r2 > 0) {
-					i++;
-				}
-			}
-		}
-	}
-	return i;
-}
-
-template<class T, int P>
-constexpr T const_S(int n, int m0, T x, T y, T z) {
-	const T r2 = x * x + y * y + z * z;
-	const T r2inv = T(1) / r2;
-	const T m = m0 >= 0 ? m0 : -m0;
-	T Ox = T(1), Oy = T(0), Oxm1 = T(0), Oym1 = T(0), Oxm2 = T(0);
-	x *= r2inv;
-	y *= r2inv;
-	Oxm1 = Ox;
-	Oym1 = Oy;
-	for (int m1 = 1; m1 <= m; m1++) {
-		const T tmp = Ox;
-		Ox = (tmp * x - Oy * y) * T(2 * m1 - 1);
-		Oy = (tmp * y + Oy * x) * T(2 * m1 - 1);
-		Oxm1 = Ox;
-		Oym1 = Oy;
-	}
-	if (m0 < 0) {
-		Oxm1 = Oym1;
-	}
-	for (int n1 = m + 1; n1 <= n; n1++) {
-		Ox = T(2 * n - 1) * z * Oxm1 - T((n - 1) * (n - 1) - m * m) * r2inv * Oxm2;
-		Oxm2 = Oxm1;
-		Oxm1 = Ox;
-	}
-	return Ox;
-}
-
-
-constexpr double dfactorial(int n) {
-	if (n == 1 || n == 0) {
-		return 1;
-	} else {
-		return n * dfactorial(n - 2);
-	}
-}
-
-constexpr double factorial(int n) {
-	if (n == 0) {
-		return 1;
-	} else {
-		return n * factorial(n - 1);
-	}
-}
-
-constexpr double cnk(int n, int k) {
-	return factorial(n) * factorial(2 * n + 1 - k) * 0.5 / (factorial(n - k) * factorial(k + 1) * factorial(2 * n + 1));
-}
-
-constexpr double pki(int k, int i) {
-	return nonepow<double>(i + k) * factorial(k) / (factorial(i) * factorial(k - 2 * i)) * pow(2, (k - 2 * i));
-}
-
-using polynomial = std::vector<double>;
-
-polynomial poly_mult(polynomial a, polynomial b) {
-	polynomial c(a.size() + b.size(), 0.0);
-	for (int i = 0; i < a.size(); i++) {
-		for (int j = 0; j < b.size(); j++) {
-			c[i + j] += a[i] * b[j];
-		}
-	}
-	return c;
-}
-
-polynomial poly_add(polynomial a, polynomial b) {
-	polynomial c(std::max(a.size(), b.size()), 0.0);
-	for (int i = 0; i < c.size(); i++) {
-		if (i >= a.size()) {
-			c[i] = b[i];
-		} else if (i >= b.size()) {
-			c[i] = a[i];
-		} else {
-			c[i] = a[i] + b[i];
-		}
-	}
-	return c;
-}
-
-double poly_eval(polynomial a, double x) {
-	double y = 0.0;
-	y = a.back();
-	for (int i = a.size() - 2; i >= 0; i--) {
-		y = fma(x, y, double(a[i]));
-	}
-	return y;
-}
-
-polynomial pkx(int k) {
-	polynomial y;
-	for (int i = 0; i <= k / 2; i++) {
-		if (y.size() <= k - 2 * i) {
-			y.resize(k - 2 * i + 1, 0.0);
-		}
-		y[k - 2 * i] += pki(k, i);
-	}
-	return y;
-}
-
-double pochhammer(double a, int n) {
-	if (n == 0) {
-		return 1.0;
-	} else {
-		return (a + n - 1) * pochhammer(a, n - 1);
-	}
-}
-
-double gamma(double x) {
-	if (x > 1.0) {
-		return tgamma(x);
-	} else {
-		return gamma(1.0 + x) / x;
-	}
-}
-
-double hypergeo(double a, int i) {
-	double y = 0.0;
-	int done = 0;
-	int n = i / 2;
-	const auto g1 = gamma(0.5 + n);
-	const auto g2 = gamma(1.0 + n);
-	const auto g3 = gamma(1.0 - 0.5 * i + n);
-	const auto g4 = gamma(1.5 - 0.5 * i + n);
-	auto z = (g1 / g3) * (g2 / g4) / (gamma(0.5) * gamma(1.0)) * pow(-a * a, n) / factorial(n);
-	y += z;
-	for (++n;; n++) {
-		z *= (n - 0.5);
-		z /= (n - 0.5 * i);
-		z /= (n - 0.5 * i + 0.5);
-		z *= -a * a;
-		y += z;
-		if (y) {
-			if (fabs(z / y) < (10 - done) * std::numeric_limits<double>::epsilon()) {
-				done++;
-				if (done == 10) {
-					break;
-				}
-			} else {
-				done = 0;
-			}
-		}
-	}
-//	printf( "\n");
-	return y;
-}
-
-void erfc_double_create(int i) {
-	std::vector<double> c0(1, erfc(i));
-	double err;
-	double x0 = i;
-	double xmax = sqrt(i + 0.75);
-	double xmin = sqrt(std::max(0.0, i - 0.75));
-	xmax -= x0;
-	xmin -= x0;
-	int n = 1;
-	do {
-		double c1, c2;
-		if (i == 0) {
-			c1 = 0.0;
-			c2 = nonepow((n + 1) / 2) / (2 * ((n + 1) / 2) + 1) / factorial((n + 1) / 2);
-		} else {
-			c2 = -(1 << n) * pow(x0, 1 - n) * hypergeo(x0, n) / factorial(n);
-			c1 = -(1 << (n + 1)) * pow(x0, 1 - (n + 1)) * hypergeo(x0, (n + 1)) / factorial(n + 1);
-		}
-		err = fabs((c2 + c1 * xmax) * pow(xmax, n));
-		err = std::max(err, fabs((c2 + c1 * xmin) * pow(xmin, n)));
-
-		if (err > std::numeric_limits<double>::epsilon()) {
-			c0.push_back(c2);
-			c0.push_back(c1);
-		}
-		n += 2;
-	} while (err > std::numeric_limits<double>::epsilon());
-}
-
-double erf_double(double x);
-
-static int N1 = 58;
-static int N2 = 15;
-
-double erfc1_double(double x) {
-	constexpr int N = 51;
-	constexpr double c0[N] = { 1.5417257900280018852e-8, -1.2698234671866558268e-7, 5.0792938687466233073e-7, -1.3121509160928776877e-6,
-			2.4549920365608679319e-6, -3.5343419836695253847e-6, 4.0577914351431357311e-6, -3.7959659297660776487e-6, 2.9264391936639771349e-6,
-			-1.8631747969134645771e-6, 9.7028398087939794881e-7, -4.0077792841735885016e-7, 1.2017256123590621089e-7, -1.7432381111955779115e-8,
-			-5.8855705165843298536e-9, 5.2972657465156914314e-9, -1.9619829796563405661e-9, 3.3902885661963547618e-10, 5.449519885206690639e-11,
-			-5.6649970057793101492e-11, 1.7497284973974059992e-11, -1.5401588896183612903e-12, -9.5485866992008160798e-13, 4.5996403017767892727e-13,
-			-7.720942042791545628e-14, -1.0556894443355771748e-14, 8.9498939526324557708e-15, -1.8999048717660430384e-15, -7.277120798336296798e-17,
-			1.4642316953650200603e-16, -3.4362054810804757693e-17, -2.6414051454190806842e-19, 2.1443852179986680066e-18, -5.043427120322544597e-19,
-			-3.6489999780744875762e-21, 2.8806005872407609211e-20, -6.2044044807659249396e-21, -1.7233627673269238901e-22, 3.5400331474254875021e-22,
-			-6.4010879354598909094e-23, -4.4441394626915675505e-24, 3.9115690351951320278e-24, -5.3859668207240296229e-25, -7.7397660968811423558e-26,
-			3.798462825970030578e-26, -3.3911062141902652569e-27, -1.025047850118420974e-27, 3.1564161337682830322e-28, -1.0805338838117337057e-29,
-			-1.085079147261258634e-29, 2.1595195043768972257e-30 };
-	x -= 4.0;
-	double y = c0[40 - 1];
-	for (int n = 40 - 2; n >= 0; n--) {
-		y = fma(y, x, c0[n]);
-	}
-	return y;
-}
-
-double erfc02_double(double x) {
-	constexpr int N = 60;
-	constexpr double c0[N + 1] = { 0.15729920705028513066, -0.41510749742059470334, 0.41510749742059470334, -0.13836916580686490111, -0.069184582903432450557,
-			0.069184582903432450557, -0.0046123055268954967038, -0.01515471815979948917, 0.0047770307242846215861, 0.0018851883701199847638,
-			-0.0012262875805634852347, -0.000085523991371727464132, 0.00020005514713217961292, -0.00001871663923714299038, -0.000023707092917618642639,
-			5.4782439136144749702e-6, 2.0810470178536989366e-6, -8.4904713963144343778e-7, -1.2328726086225257871e-7, 9.7385801574591139527e-8,
-			1.9412656084384987673e-9, -8.9959787718381029827e-9, 6.4974130753173241251e-10, 6.9020255115771561091e-10, -1.0930785305190424683e-10,
-			-4.4170900677939190423e-11, 1.1469726123674405183e-11, 2.2964662043673653157e-12, -9.5295626119961216479e-13, -8.6999537449087987462e-14,
-			6.7139682527845269542e-14, 1.0941851832004162369e-15, -4.1292544687793769952e-15, 1.8601591348811962216e-16, 2.2459468423499485974e-16,
-			-2.315083093966012229e-17, -1.0834825684288445954e-17, 1.8023015127965290308e-18, 4.5998373920471192063e-19, -1.1358237255499409868e-19,
-			-1.673034558991574761e-20, 6.2182028698065850645e-21, 4.8114692907614392188e-22, -3.0471150463263347992e-22, -7.5111800443919715459e-24,
-			1.3568774364804531701e-23, -2.7063084489174606623e-25, -5.5332638996409214387e-25, 3.4091630490543129263e-26, 2.0722739850991718161e-26,
-			-2.1647449112201341996e-27, -7.1151137814712743521e-28, 1.0899270425830332517e-28, 2.2220217463041891355e-29, -4.7835724297505193226e-30,
-			-6.1909670998969171609e-31, 1.8984625341296174533e-31, 1.4673514322247610681e-32, -6.9375562658765708089e-33, -2.5365987898730140379e-34,
-			2.3578768151474118064e-34 };
-	x -= 1.0;
-	double y = c0[N];
-	for (int n = N - 1; n >= 0; n--) {
-		y = fma(y, x, c0[n]);
-	}
-	return y;
-}
-
-double erfc24_double(double x) {
-	constexpr int N = 60;
-	constexpr double c0[N + 1] = { 0.000022090496998585441373, -0.00013925305194674785389, 0.00041775915584024356167, -0.00078910062769823783871,
-			0.0010443978896006089042, -0.0010165472792112593334, 0.00073804117531776362562, -0.00039057165522206898067, 0.00013477706099131667287,
-			-0.000013906885478808813451, -0.000015616235111171009329, 0.000010793618593534720017, -3.0307130678020555646e-6, -1.2338633446163999819e-7,
-			4.5253432810580908467e-7, -1.6573732792802534838e-7, 9.3558263606651124303e-9, 1.4977795982415109037e-8, -5.9709857312013879724e-9,
-			3.9655378820946255485e-10, 4.4670619596676640987e-10, -1.6350901778088463397e-10, 5.917507363032050835e-12, 1.2028197183551233037e-11,
-			-3.4787346654048557896e-12, -8.7265464375095810005e-14, 2.77029359377996076e-13, -5.5346590946171791105e-14, -7.1949457068465155992e-15,
-			5.1692940761619351482e-15, -5.7073587318249637038e-16, -2.1192107445649773325e-16, 7.425551637082496029e-17, -1.0586671656207698049e-18,
-			-4.0487851594829634913e-18, 7.5279344997100450365e-19, 9.3040290754706802889e-20, -5.4648832057798036546e-20, 3.8642530458693273864e-21,
-			2.1342536287576572607e-21, -5.0839652603548761562e-22, -2.7107693167426974747e-23, 2.7491413822314776444e-23, -2.6052078867631847922e-24,
-			-8.6529340712977777216e-25, 2.2852794835550263837e-25, 6.9774269427220925551e-27, -1.0403924693888314061e-26, 1.0159501263058830009e-27,
-			2.9140105648359150401e-28, -7.4776784788383947047e-29, -2.4016737642654052075e-30, 3.0967536390285100672e-30, -2.6168955421691720239e-31,
-			-8.3453913423474974363e-32, 1.8443825150235392305e-32, 9.5018193186935641895e-34, -7.356146289580190822e-34, 4.3907993567536178823e-35,
-			2.0040936861400229439e-35, -3.4428866956977056398e-36 };
-	x -= 3.0;
-	double y = c0[N];
-	for (int n = N - 1; n >= 0; n--) {
-		y = fma(y, x, c0[n]);
-	}
-	return y;
-}
-
-double erfc46_double(double x) {
-	constexpr int N = 60;
-	constexpr double c0[N + 1] = { 1.5374597944280348502e-12, -1.5670866531017335308e-11, 7.8354332655086676541e-11, -2.5595748667328314337e-10,
-			6.1377560579817896624e-10, -1.1507639655943729895e-9, 1.7542664477777739248e-9, -2.232103505017207276e-9, 2.4142151424619861111e-9,
-			-2.2484411434266387087e-9, 1.8192473403222856223e-9, -1.2859344859140824134e-9, 7.9596853518260115928e-10, -4.3093375340898926936e-10,
-			2.0284694010322075381e-10, -8.1877590599129450144e-11, 2.7508017779080151729e-11, -7.1505703186725763687e-12, 1.0958836119077553182e-12,
-			1.3409456342535567037e-13, -1.7086783441972833901e-13, 6.9233270175671791258e-14, -1.6675916363857018623e-14, 1.5037633451982783876e-15,
-			7.0267164966323331565e-16, -3.9635718299716133598e-16, 1.0055547163916174591e-16, -9.012198684222203901e-18, -3.6978715350481689606e-18,
-			1.8744615255683329059e-18, -3.8679659362312538038e-19, 7.8711931225530167407e-21, 2.093520740866541092e-20, -6.8061366897454720951e-21,
-			8.0763978026864482396e-22, 1.4672898843013606566e-22, -8.4344961118107516674e-23, 1.508495256186875481e-23, 3.4950551394900563364e-25,
-			-8.428465485012887967e-25, 1.9368444542011423241e-25, -7.1535045030153456223e-27, -7.2949005733872513864e-27, 2.021287713217001065e-27,
-			-1.3550849287462015934e-28, -5.768030629890364721e-29, 1.8299944544673050854e-29, -1.4924823883664547381e-30, -4.3534050335890379062e-31,
-			1.4849353151306146466e-31, -1.2640466170998103585e-32, -3.2282874520709693114e-33, 1.0974635059034708549e-33, -8.7589152016896217273e-35,
-			-2.3659662489519906974e-35, 7.4278342956672554871e-36, -4.9677445251585732622e-37, -1.6881832052459837121e-37, 4.5936231512642798586e-38,
-			-2.161813482620867581e-39, -1.1449527968136307241e-39 };
-	x -= 5.0;
-	double y = c0[N];
-	for (int n = N - 1; n >= 0; n--) {
-		y = fma(y, x, c0[n]);
-	}
-	return y;
-}
-
-#define List(...) { __VA_ARGS__}
 
 int main() {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
 
-	/*	erfc_double_create(0);
-	 return 0;
-	double err_min = 1e99, shft_min, shft;
-	//for (N1 = 3; N1 <= 100; N1++) {
-	//	for (N2 = 3; N2 <= 100; N2++) {
-	double emax1 = 0.0;
-	double emax2 = 0.0;
-	for (double r = 0.00; r < 8; r += 0.1) {
-		double e1;
-		e1 = erfc2_double(r);
-		long double e0 = erfcl(r);
-		double err1 = fabs((e1 - e0)/e0);
-		double err2 = fabs((e1 - e0));
-		emax1 = std::max(emax1, err1);
-		emax2 = std::max(emax2, err2);
-		printf("%e %e %e %e %e\n", r, e0, e1, err1, err2);
-	}
-	printf("%e\n", emax1);
-	printf("%e\n", emax2);
-	return 0.0;
-//	}
-//}
-//	printf("%i %i %e\n", N1_min, N2_min, err_min);
-	//return 0;*/
+
 	run_tests<16, 3> run;
 	printf("M2P\n");
 	run(PC);
