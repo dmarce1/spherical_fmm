@@ -890,7 +890,7 @@ int main() {
 	feenableexcept(FE_INVALID);
 
 
-	run_tests<16, 3> run;
+	run_tests<26, 3> run;
 	printf("M2P\n");
 	run(PC);
 	printf("M2L\n");

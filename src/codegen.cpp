@@ -25,7 +25,7 @@ static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
 static int pmin = 3;
-static int pmax = 15;
+static int pmax = 25;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -296,7 +296,7 @@ void func_header(const char* func, int P, bool nopot, bool pub, Args&& ...args) 
 		if (nopot) {
 			func_name += "_nopot";
 		}
-		std::string file_name = func_name + ".cpp";
+		std::string file_name = func_name + ".c";
 		func_name = "void " + func_name;
 		if (prefix[0]) {
 			func_name = std::string(prefix) + " " + func_name;
@@ -316,13 +316,13 @@ void func_header(const char* func, int P, bool nopot, bool pub, Args&& ...args) 
 				inter_header += std::string(prefix) + " ";
 			}
 			inter_header += std::string("void ") + func1 + "( int P, " + func_args(std::forward<Args>(args)..., 0);
-			inter_header += std::string(", fmm_calcpot_type calcpot");
+			inter_header += std::string(", enum fmm_calcpot_type calcpot");
 			inter_header += std::string(");\n");
 			if (prefix[0]) {
 				inter_src += std::string(prefix) + " ";
 			}
 			inter_src += std::string("void ") + func1 + "( int P, " + func_args(std::forward<Args>(args)..., 0);
-			inter_src += std::string(", fmm_calcpot_type calcpot");
+			inter_src += std::string(", enum fmm_calcpot_type calcpot");
 			inter_src += std::string(") {\n");
 			inter_src += std::string("\ttypedef void(*func_type)(") + func_args(std::forward<Args>(args)..., 0) + ");\n";
 			const int np = pmax - pmin + 1;
@@ -357,6 +357,7 @@ void func_header(const char* func, int P, bool nopot, bool pub, Args&& ...args) 
 		tprint("#include <stdio.h>\n");
 		tprint("#include \"spherical_fmm.h\"\n");
 		tprint("#include \"math_%s.h\"\n", type.c_str());
+		tprint("#include \"typecast_%s.h\"\n", type.c_str());
 		tprint("#include \"detail/spherical_fmm.h\"\n");
 		tprint("\n");
 		tprint("%s {\n", func_name.c_str());
@@ -444,14 +445,8 @@ bool close21(double a) {
 int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 	//noevenhi = false;
 	int flops = 0;
-	tprint("\n");
-//	tprint("template<class T>\n");
-	tprint("{\n");
-//	tprint(" inline void %s( array<T,%i>& %s, T cosphi, T sinphi ) {\n", fname, (P + 1) * (P + 1), name);
-	indent();
-	tprint("T tmp;\n");
-	tprint("T Rx = cosphi;\n");
-	tprint("T Ry = sinphi;\n");
+	tprint("Rx = cosphi;\n");
+	tprint("Ry = sinphi;\n");
 	int mmin = 1;
 	bool initR = true;
 	for (int m = 1; m <= P; m++) {
@@ -492,23 +487,18 @@ int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 		}
 		initR = false;
 	}
-	deindent();
-	tprint("}\n");
 	return flops;
 }
 
 int m2l(int P, int Q, const char* mname, const char* lname) {
 	int flops = 0;
-	tprint("{\n");
-	indent();
-	tprint("T c0[%i];\n", P + 1);
-	tprint("c0[0] = rinv;\n");
+	tprint("A[0] = rinv;\n");
 	for (int n = 1; n <= P; n++) {
-		tprint("c0[%i] = rinv * c0[%i];\n", n, n - 1);
+		tprint("A[%i] = rinv * A[%i];\n", n, n - 1);
 		flops++;
 	}
 	for (int n = 2; n <= P; n++) {
-		tprint("c0[%i] *= T(%.20e);\n", n, factorial(n));
+		tprint("A[%i] *= TCAST(%.20e);\n", n, factorial(n));
 		flops++;
 	}
 	for (int n = nophi; n <= Q; n++) {
@@ -521,19 +511,19 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 				looped = true;
 				if (pfirst) {
 					pfirst = false;
-					tprint("%s[%i] = %s[%i] * c0[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
+					tprint("%s[%i] = %s[%i] * A[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
 					flops += 1;
 				} else {
-					tprint("%s[%i] = FMA(%s[%i], c0[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
+					tprint("%s[%i] = FMA(%s[%i], A[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
 					flops += 2 - fmaops;
 				}
 				if (m != 0) {
 					if (nfirst) {
 						nfirst = false;
-						tprint("%s[%i] = %s[%i] * c0[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
+						tprint("%s[%i] = %s[%i] * A[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
 						flops += 1;
 					} else {
-						tprint("%s[%i] = FMA(%s[%i], c0[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
+						tprint("%s[%i] = FMA(%s[%i], A[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
 						flops += 2 - fmaops;
 					}
 				}
@@ -550,21 +540,14 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 			}
 		}
 	}
-	deindent();
-	tprint("}\n");
 	return flops;
 
 }
 
 int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict, bool noevenhi) {
 	//noevenhi = false;
-	tprint("\n");
 //	tprint("template<class T>\n");
 //	tprint(" inline void %s( array<T,%i>& %s ) {\n", fname, (P + 1) * (P + 1), name);
-	tprint("{\n");
-	indent();
-	tprint("T A[%i];\n", 2 * P + 1);
-	tprint("T tmp;\n");
 	int flops = 0;
 	auto brot = [inv](int n, int m, int l) {
 		if( inv ) {
@@ -614,7 +597,7 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 		for (int m = 0; m < 2 * n + 1; m++) {
 			if (ops[m].size() == 0 && !m_restrict && !l_restrict) {
 				//			fprintf(stderr, " %i %i %i %i %i\n", m_restrict, l_restrict, noevenhi, n, m - n);
-				//			tprint("%s[%i] = T(0);\n", name, index(n, m - n));
+				//			tprint("%s[%i] = TCAST(0);\n", name, index(n, m - n));
 			}
 			for (int l = 0; l < ops[m].size(); l++) {
 				int len = 1;
@@ -631,10 +614,10 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 						flops += 1 - (l == 0);
 					} else {
 						if (l == 0) {
-							tprint("%s[%i] = T(%.20e) * A[%i];\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second);
+							tprint("%s[%i] = TCAST(%.20e) * A[%i];\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second);
 							flops += 1;
 						} else {
-							tprint("%s[%i] = FMA(T(%.20e), A[%i], %s[%i]);\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second, name, index(n, m - n));
+							tprint("%s[%i] = FMA(TCAST(%.20e), A[%i], %s[%i]);\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second, name, index(n, m - n));
 							flops += 2 - fmaops;
 						}
 					}
@@ -645,10 +628,10 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 						flops++;
 					}
 					if (l == 0) {
-						tprint("%s[%i] = T(%.20e) * tmp;\n", name, index(n, m - n), ops[m][l].first);
+						tprint("%s[%i] = TCAST(%.20e) * tmp;\n", name, index(n, m - n), ops[m][l].first);
 						flops += 1;
 					} else {
-						tprint("%s[%i] = FMA(T(%.20e), tmp, %s[%i]);\n", name, index(n, m - n), ops[m][l].first, name, index(n, m - n));
+						tprint("%s[%i] = FMA(TCAST(%.20e), tmp, %s[%i]);\n", name, index(n, m - n), ops[m][l].first, name, index(n, m - n));
 						flops += 2 - fmaops;
 					}
 				}
@@ -657,19 +640,18 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 
 		}
 	}
-	deindent();
-	tprint("}\n");
 	return flops;
 }
 
 int greens_body(int P, const char* M = nullptr) {
 	int flops = 0;
-	tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
+	tprint("T r2, r2inv, ax, ay;\n");
+	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 5 - 2 * fmaops;
 	if (M) {
-		tprint("const T r2inv = %s / r2;\n", M);
+		tprint("r2inv = %s / r2;\n", M);
 	} else {
-		tprint("const T r2inv = T(1) / r2;\n");
+		tprint("r2inv = TCAST(1) / r2;\n");
 	}
 	tprint("O[0] = rsqrt_%s(r2);\n", type.c_str());
 	flops += rsqrt_flops;
@@ -677,46 +659,44 @@ int greens_body(int P, const char* M = nullptr) {
 		tprint("O[0] *= %s;\n", M);
 		flops++;
 	}
-	tprint("O[%i] = T(0);\n", (P + 1) * (P + 1));
+	tprint("O[%i] = TCAST(0);\n", (P + 1) * (P + 1));
 	tprint("x *= r2inv;\n");
 	tprint("y *= r2inv;\n");
 	tprint("z *= r2inv;\n");
 	flops += 3;
-	tprint("T ax;\n");
-	tprint("T ay;\n");
 	for (int m = 0; m <= P; m++) {
 		if (m == 1) {
 			tprint("O[%i] = x * O[0];\n", index(m, m));
 			tprint("O[%i] = y * O[0];\n", index(m, -m));
 			flops += 2;
 		} else if (m > 0) {
-			tprint("ax = O[%i] * T(%i);\n", index(m - 1, m - 1), 2 * m - 1);
-			tprint("ay = O[%i] * T(%i);\n", index(m - 1, -(m - 1)), 2 * m - 1);
+			tprint("ax = O[%i] * TCAST(%i);\n", index(m - 1, m - 1), 2 * m - 1);
+			tprint("ay = O[%i] * TCAST(%i);\n", index(m - 1, -(m - 1)), 2 * m - 1);
 			tprint("O[%i] = x * ax - y * ay;\n", index(m, m));
 			tprint("O[%i] = FMA(y, ax, x * ay);\n", index(m, -m));
 			flops += 8 - fmaops;
 		}
 		if (m + 1 <= P) {
-			tprint("O[%i] = T(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
+			tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
 			flops += 2;
 			if (m != 0) {
-				tprint("O[%i] = T(%i) * z * O[%i];\n", index(m + 1, -m), 2 * m + 1, index(m, -m));
+				tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, -m), 2 * m + 1, index(m, -m));
 				flops += 2;
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
 			if (m != 0) {
-				tprint("ax = T(%i) * z;\n", 2 * n - 1);
-				tprint("ay = T(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
+				tprint("ax = TCAST(%i) * z;\n", 2 * n - 1);
+				tprint("ay = TCAST(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
 				tprint("O[%i] = (ax * O[%i] + ay * O[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
 				tprint("O[%i] = FMA(ax, O[%i], ay * O[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
 				flops += 8 - fmaops;
 			} else {
 				if ((n - 1) * (n - 1) - m * m == 1) {
-					tprint("O[%i] = (T(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
+					tprint("O[%i] = (TCAST(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
 					flops += 4;
 				} else {
-					tprint("O[%i] = (T(%i) * z * O[%i] - T(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
+					tprint("O[%i] = (TCAST(%i) * z * O[%i] - TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
 							index(n - 2, m));
 					flops += 5;
 				}
@@ -915,12 +895,15 @@ bool close2zero(double a) {
 int p2l(int P) {
 	int flops = 0;
 	func_header("P2L", P, nophi, true, "L", PTR, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
+	tprint("int n;\n");
 	tprint("T O[%i];\n", exp_sz(P));
 	flops += greens_body(P, "M");
-	for (int n = nophi; n < (P + 1) * (P + 1); n++) {
-		tprint("L[%i] += O[%i];\n", n, n);
-		flops++;
-	}
+	tprint("for (n = %i; n < %i; n++) {\n;", nophi, (P + 1) * (P + 1));
+	indent();
+	tprint("L[n] += O[n];\n");
+	flops += (P + 1) * (P + 1) - nophi;
+	deindent();
+	tprint("}\n");
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -940,15 +923,14 @@ int greens(int P) {
 int greens_xz(int P) {
 	int flops = 0;
 	func_header("greens_xz", P, false, false, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
+	tprint("T ax, ay;\n");
 	tprint("O[0] = sqrt_%s(r2inv);\n", type.c_str());
 	flops += sqrt_flops;
-	tprint("O[%i] = T(0);\n", (P + 2) * (P + 1) / 2);
+	tprint("O[%i] = TCAST(0);\n", (P + 2) * (P + 1) / 2);
 	tprint("x *= r2inv;\n");
 	flops += 1;
 	tprint("z *= r2inv;\n");
 	flops += 1;
-	tprint("T ax;\n");
-	tprint("T ay;\n");
 	const auto index = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
@@ -957,26 +939,26 @@ int greens_xz(int P) {
 			tprint("O[%i] = x * O[0];\n", index(m, m));
 			flops += 1;
 		} else if (m > 0) {
-			tprint("ax = O[%i] * T(%i);\n", index(m - 1, m - 1), 2 * m - 1);
+			tprint("ax = O[%i] * TCAST(%i);\n", index(m - 1, m - 1), 2 * m - 1);
 			tprint("O[%i] = x * ax;\n", index(m, m));
 			flops += 2;
 		}
 		if (m + 1 <= P) {
-			tprint("O[%i] = T(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
+			tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
 			flops += 2;
 		}
 		for (int n = m + 2; n <= P; n++) {
 			if (m != 0) {
-				tprint("ax = T(%i) * z;\n", 2 * n - 1);
-				tprint("ay = T(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
+				tprint("ax = TCAST(%i) * z;\n", 2 * n - 1);
+				tprint("ay = TCAST(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
 				tprint("O[%i] = FMA(ax, O[%i], ay * O[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
 				flops += 5 - fmaops;
 			} else {
 				if ((n - 1) * (n - 1) - m * m == 1) {
-					tprint("O[%i] = (T(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
+					tprint("O[%i] = (TCAST(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
 					flops += 4;
 				} else {
-					tprint("O[%i] = (T(%i) * z * O[%i] - T(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
+					tprint("O[%i] = (TCAST(%i) * z * O[%i] - TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
 							index(n - 2, m));
 					flops += 5;
 				}
@@ -995,10 +977,13 @@ int m2l_rot1(int P, int Q) {
 	} else {
 		func_header("M2P", P, nophi, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	}
+	tprint("int n;\n");
+	tprint("T R2, Rzero, r2, rzero, tmp1, Rinv, r2inv, R, cosphi, sinphi;\n");
 	tprint("T L[%i];\n", exp_sz(Q));
 	tprint("T M[%i];\n", mul_sz(P));
 	tprint("T O[%i];\n", half_exp_sz(P));
-	tprint("for( int n = 0; n < %i; n++) {\n", P * P + 1);
+	tprint("T Rx, Ry, tmp;\n");
+	tprint("for(n = 0; n < %i; n++) {\n", P * P + 1);
 	indent();
 	tprint("M[n] = M0[n];\n");
 	deindent();
@@ -1008,25 +993,24 @@ int m2l_rot1(int P, int Q) {
 	set_tprint(false);
 	flops += greens_xz(P);
 	set_tprint(tpo);
-	tprint("const T R2 = FMA(x, x, y * y);\n");
+	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("const T Rzero = T(R2<T(1e-37));\n");
+	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
 	flops++;
-	tprint("const T r2 = FMA(z, z, R2);\n");
-	tprint("const T rzero = T(r2<T(1e-37));\n");
+	tprint("r2 = FMA(z, z, R2);\n");
+	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
 	flops++;
-	tprint("T tmp1 = R2 + Rzero;\n");
+	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
-	tprint("T Rinv;\n");
 	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops + rsqrt_flops;
-	tprint("T R = T(1) / Rinv;\n");
+	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
-	tprint("const T r2inv = T(1) / (r2+rzero);\n");
+	tprint("r2inv = TCAST(1) / (r2+rzero);\n");
 	flops += 7 - fmaops;
-	tprint("T cosphi = FMA(x, Rinv, Rzero);\n");
+	tprint("cosphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
-	tprint("T sinphi = -y * Rinv;\n");
+	tprint("sinphi = -y * Rinv;\n");
 	flops += 2;
 	flops += z_rot(P - 1, "M", false, false, false);
 	tprint("greens_xz_%s_P%i(O, R, z, r2inv);\n", type.c_str(), P);
@@ -1142,7 +1126,7 @@ int m2l_rot1(int P, int Q) {
 	flops++;
 	flops += z_rot(Q, "L", false, false, Q == P);
 	flops++;
-	tprint("for( int n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
+	tprint("for(n = %i; n < %i; n++) {\n", nophi, (Q + 1) * (Q + 1));
 	indent();
 	tprint("L0[n] += L[n];\n");
 	deindent();
@@ -1174,14 +1158,14 @@ int m2lg(int P, int Q) {
 	func_header("M2LG", P, nophi, true, "L", PTR, "M", CPTR, "O", CPTR);
 	flops += m2lg_body(P, Q);
 	if (!nophi && P > 2 && periodic) {
-		tprint("L[%i] = FMA(T(-0.5) * O[%i], M[%i], L[%i]);\n", index(0, 0), (P + 1) * (P + 1), P * P, index(0, 0));
+		tprint("L[%i] = FMA(TCAST(-0.5) * O[%i], M[%i], L[%i]);\n", index(0, 0), (P + 1) * (P + 1), P * P, index(0, 0));
 		flops += 3 - fmaops;
 	}
 	if (P > 1 && periodic) {
-		tprint("L[%i] = FMA(T(-2) * O[%i], M[%i], L[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1), index(1, -1));
+		tprint("L[%i] = FMA(TCAST(-2) * O[%i], M[%i], L[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1), index(1, -1));
 		tprint("L[%i] -= O[%i] * M[%i];\n", index(1, +0), (P + 1) * (P + 1), index(1, +0), index(1, +0));
-		tprint("L[%i] = FMA(T(-2) * O[%i], M[%i], L[%i]);\n", index(1, +1), (P + 1) * (P + 1), index(1, +1), index(1, +1));
-		tprint("L[%i] = FMA(T(-0.5) * O[%i], M[%i], L[%i]);\n", (P + 1) * (P + 1), (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
+		tprint("L[%i] = FMA(TCAST(-2) * O[%i], M[%i], L[%i]);\n", index(1, +1), (P + 1) * (P + 1), index(1, +1), index(1, +1));
+		tprint("L[%i] = FMA(TCAST(-0.5) * O[%i], M[%i], L[%i]);\n", (P + 1) * (P + 1), (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
 		flops += 10 - 3 * fmaops;
 	}
 	deindent();
@@ -1210,44 +1194,6 @@ int m2l_norot(int P, int Q) {
 	return flops;
 }
 
-double gamma(double x) {
-	if (x > 1.0) {
-		return tgamma(x);
-	} else {
-		return gamma(1.0 + x) / x;
-	}
-}
-
-double hypergeo(double a, int i) {
-	double y = 0.0;
-	int done = 0;
-	int n = i / 2;
-	const auto g1 = gamma(0.5 + n);
-	const auto g2 = gamma(1.0 + n);
-	const auto g3 = gamma(1.0 - 0.5 * i + n);
-	const auto g4 = gamma(1.5 - 0.5 * i + n);
-	auto z = (g1 / g3) * (g2 / g4) / (gamma(0.5) * gamma(1.0)) * pow(-a * a, n) / factorial(n);
-	y += z;
-	for (++n;; n++) {
-		z *= (n - 0.5);
-		z /= (n - 0.5 * i);
-		z /= (n - 0.5 * i + 0.5);
-		z *= -a * a;
-		y += z;
-		if (y) {
-			if (fabs(z / y) < (2 - done) * std::numeric_limits<double>::epsilon()) {
-				done++;
-				if (done == 2) {
-					break;
-				}
-			} else {
-				done = 0;
-			}
-		}
-	}
-	return y;
-}
-
 int ewald_greens(int P, double alpha) {
 	int R2, H2;
 	if (is_float(type)) {
@@ -1268,8 +1214,6 @@ int ewald_greens(int P, double alpha) {
 	//flops += greens(P);
 	//set_tprint(c);
 	tprint("T Gr[%i];\n", exp_sz(P));
-	tprint("T Gfour[%i];\n", exp_sz(P));
-	tprint("T Greal[%i];\n", exp_sz(P));
 	set_tprint(false);
 	flops += greens(P);
 	set_tprint(c);
@@ -1288,129 +1232,7 @@ int ewald_greens(int P, double alpha) {
 	flops *= cnt + 1;
 	bool first = true;
 	int eflops;
-	tprint("T sw;\n");
-	tprint("{\n");
-	indent();
-	tprint("const T r2 = x0 * x0 + y0 * y0 + z0 * z0;\n");
-	flops += 5;
-	tprint("T r;\n");
-	tprint("r = sqrt_%s(r2);\n", type.c_str());
-	tprint("greens_%s_P%i(Gr, x0, y0, z0);\n", type.c_str(), P);
-	tprint("T xxx = T(%.20e) * r;\n", alpha);
-	flops++;
-	tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-	tprint("erfcexp_%s(xxx, &gamma1, &exp0);\n", type.c_str());
-	flops += erfcexp_flops;
-	tprint("gamma1 *= T(%.20e);\n", sqrt(M_PI));
-	flops += 1;
-	tprint("const T xfac = T(%.20e) * r2;\n", alpha * alpha);
-	flops += 1;
-	tprint("T xpow = T(%.20e) * r;\n", alpha);
-	flops++;
-	double gamma0inv = 1.0 / sqrt(M_PI);
-	tprint("T gamma;\n");
-	tprint("sw = r2 > T(0);\n");
-	flops += 1;
-	for (int l = 0; l <= P; l++) {
-		tprint("gamma = gamma1 * T(%.20e);\n", gamma0inv);
-		flops++;
-		for (int m = -l; m <= l; m++) {
-			tprint("G[%i] = sw*(T(%.1e) - gamma) * Gr[%i];\n", index(l, m), nonepow<double>(l), index(l, m));
-			flops += 4;
-		}
-		if (l == 0) {
-			tprint("G[%i] += (T(1) - sw)*T(%.20e);\n", index(0, 0), (2) * alpha / sqrt(M_PI));
-			flops += 3;
-		}
-		gamma0inv *= 1.0 / -(l + 0.5);
-		if (l != P) {
-			tprint("gamma1 = T(%.20e) * gamma1 + xpow * exp0;\n", l + 0.5);
-			flops += 3;
-			if (l != P - 1) {
-				tprint("xpow *= xfac;\n");
-				flops++;
-			}
-		}
-	}
-	deindent();
-	tprint("}\n");
-	first = true;
-	for (int this_R2 = R2; this_R2 > 0; this_R2--) {
-		for (int ix = -R; ix <= R; ix++) {
-			for (int iy = -R; iy <= R; iy++) {
-				for (int iz = -R; iz <= R; iz++) {
-					int ii = ix * ix + iy * iy + iz * iz;
-					if (ii != this_R2) {
-						continue;
-					}
-					tprint("{\n");
-					indent();
-					if (ix == 0) {
-						tprint("const T& x = x0;\n");
-					} else {
-						tprint("const T x = x0 - T(%i);\n", ix);
-						flops++;
-					}
-					if (iy == 0) {
-						tprint("const T& y = y0;\n");
-					} else {
-						tprint("const T y = y0 - T(%i);\n", iy);
-						flops++;
-					}
-					if (iz == 0) {
-						tprint("const T& z = z0;\n");
-					} else {
-						tprint("const T z = z0 - T(%i);\n", iz);
-						flops++;
-					}
-					tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
-					flops += 3 * 1;
-					tprint("T r;\n");
-					tprint("r = sqrt_%s(r2);\n", type.c_str());
-					flops += sqrt_flops;
-					tprint("greens_%s_P%i(Gr, x, y, z);\n", type.c_str(), P);
-					tprint("T xxx = T(%.20e) * r;\n", alpha);
-					flops += 1;
-					tprint("T gamma1, exp0;\n", sqrt(M_PI), alpha);
-					tprint("erfcexp_%s(xxx, &gamma1, &exp0);\n", type.c_str());
-					tprint("gamma1 *= T(%.20e);\n", -sqrt(M_PI));
-					flops += 1;
-					tprint("const T xfac = T(%.20e) * r2;\n", alpha * alpha);
-					flops += 1;
-					tprint("T xpow = T(%.20e) * r;\n", alpha);
-					flops++;
-					double gamma0inv = 1.0 / sqrt(M_PI);
-					tprint("T gamma;\n");
-					for (int l = 0; l <= P; l++) {
-						tprint("gamma = gamma1 * T(%.20e);\n", gamma0inv);
-						flops += 1;
-						for (int m = -l; m <= l; m++) {
-							if (first) {
-								tprint("Greal[%i] = gamma * Gr[%i];\n", index(l, m), index(l, m));
-								flops += 1;
-							} else {
-								tprint("Greal[%i] = FMA(gamma, Gr[%i], Greal[%i]);\n", index(l, m), index(l, m), index(l, m));
-								flops += (2 - fmaops) * 1;
-							}
-						}
-						if (l != P) {
-							gamma0inv *= 1.0 / -(l + 0.5);
-							tprint("gamma1 = FMA(T(%.20e), gamma1, -xpow * exp0);\n", l + 0.5);
-							flops += (4 - fmaops) * 1;
-							if (l != P - 1) {
-								tprint("xpow *= xfac;\n");
-								flops += 1;
-							}
-						}
-					}
-					first = false;
-					deindent();
-					tprint("}\n");
-				}
-			}
-		}
-	}
-	int rflops = flops;
+	tprint("T sw, r, r2, xxx, gam1, exp0, xfac, xpow, gam0inv, gam, x, y, z, x2, x2y2, hdotx, phi;\n");
 	const auto name = [](const char* base, int hx, int hy, int hz) {
 		std::string s = base;
 		const auto add_symbol = [&s](int h) {
@@ -1435,32 +1257,139 @@ int ewald_greens(int P, double alpha) {
 	const auto sinname = [name](int hx, int hy, int hz) {
 		return name("sin", hx, hy, hz);
 	};
+	bool close = false;
+	std::string str = "T ";
+	int icnt = 0;
 	for (int hx = -H; hx <= H; hx++) {
 		for (int hy = -H; hy <= H; hy++) {
 			for (int hz = -H; hz <= H; hz++) {
 				const int h2 = hx * hx + hy * hy + hz * hz;
 				if (h2 <= H2 && h2 > 0) {
-					tprint("T %s;\n", cosname(hx, hy, hz).c_str());
-					tprint("T %s;\n", sinname(hx, hy, hz).c_str());
+					if (close) {
+						str += std::string(", ");
+					}
+					if (icnt == 8) {
+						str += "\n\t  ";
+						icnt = 0;
+					}
+					str += cosname(hx, hy, hz).c_str() + std::string(", ");
+					str += sinname(hx, hy, hz).c_str();
+					close = true;
+					icnt++;
 				}
 			}
 		}
 	}
-	tprint("T x2;\n");
-	tprint("T x2y2;\n");
-	tprint("T hdotx;\n");
-	tprint("T phi;\n");
+	str += ";";
+	tprint("%s\n", str.c_str());
+	tprint("int ix, iy, iz, ii;\n");
+	tprint("r2 = FMA(x0, x0, FMA(y0, y0, z0 * z0));\n");
+	flops += 5 - 2 * fmaops;
+	tprint("r = sqrt_%s(r2);\n", type.c_str());
+	tprint("greens_%s_P%i(Gr, x0, y0, z0);\n", type.c_str(), P);
+	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
+	flops++;
+	tprint("erfcexp_%s(xxx, &gam1, &exp0);\n", type.c_str());
+	flops += erfcexp_flops;
+	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
+	flops += 1;
+	tprint("xfac = TCAST(%.20e) * r2;\n", alpha * alpha);
+	flops += 1;
+	tprint("xpow = TCAST(%.20e) * r;\n", alpha);
+	flops++;
+	double gam0inv = 1.0 / sqrt(M_PI);
+	tprint("sw = r2 > TCAST(0);\n");
+	flops += 1;
+	for (int l = 0; l <= P; l++) {
+		tprint("gam = gam1 * TCAST(%.20e);\n", gam0inv);
+		flops++;
+		for (int m = -l; m <= l; m++) {
+			tprint("G[%i] = sw*(TCAST(%.1e) - gam) * Gr[%i];\n", index(l, m), nonepow<double>(l), index(l, m));
+			flops += 4;
+		}
+		if (l == 0) {
+			tprint("G[%i] += (TCAST(1) - sw)*TCAST(%.20e);\n", index(0, 0), (2) * alpha / sqrt(M_PI));
+			flops += 3;
+		}
+		gam0inv *= 1.0 / -(l + 0.5);
+		if (l != P) {
+			tprint("gam1 = TCAST(%.20e) * gam1 + xpow * exp0;\n", l + 0.5);
+			flops += 3;
+			if (l != P - 1) {
+				tprint("xpow *= xfac;\n");
+				flops++;
+			}
+		}
+	}
+	tprint("for (ix = -%i; ix <= %i; ix++) {\n", R, R);
+	indent();
+	tprint("for (iy = -%i; iy <= %i; iy++) {\n", R, R);
+	indent();
+	tprint("for (iz = -%i; iz <= %i; iz++) {\n", R, R);
+	indent();
+	tprint("ii = ix * ix + iy * iy + iz * iz;\n");
+	tprint("if (ii > %i || ii == 0) {\n", R2);
+	indent();
+	tprint("continue;\n");
+	deindent();
+	tprint("}\n");
+	tprint("x = x0 - TCAST(ix);\n");
+	flops++;
+	tprint("y = y0 - TCAST(iy);\n");
+	flops++;
+	tprint("z = z0 - TCAST(iz);\n");
+	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
+	flops += 3 * cnt;
+	tprint("r = sqrt_%s(r2);\n", type.c_str());
+	flops += sqrt_flops * cnt;
+	tprint("greens_%s_P%i(Gr, x, y, z);\n", type.c_str(), P);
+	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
+	flops += cnt;
+	tprint("erfcexp_%s(xxx, &gam1, &exp0);\n", type.c_str());
+	flops += erfcexp_flops * cnt;
+	tprint("gam1 *= TCAST(%.20e);\n", -sqrt(M_PI));
+	flops += cnt;
+	tprint("xfac = TCAST(%.20e) * r2;\n", alpha * alpha);
+	flops += cnt;
+	tprint("xpow = TCAST(%.20e) * r;\n", alpha);
+	flops++;
+	tprint("gam0inv = TCAST(%.20e);\n", 1.0 / sqrt(M_PI));
+	for (int l = 0; l <= P; l++) {
+		tprint("gam = gam1 * gam0inv;\n");
+		flops += cnt;
+		for (int m = -l; m <= l; m++) {
+			tprint("G[%i] = FMA(gam, Gr[%i], G[%i]);\n", index(l, m), index(l, m), index(l, m));
+			flops += (2 - fmaops) * cnt;
+		}
+		if (l != P) {
+			tprint("gam0inv *= TCAST(%.20e);\n", 1.0 / -(l + 0.5));
+			tprint("gam1 = FMA(TCAST(%.20e), gam1, -xpow * exp0);\n", l + 0.5);
+			flops += (4 - fmaops) * cnt;
+			if (l != P - 1) {
+				tprint("xpow *= xfac;\n");
+				flops += cnt;
+			}
+		}
+	}
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+
+	int rflops = flops;
 	for (int hx = -H; hx <= H; hx++) {
 		if (hx) {
 			if (abs(hx) == 1) {
 				tprint("x2 = %cx0;\n", hx < 0 ? '-' : ' ');
 				flops += hx < 0;
 			} else {
-				tprint("x2 = T(%i) * x0;\n", hx);
+				tprint("x2 = TCAST(%i) * x0;\n", hx);
 				flops++;
 			}
 		} else {
-			tprint("x2 = T(0);\n");
+			tprint("x2 = TCAST(0);\n");
 		}
 		for (int hy = -H; hy <= H; hy++) {
 			if (hx * hx + hy * hy > H2) {
@@ -1471,7 +1400,7 @@ int ewald_greens(int P, double alpha) {
 					tprint("x2y2 = x2 %c y0;\n", hy > 0 ? '+' : '-');
 					flops++;
 				} else {
-					tprint("x2y2 = FMA(T(%i), y0, x2);\n", hy);
+					tprint("x2y2 = FMA(TCAST(%i), y0, x2);\n", hy);
 					flops += 2 - fmaops;
 				}
 			} else {
@@ -1487,13 +1416,13 @@ int ewald_greens(int P, double alpha) {
 						tprint("hdotx = x2y2 %c z0;\n", hz > 0 ? '+' : '-');
 						flops++;
 					} else {
-						tprint("hdotx = FMA(T(%i), z0, x2y2);\n", hz);
+						tprint("hdotx = FMA(TCAST(%i), z0, x2y2);\n", hz);
 						flops += 2 - fmaops;
 					}
 				} else {
 					tprint("hdotx = x2y2;\n", hz);
 				}
-				tprint("phi = T(%.20e) * hdotx;\n", 2.0 * M_PI);
+				tprint("phi = TCAST(%.20e) * hdotx;\n", 2.0 * M_PI);
 				flops++;
 				tprint("sincos_%s(phi, &%s, &%s);\n", type.c_str(), sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
 				flops += sincos_flops;
@@ -1512,12 +1441,12 @@ int ewald_greens(int P, double alpha) {
 					const auto G0 = spherical_singular_harmonic(P, (double) hx, (double) hy, (double) hz);
 					flops++;
 					flops += 8;
-					double gamma0inv = 1.0 / sqrt(M_PI);
+					double gam0inv = 1.0 / sqrt(M_PI);
 					double hpow = 1. / h;
 					double pipow = 1. / sqrt(M_PI);
 					for (int l = 0; l <= P; l++) {
 						for (int m = 0; m <= l; m++) {
-							double c0 = gamma0inv * hpow * pipow * exp(-h * h * double(M_PI * M_PI) / (alpha * alpha));
+							double c0 = gam0inv * hpow * pipow * exp(-h * h * double(M_PI * M_PI) / (alpha * alpha));
 							std::string ax = cosname(hx, hy, hz);
 							std::string ay = sinname(hx, hy, hz);
 							int xsgn = 1;
@@ -1533,24 +1462,24 @@ int ewald_greens(int P, double alpha) {
 							}
 							if (G0[cindex(l, m)].real() != (0)) {
 								const double a = c0 * G0[cindex(l, m)].real();
-								//						tprint("G[%i] += T(%.20e) * %s;\n", index(l, m), -xsgn * c0 * G0[cindex(l, m)].real(), ax.c_str());
+								//						tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, m), -xsgn * c0 * G0[cindex(l, m)].real(), ax.c_str());
 								ops[index(l, m)][fabs(a)].push_back(std::make_pair(copysign(1.0, -xsgn * a), ax));
 								if (m != 0) {
-									//								tprint("G[%i] += T(%.20e) * %s;\n", index(l, -m), -ysgn * c0 * G0[cindex(l, m)].real(), ay.c_str());
+									//								tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, -m), -ysgn * c0 * G0[cindex(l, m)].real(), ay.c_str());
 									ops[index(l, -m)][fabs(a)].push_back(std::make_pair(copysign(1.0, -ysgn * a), ay));
 								}
 							}
 							if (G0[cindex(l, m)].imag() != (0)) {
 								const double a = c0 * G0[cindex(l, m)].imag();
-//								tprint("G[%i] += T(%.20e) * %s;\n", index(l, m), ysgn * c0 * G0[cindex(l, m)].imag(), ay.c_str());
+//								tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, m), ysgn * c0 * G0[cindex(l, m)].imag(), ay.c_str());
 								ops[index(l, -m)][fabs(a)].push_back(std::make_pair(copysign(1.0, ysgn * a), ay));
 								if (m != 0) {
-									//	tprint("G[%i] += T(%.20e) * %s;\n", index(l, -m), -xsgn * c0 * G0[cindex(l, m)].imag(), ax.c_str());
+									//	tprint("G[%i] += TCAST(%.20e) * %s;\n", index(l, -m), -xsgn * c0 * G0[cindex(l, m)].imag(), ax.c_str());
 									ops[index(l, -m)][fabs(a)].push_back(std::make_pair(copysign(1.0, -xsgn * a), ax));
 								}
 							}
 						}
-						gamma0inv /= l + 0.5;
+						gam0inv /= l + 0.5;
 						hpow *= h * h;
 						pipow *= M_PI;
 
@@ -1640,23 +1569,14 @@ int ewald_greens(int P, double alpha) {
 				[](const std::pair<double,std::vector<std::pair<int, std::string> > >& a, const std::pair<double,std::vector<std::pair<int, std::string> > > & b ) {
 					return fabs(a.first) * sqrt(a.second.size()) < fabs(b.first) * sqrt(b.second.size());
 				});
-		bool first = true;
 		for (auto j = sorted_ops.begin(); j != sorted_ops.end(); j++) {
 			auto op = j->second;
 			if (op.size()) {
 				int sgn = op[0].first > 0 ? 1 : -1;
-				if (first) {
-					if (sgn > 0) {
-						tprint("Gfour[%i] = T(+%.20e) *  ( ", ii, sgn * j->first);
-					} else {
-						tprint("Gfour[%i] = T(%.20e) *  ( ", ii, sgn * j->first);
-					}
+				if (sgn > 0) {
+					tprint("G[%i] = FMA(TCAST(+%.20e), ", ii, sgn * j->first);
 				} else {
-					if (sgn > 0) {
-						tprint("Gfour[%i] = FMA(T(+%.20e), ", ii, sgn * j->first);
-					} else {
-						tprint("Gfour[%i] = FMA(T(%.20e), ", ii, sgn * j->first);
-					}
+					tprint("G[%i] = FMA(TCAST(%.20e), ", ii, sgn * j->first);
 				}
 				flops += 2 - fmaops;
 				for (int k = 0; k < op.size(); k++) {
@@ -1671,23 +1591,14 @@ int ewald_greens(int P, double alpha) {
 					}
 				}
 				if (tprint_on) {
-					if (first) {
-						fprintf(fp, ");\n");
-					} else {
-						fprintf(fp, ", Gfour[%i]);\n", ii);
-					}
+					fprintf(fp, ", G[%i]);\n", ii);
 				}
-				first = false;
 			}
 		}
 	}
-	for (int i = 0; i < (P + 1) * (P + 1); i++) {
-		tprint("G[%i] += Greal[%i] + Gfour[%i];\n", i, i, i);
-		flops += 2;
-	}
-	tprint("G[%i] = T(%.20e);\n", (P + 1) * (P + 1), (4.0 * M_PI / 3.0));
+	tprint("G[%i] = TCAST(%.20e);\n", (P + 1) * (P + 1), (4.0 * M_PI / 3.0));
 	if (!nophi) {
-		tprint("G[%i] += T(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
+		tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
 		flops++;
 	}
 	int fflops = flops - rflops;
@@ -1709,7 +1620,11 @@ int m2l_rot2(int P, int Q) {
 	}
 	tprint("T L[%i];\n", exp_sz(Q));
 	tprint("T M[%i];\n", mul_sz(P));
-	tprint("for( int n = 0; n < %i; n++) {\n", P * P + 1);
+	tprint("T A[%i];\n", 2 * P + 1);
+	tprint("T Rx, Ry, tmp, R, Rinv, R2, Rzero, tmp1, r2, rzero, r2inv, r2przero, rinv, cosphi, sinphi, cosphi0, sinphi0;\n");
+	tprint( "int n;\n");
+	tprint("bool sw;\n");
+	tprint("for(n = 0; n < %i; n++) {\n", P * P + 1);
 	indent();
 	tprint("M[n] = M0[n];\n");
 	deindent();
@@ -1717,44 +1632,43 @@ int m2l_rot2(int P, int Q) {
 
 	/*	tprint("for( int n = 0; n < %i; n++) {\n", Q == 1 ? 4 : (Q + 1) * (Q + 1) + 1);
 	 indent();
-	 tprint("L[n] = T(0);\n");
+	 tprint("L[n] = TCAST(0);\n");
 	 deindent();
 	 tprint("}\n");*/
 
-	tprint("const T R2 = FMA(x, x, y * y);\n");
+	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("T R, Rinv;\n");
-	tprint("const T Rzero = T(R2<T(1e-37));\n");
+	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
 	flops++;
-	tprint("const T tmp1 = R2 + Rzero;\n");
+	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
 	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
-	tprint("R = T(1) / Rinv;\n");
+	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
-	tprint("const T r2 = (FMA(z, z, R2));\n");
-	tprint("const T rzero = T(r2<T(1e-37));\n");
-	tprint("const T r2inv = T(1) / r2;\n");
+	tprint("r2 = (FMA(z, z, R2));\n");
+	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
+	tprint("r2inv = TCAST(1) / r2;\n");
 	flops += 3 + divops - fmaops;
-	tprint("const T r2przero = (r2 + rzero);");
+	tprint("r2przero = (r2 + rzero);");
 	flops += 1;
-	tprint("T rinv;\n");
 	tprint("rinv = rsqrt_%s(r2przero);\n", type.c_str());
 	flops += rsqrt_flops;
-	tprint("T cosphi0;\n");
-	tprint("T cosphi;\n");
-	tprint("T sinphi0;\n");
-	tprint("T sinphi;\n");
 
 	tprint("cosphi = y * Rinv;\n");
 	flops++;
 	tprint("sinphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
-	tprint("const auto multi_rot = [&M,&cosphi,&sinphi]()\n");
+	tprint("sw = false;\n");
+	if (tprint_on) {
+		fprintf(fp, "MULTIPOLE_ROTATION:\n");
+	}
 	flops += 2 * z_rot(P - 1, "M", false, false, false);
-	tprint(";\n");
-	tprint("multi_rot();\n");
-
+	tprint("if( sw ) {\n");
+	indent();
+	tprint("goto CONTINUE_AFTER_ROTATION;\n");
+	deindent();
+	tprint("}\n");
 	flops += xz_swap(P - 1, "M", false, false, false, false);
 
 	tprint("cosphi0 = cosphi;\n");
@@ -1763,7 +1677,11 @@ int m2l_rot2(int P, int Q) {
 	flops += 2 - fmaops;
 	tprint("sinphi = -R * rinv;\n");
 	flops += 2;
-	tprint("multi_rot();\n");
+	tprint("sw = true;\n");
+	tprint("goto MULTIPOLE_ROTATION;\n");
+	if (tprint_on) {
+		fprintf(fp, "CONTINUE_AFTER_ROTATION:\n");
+	}
 	flops += xz_swap(P - 1, "M", false, true, false, false);
 	flops += m2l(P, Q, "M", "L");
 	flops += xz_swap(Q, "L", true, false, true, false);
@@ -1771,20 +1689,17 @@ int m2l_rot2(int P, int Q) {
 	tprint("sinphi = -sinphi;\n");
 	flops += 1;
 	flops += z_rot(Q, "L", true, false, false);
-//	flops += z_rot(P, "L", true);
-//	flops += xz_swap(P, "L", true, false, false, true);
 	flops += xz_swap(Q, "L", true, false, false, true);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
 	flops += 1;
 	flops += z_rot(Q, "L", false, true, false);
-	tprint("for( int n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
+	tprint("for(n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
 	indent();
 	tprint("L0[n] += L[n];\n");
 	deindent();
 	tprint("}\n");
 	flops += (Q + 1) * (Q + 1);
-	tprint("\n");
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -1794,23 +1709,22 @@ int m2l_rot2(int P, int Q) {
 int regular_harmonic(int P) {
 	int flops = 0;
 	func_header("regular_harmonic", P, false, false, "Y", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("const T r2 = FMA(x, x, FMA(y, y, z * z));\n");
+	tprint("T ax, ay, r2;\n");
+	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 5 - 2 * fmaops;
-	tprint("T ax;\n");
-	tprint("T ay;\n");
-	tprint("Y[0] = T(1);\n");
+	tprint("Y[0] = TCAST(1);\n");
 	tprint("Y[%i] = r2;\n", (P + 1) * (P + 1));
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
-//	Y[index(m, m)] = Y[index(m - 1, m - 1)] * R / T(2 * m);
+//	Y[index(m, m)] = Y[index(m - 1, m - 1)] * R / TCAST(2 * m);
 			if (m - 1 > 0) {
-				tprint("ax = Y[%i] * T(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
-				tprint("ay = Y[%i] * T(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
+				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("ay = Y[%i] * TCAST(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax - y * ay;\n", index(m, m));
 				tprint("Y[%i] = FMA(y, ax, x * ay);\n", index(m, -m));
 				flops += 6 - fmaops;
 			} else {
-				tprint("ax = Y[%i] * T(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax;\n", index(m, m));
 				tprint("Y[%i] = y * ax;\n", index(m, -m));
 				flops += 3;
@@ -1829,9 +1743,9 @@ int regular_harmonic(int P) {
 		}
 		for (int n = m + 2; n <= P; n++) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-//			Y[index(n, m)] = inv * (T(2 * n - 1) * z * Y[index(n - 1, m)] - r2 * Y[index(n - 2, m)]);
-			tprint("ax =  T(%.20e) * z;\n", inv * double(2 * n - 1));
-			tprint("ay =  T(%.20e) * r2;\n", -(double) inv);
+//			Y[index(n, m)] = inv * (TCAST(2 * n - 1) * z * Y[index(n - 1, m)] - r2 * Y[index(n - 2, m)]);
+			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
+			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
 			tprint("Y[%i] = FMA(ax, Y[%i], ay * Y[%i]);\n", index(n, m), index(n - 1, m), -(double) inv, index(n - 2, m));
 			flops += 5 - fmaops;
 			if (m != 0) {
@@ -1849,24 +1763,23 @@ int regular_harmonic(int P) {
 int regular_harmonic_xz(int P) {
 	int flops = 0;
 	func_header("regular_harmonic_xz", P, false, false, "Y", PTR, "x", LIT, "z", LIT);
-	tprint("const T r2 = FMA(x, x, z * z);\n");
+	tprint("T ax, ay, r2;\n");
+	tprint("r2 = FMA(x, x, z * z);\n");
 	flops += 3 - fmaops;
-	tprint("T ax;\n");
-	tprint("T ay;\n");
-	tprint("Y[0] = T(1);\n");
+	tprint("Y[0] = TCAST(1);\n");
 	tprint("Y[%i] = r2;\n", (P + 2) * (P + 1) / 2);
 	const auto index = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
-//	Y[index(m, m)] = Y[index(m - 1, m - 1)] * R / T(2 * m);
+//	Y[index(m, m)] = Y[index(m - 1, m - 1)] * R / TCAST(2 * m);
 			if (m - 1 > 0) {
-				tprint("ax = Y[%i] * T(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax;\n", index(m, m));
 				flops += 2;
 			} else {
-				tprint("ax = Y[%i] * T(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax;\n", index(m, m));
 				flops += 2;
 			}
@@ -1883,9 +1796,9 @@ int regular_harmonic_xz(int P) {
 		}
 		for (int n = m + 2; n <= P; n++) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-//			Y[index(n, m)] = inv * (T(2 * n - 1) * z * Y[index(n - 1, m)] - r2 * Y[index(n - 2, m)]);
-			tprint("ax =  T(%.20e) * z;\n", inv * double(2 * n - 1));
-			tprint("ay =  T(%.20e) * r2;\n", -(double) inv);
+//			Y[index(n, m)] = inv * (TCAST(2 * n - 1) * z * Y[index(n - 1, m)] - r2 * Y[index(n - 2, m)]);
+			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
+			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
 			tprint("Y[%i] = FMA(ax, Y[%i], ay * Y[%i]);\n", index(n, m), index(n - 1, m), -(double) inv, index(n - 2, m));
 			flops += 5 - fmaops;
 		}
@@ -1908,9 +1821,9 @@ int M2M_norot(int P) {
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z);\n", type.c_str(), P);
 	flops += 3;
 	if (P > 1 && !nophi && periodic) {
-		tprint("M[%i] = FMA(T(-4) * x, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 1), (P + 1) * (P + 1));
-		tprint("M[%i] = FMA(T(-4) * y, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, -1), (P + 1) * (P + 1));
-		tprint("M[%i] = FMA(T(-2) * z, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 0), (P + 1) * (P + 1));
+		tprint("M[%i] = FMA(TCAST(-4) * x, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 1), (P + 1) * (P + 1));
+		tprint("M[%i] = FMA(TCAST(-4) * y, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, -1), (P + 1) * (P + 1));
+		tprint("M[%i] = FMA(TCAST(-2) * z, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 0), (P + 1) * (P + 1));
 		tprint("M[%i] = FMA(x * x, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
 		tprint("M[%i] = FMA(y * y, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
 		tprint("M[%i] = FMA(z * z, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
@@ -2065,25 +1978,25 @@ int M2M_rot1(int P) {
 	set_tprint(c);
 
 	func_header("M2M", P + 1, nophi, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("const T R2 = FMA(x, x, y * y);\n");
+	tprint("T Y[%i];\n", exp_sz(P));
+	tprint("T Rx, Ry, tmp, R, Rinv, tmp1, R2, Rzero, cosphi, sinphi;\n");
+	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("T R, Rinv, tmp1;");
-	tprint("const T Rzero = (R2<T(1e-37));\n");
+	tprint("Rzero = (R2<TCAST(1e-37));\n");
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
 	flops++;
-	tprint("R = T(1) / Rinv;\n");
+	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
-	tprint("T cosphi = FMA(x, Rinv, Rzero);\n");
+	tprint("cosphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
-	tprint("T sinphi = -y * Rinv;\n");
+	tprint("sinphi = -y * Rinv;\n");
 	flops += 2;
 	flops += z_rot(P, "M", false, false, false);
-	tprint("T Y[%i];\n", exp_sz(P));
 	if (P > 1 && !nophi && periodic) {
-		tprint("M[%i] = FMA(T(-4)*R, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 1), (P + 1) * (P + 1));
-		tprint("M[%i] = FMA(T(-2)*z, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 0), (P + 1) * (P + 1));
+		tprint("M[%i] = FMA(TCAST(-4)*R, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 1), (P + 1) * (P + 1));
+		tprint("M[%i] = FMA(TCAST(-2)*z, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 0), (P + 1) * (P + 1));
 		tprint("M[%i] = FMA(R * R, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
 		tprint("M[%i] = FMA(z * z, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
 		flops += 12;
@@ -2218,53 +2131,53 @@ int M2M_rot1(int P) {
 int M2M_rot2(int P) {
 	int flops = 0;
 	func_header("M2M", P + 1, nophi, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("const T R2 = FMA(x, x, y * y);\n");
+	tprint("T A[%i];\n", 2 * P + 1);
+	tprint("T Rx, Ry, tmp, R, Rinv, R2, Rzero, tmp1, r2, rzero, r2inv, r, rinv, cosphi, sinphi, cosphi0, sinphi0;\n");
+	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("T R, Rinv, tmp1;");
-	tprint("const T Rzero = T(R2<T(1e-37));");
+	tprint("Rzero = TCAST(R2<TCAST(1e-37));");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
 	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
-	tprint("T r2 = FMA(z, z, R2);\n");
+	tprint("r2 = FMA(z, z, R2);\n");
 	flops += 2 - fmaops;
-	tprint("const T rzero = T(r2<T(1e-37));");
+	tprint("rzero = TCAST(r2<TCAST(1e-37));");
 	flops += 1;
-	tprint("T r, rinv;\n");
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
-	tprint("R = T(1) / Rinv;\n");
+	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
-	tprint("r = T(1) / rinv;\n");
+	tprint("r = TCAST(1) / rinv;\n");
 	flops += divops;
-	tprint("T cosphi = y * Rinv;\n");
+	tprint("cosphi = y * Rinv;\n");
 	flops++;
-	tprint("T sinphi = FMA(x, Rinv, Rzero);\n");
+	tprint("sinphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
 	flops += z_rot(P, "M", false, false, false);
 	flops += xz_swap(P, "M", false, false, false, false);
-	tprint("T cosphi0 = cosphi;\n");
-	tprint("T sinphi0 = sinphi;\n");
+	tprint("cosphi0 = cosphi;\n");
+	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = FMA(z, rinv, rzero);\n");
 	flops += 2 - fmaops;
 	tprint("sinphi = -R * rinv;\n");
 	flops += z_rot(P, "M", false, false, false);
 	flops += xz_swap(P, "M", false, false, false, false);
 	if (P > 1 && !nophi && periodic) {
-		tprint("M[%i] = FMA(T(-2) * r, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 0), (P + 1) * (P + 1));
+		tprint("M[%i] = FMA(TCAST(-2) * r, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(1, 0), (P + 1) * (P + 1));
 		tprint("M[%i] = FMA(r * r, M[%i], M[%i]);\n", (P + 1) * (P + 1), index(0, 0), (P + 1) * (P + 1));
 		flops += 6 - 2 * fmaops;
 	}
 	tprint("T c0[%i];\n", P + 1);
-	tprint("c0[0] = T(1);\n");
+	tprint("c0[0] = TCAST(1);\n");
 	for (int n = 1; n <= P; n++) {
 		tprint("c0[%i] = -r * c0[%i];\n", n, n - 1);
 		flops += 2;
 	}
 	for (int n = 2; n <= P; n++) {
-		tprint("c0[%i] *= T(%.20e);\n", n, 1.0 / factorial(n));
+		tprint("c0[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
 		flops += 1;
 	}
 	for (int n = P; n >= 0; n--) {
@@ -2445,9 +2358,9 @@ int L2L_norot(int P) {
 		}
 	}
 	if (P > 1 && periodic) {
-		tprint("L[%i] = FMA(T(-2) * x, L[%i], L[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
-		tprint("L[%i] = FMA(T(-2) * y, L[%i], L[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1));
-		tprint("L[%i] = FMA(T(-2) * z, L[%i], L[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
+		tprint("L[%i] = FMA(TCAST(-2) * x, L[%i], L[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
+		tprint("L[%i] = FMA(TCAST(-2) * y, L[%i], L[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1));
+		tprint("L[%i] = FMA(TCAST(-2) * z, L[%i], L[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
 		flops += 9 - 3 * fmaops;
 		if (!nophi) {
 			tprint("L[%i] = FMA(x * x, L[%i], L[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
@@ -2472,19 +2385,19 @@ int L2L_rot1(int P) {
 
 	func_header("L2L", P, nophi, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
 	tprint("T Y[%i];\n", half_exp_sz(P));
-	tprint("const T R2 = FMA(x, x, y * y);\n");
+	tprint("T Rx, Ry, tmp, R, Rinv, tmp1, R2, Rzero, cosphi, sinphi;\n");
+	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("T R, Rinv, tmp1;");
-	tprint("const T Rzero = (R2<T(1e-37));\n");
+	tprint("Rzero = (R2<TCAST(1e-37));\n");
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
 	flops++;
-	tprint("R = T(1) / Rinv;\n");
+	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
-	tprint("T cosphi = FMA(x, Rinv, Rzero);\n");
+	tprint("cosphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
-	tprint("T sinphi = -y * Rinv;\n");
+	tprint("sinphi = -y * Rinv;\n");
 	flops += 2;
 	flops += z_rot(P, "L", false, false, false);
 	const auto yindex = [](int l, int m) {
@@ -2606,8 +2519,8 @@ int L2L_rot1(int P) {
 	tprint("sinphi = -sinphi;\n");
 	flops++;
 	if (P > 1 && periodic) {
-		tprint("L[%i] = FMA(T(-2) * R, L[%i], L[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
-		tprint("L[%i] = FMA(T(-2) * z, L[%i], L[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
+		tprint("L[%i] = FMA(TCAST(-2) * R, L[%i], L[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
+		tprint("L[%i] = FMA(TCAST(-2) * z, L[%i], L[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
 		flops += 6;
 		if (!nophi) {
 			tprint("L[%i] = FMA(R2, L[%i], L[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
@@ -2626,48 +2539,47 @@ int L2L_rot1(int P) {
 int L2L_rot2(int P) {
 	int flops = 0;
 	func_header("L2L", P, nophi, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("const T R2 = FMA(x, x, y * y);\n");
+	tprint("T A[%i];\n", 2 * P + 1);
+	tprint("T Rx, Ry, tmp, R, Rinv, tmp1, R2, Rzero, r2, rzero, r, rinv, cosphi, sinphi, cosphi0, sinphi0;\n");
+	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("T R, Rinv, tmp1;");
-	tprint("const T Rzero = T(R2<T(1e-37));");
+	tprint("Rzero = TCAST(R2<TCAST(1e-37));");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
 	tprint("Rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
-	tprint("T r2 = FMA(z, z, R2);\n");
+	tprint("r2 = FMA(z, z, R2);\n");
 	flops += 2 - fmaops;
-	tprint("const T rzero = T(r2<T(1e-37));");
+	tprint("rzero = TCAST(r2<TCAST(1e-37));");
 	flops += 1;
-	tprint("T r, rinv;\n");
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = rsqrt_%s(tmp1);\n", type.c_str());
 	flops += rsqrt_flops;
-	tprint("R = T(1) / Rinv;\n");
+	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
-	tprint("r = T(1) / rinv;\n");
+	tprint("r = TCAST(1) / rinv;\n");
 	flops += divops;
-	tprint("T cosphi = y * Rinv;\n");
+	tprint("cosphi = y * Rinv;\n");
 	flops++;
-	tprint("T sinphi = FMA(x, Rinv, Rzero);\n");
+	tprint("sinphi = FMA(x, Rinv, Rzero);\n");
 	flops += 2 - fmaops;
 	flops += z_rot(P, "L", false, false, false);
 	flops += xz_swap(P, "L", true, false, false, false);
-	tprint("T cosphi0 = cosphi;\n");
-	tprint("T sinphi0 = sinphi;\n");
+	tprint("cosphi0 = cosphi;\n");
+	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = FMA(z, rinv, rzero);\n");
 	flops += 2 - fmaops;
 	tprint("sinphi = -R * rinv;\n");
 	flops += z_rot(P, "L", false, false, false);
 	flops += xz_swap(P, "L", true, false, false, false);
-	tprint("T c0[%i];\n", P + 1);
-	tprint("c0[0] = T(1);\n");
+	tprint("A[0] = TCAST(1);\n");
 	for (int n = 1; n <= P; n++) {
-		tprint("c0[%i] = -r * c0[%i];\n", n, n - 1);
+		tprint("A[%i] = -r * A[%i];\n", n, n - 1);
 		flops += 2;
 	}
 	for (int n = 2; n <= P; n++) {
-		tprint("c0[%i] *= T(%.20e);\n", n, 1.0 / factorial(n));
+		tprint("A[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
 		flops += 1;
 	}
 	for (int n = nophi; n <= P; n++) {
@@ -2679,10 +2591,10 @@ int L2L_rot2(int P) {
 				if (-abs(m) < -(k + n)) {
 					continue;
 				}
-				tprint("L[%i] = FMA(L[%i], c0[%i], L[%i]);\n", index(n, m), index(n + k, m), k, index(n, m));
+				tprint("L[%i] = FMA(L[%i], A[%i], L[%i]);\n", index(n, m), index(n + k, m), k, index(n, m));
 				flops += 2 - fmaops;
 				if (m > 0) {
-					tprint("L[%i] = FMA(L[%i], c0[%i], L[%i]);\n", index(n, -m), index(n + k, -m), k, index(n, -m));
+					tprint("L[%i] = FMA(L[%i], A[%i], L[%i]);\n", index(n, -m), index(n + k, -m), k, index(n, -m));
 					flops += 2 - fmaops;
 				}
 			}
@@ -2690,7 +2602,7 @@ int L2L_rot2(int P) {
 		}
 	}
 	if (P > 1 && periodic) {
-		tprint("L[%i] = FMA(T(-2) * r, L[%i], L[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
+		tprint("L[%i] = FMA(TCAST(-2) * r, L[%i], L[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
 		flops += 3 - fmaops;
 		if (!nophi) {
 			tprint("L[%i] = FMA(r * r, L[%i], L[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
@@ -2855,9 +2767,9 @@ int L2P(int P) {
 		}
 	}
 	if (P >= 1 && periodic) {
-		tprint("L1[%i] = FMA(T(-2) * x, L[%i], L1[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
-		tprint("L1[%i] = FMA(T(-2) * y, L[%i], L1[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1));
-		tprint("L1[%i] = FMA(T(-2) * z, L[%i], L1[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
+		tprint("L1[%i] = FMA(TCAST(-2) * x, L[%i], L1[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
+		tprint("L1[%i] = FMA(TCAST(-2) * y, L[%i], L1[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1));
+		tprint("L1[%i] = FMA(TCAST(-2) * z, L[%i], L1[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
 		flops += 9;
 		if (!nophi) {
 			tprint("L1[%i] = FMA(x * x, L[%i], L1[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
@@ -2903,6 +2815,8 @@ void math_functions() {
 	tprint("#ifndef SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("#define SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("\n");
+	tprint("#define FMA(a, b, c) fmaf((a),(b),(c))\n");
+	tprint("\n");
 	tprint("#ifdef __cplusplus\n");
 	tprint("extern \"C\" {\n");
 	tprint("#endif\n");
@@ -2918,6 +2832,7 @@ void math_functions() {
 	fclose(fp);
 	fp = fopen("./generated_code/src/math_float.c", "wt");
 	tprint("\n");
+	tprint("#include \"typecast_float.h\";\n");
 	tprint("#include <math.h>\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((float)(a))\n");
@@ -2952,8 +2867,8 @@ void math_functions() {
 	tprint("\n");
 	tprint("void sincos_float( T x, T* s, T* c ) {\n");
 	indent();
-	tprint( "V ssgn, j, i, k;\n");
-	tprint( "T x2;\n");
+	tprint("V ssgn, j, i, k;\n");
+	tprint("T x2;\n");
 	tprint("ssgn = VCAST(((*((U*) &x) & UCAST(0x80000000)) >> UCAST(30)) - UCAST(1));\n");
 	tprint("j = VCAST((*((U*) &x) & UCAST(0x7FFFFFFF)));\n");
 	tprint("x = *((T*) &j);\n");
@@ -2982,8 +2897,8 @@ void math_functions() {
 	{
 		indent();
 		constexpr int N = 7;
-		tprint( "V k;\n");
-		tprint( "T y, xxx;\n");
+		tprint("V k;\n");
+		tprint("T y, xxx;\n");
 		tprint("k =  x / TCAST(0.6931471805599453094172) + TCAST(0.5);\n"); // 1 + divops
 		tprint("k -= x < TCAST(0);\n");
 		tprint("xxx = x - k * TCAST(0.6931471805599453094172);\n");
@@ -3046,6 +2961,8 @@ void math_functions() {
 	tprint("#ifndef SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("#define SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("\n");
+	tprint("#define FMA(a, b, c) fma((a),(b),(c))\n");
+	tprint("\n");
 	tprint("#ifdef __cplusplus\n");
 	tprint("extern \"C\" {\n");
 	tprint("#endif\n");
@@ -3062,6 +2979,7 @@ void math_functions() {
 	fp = fopen("./generated_code/src/math_double.c", "wt");
 	tprint("\n");
 	tprint("#include <math.h>\n");
+	tprint("#include \"typecast_double.h\";\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((double)(a))\n");
 	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
@@ -3143,7 +3061,7 @@ void math_functions() {
 	}
 	tprint("void erfcexp_double( T x, T* erfc0, T* exp0 ) {\n");
 	indent();
-	tprint( "T x2, nx2, q, x0;\n");
+	tprint("T x2, nx2, q, x0;\n");
 	tprint("x2 = x * x;\n");
 	tprint("nx2 = -x2;\n");
 	tprint("*exp0 = exp_double(nx2);\n");
@@ -3216,6 +3134,46 @@ void math_functions() {
 	fp = nullptr;
 }
 
+
+void typecast_functions() {
+	if (fp) {
+		fclose(fp);
+	}
+#ifdef FLOAT
+	fp = fopen("./generated_code/include/typecast_float.h", "wt");
+	tprint("#ifndef SPHERICAL_FMM_TYPECAST_FLOAT\n");
+	tprint("#define SPHERICAL_FMM_TYPECAST_FLOAT\n");
+	tprint("\n");
+	tprint("#define TCAST(a) ((float)(a))\n");
+	tprint("#define UCAST(a) ((unsigned)(a))\n");
+	tprint("#define VCAST(a) ((int)(a))\n");
+	tprint("\n");
+	tprint("typedef float T;\n");
+	tprint("typedef unsigned U;\n");
+	tprint("typedef int V;\n");
+	tprint("\n");
+	tprint("#endif\n");
+	fclose(fp);
+#endif
+#ifdef DOUBLE
+	fp = fopen("./generated_code/include/typecast_double.h", "wt");
+	tprint("#ifndef SPHERICAL_FMM_TYPECAST_DOUBLE\n");
+	tprint("#define SPHERICAL_FMM_TYPECAST_DOUBLE\n");
+	tprint("\n");
+	tprint("#define TCAST(a) ((double)(a))\n");
+	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
+	tprint("#define VCAST(a) ((long long)(a))\n");
+	tprint("\n");
+	tprint("typedef double T;\n");
+	tprint("typedef unsigned long long U;\n");
+	tprint("typedef long long V;\n");
+	tprint("\n");
+	tprint("#endif\n");
+	fclose(fp);
+#endif
+	fp = nullptr;
+}
+
 int main() {
 	system("[ -e ./generated_code ] && rm -r  ./generated_code\n");
 	system("mkdir generated_code\n");
@@ -3223,22 +3181,21 @@ int main() {
 	system("mkdir ./generated_code/include/detail\n");
 	system("mkdir ./generated_code/src\n");
 	math_functions();
+	typecast_functions();
 	set_file("./generated_code/include/spherical_fmm.h");
-	tprint("#pragma once\n");
+	tprint("#ifndef SPHERICAL_FMM_HEADER\n");
+	tprint("#define SPHERICAL_FMM_HEADER\n");
 	tprint("\n");
-	tprint("#include <cmath>\n");
+	tprint("#include <math.h>\n");
 	tprint("\n");
-	tprint("inline float FMA(float a, float b, float c) {\n");
-	indent();
-	tprint("return fmaf(a, b, c);\n");
-	deindent();
-	tprint("}\n");
-	tprint("inline double FMA(double a, double b, double c) {\n");
-	indent();
-	tprint("return fma(a, b, c);\n");
-	deindent();
-	tprint("}\n");
-	tprint("\n");
+
+	tprint("#ifdef __cplusplus\n");
+	tprint("extern \"C\" {\n");
+	tprint("#else\n");
+	tprint("#define bool int\n");
+	tprint("#define true 1\n");
+	tprint("#define false 0\n");
+	tprint("#endif\n");
 
 	static int rsqrt_float_flops = 15 - 3 * fmaops;
 	static int rsqrt_double_flops = 15 - 3 * fmaops;
@@ -3450,7 +3407,11 @@ int main() {
 	fflush(stdout);
 	set_file("./generated_code/include/spherical_fmm.h");
 	tprint(inter_header.c_str());
-	set_file("./generated_code/src/interface.cpp");
+	tprint("#ifdef __cplusplus\n");
+	tprint("}\n");
+	tprint("#endif\n");
+	tprint("\n#endif\n");
+	set_file("./generated_code/src/interface.c");
 	tprint(inter_src.c_str());
 	return 0;
 }
