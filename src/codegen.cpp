@@ -2832,7 +2832,7 @@ void math_functions() {
 	fclose(fp);
 	fp = fopen("./generated_code/src/math_float.c", "wt");
 	tprint("\n");
-	tprint("#include \"typecast_float.h\";\n");
+	tprint("#include \"typecast_float.h\"\n");
 	tprint("#include <math.h>\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((float)(a))\n");
@@ -2979,7 +2979,7 @@ void math_functions() {
 	fp = fopen("./generated_code/src/math_double.c", "wt");
 	tprint("\n");
 	tprint("#include <math.h>\n");
-	tprint("#include \"typecast_double.h\";\n");
+	tprint("#include \"typecast_double.h\"\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((double)(a))\n");
 	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
