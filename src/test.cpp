@@ -737,20 +737,20 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M(P, M, -x0 * f0, -y0 * f1, -z0 * f2, 0);
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] *= (0.5);
 			}
-			M2M(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), 0);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 				L0[n] = (0);
 			}
 			//	g0 = g1 = g2 = 0.0;
 			//		M2L_ewald3<real,P>( L0, M, x1, y1, z1);
-			M2L_ewald(P, L, M, x1, y1, z1, FMM_CALC_POT);
-			L2L(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-			L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+			M2L_ewald(P, L, M, x1, y1, z1, 0);
+			L2L(P, L, x2 * g0, y2 * g1, z2 * g2, 0);
+			L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), 0);
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			for (int l = 0; l <= P; l++) {
 				for (int m = -l; m <= l; m++) {
@@ -801,9 +801,9 @@ real test_M2L(test_type type, real theta = 0.5) {
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
-			P2M(P, M, -x0 * f0, -y0 * f1, -z0 * f2, FMM_CALC_POT);
+			P2M(P, M, -x0 * f0, -y0 * f1, -z0 * f2, 0);
 
-			M2M(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), FMM_CALC_POT);
+			M2M(P, M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), 0);
 			for (int n = 0; n <= (P > 1 ? (P + 1) * (P + 1) : (P + 1) * (P + 1) - 1); n++) {
 				L[n] = (0);
 			}
@@ -812,15 +812,15 @@ real test_M2L(test_type type, real theta = 0.5) {
 				L2[l] = 0.0;
 			}
 			if (type == CC) {
-				M2L(P, L, M, x1, y1, z1, FMM_CALC_POT);
-				L2L(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				M2L(P, L, M, x1, y1, z1, 0);
+				L2L(P, L, x2 * g0, y2 * g1, z2 * g2, 0);
+				L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), 0);
 			} else if (type == PC) {
-				M2P(P, L2, M, x1, y1, z1, FMM_CALC_POT);
+				M2P(P, L2, M, x1, y1, z1, 0);
 			} else if (type == CP) {
-				P2L(P, L, 1.0, x1, y1, z1, FMM_CALC_POT);
-				L2L(P, L, x2 * g0, y2 * g1, z2 * g2, FMM_CALC_POT);
-				L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), FMM_CALC_POT);
+				P2L(P, L, 1.0, x1, y1, z1, 0);
+				L2L(P, L, x2 * g0, y2 * g1, z2 * g2, 0);
+				L2P(P, L2, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), 0);
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -890,7 +890,7 @@ int main() {
 	feenableexcept(FE_INVALID);
 
 
-	run_tests<26, 3> run;
+	run_tests<21, 3> run;
 	printf("M2P\n");
 	run(PC);
 	printf("M2L\n");
