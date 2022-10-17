@@ -11,7 +11,7 @@
 template<class T>
 using complex = std::complex<T>;
 
-#define TEST_TYPE_DOUBLE
+#define TEST_TYPE_FLOAT
 
 #ifdef TEST_TYPE_FLOAT
 using real = float;
@@ -707,7 +707,9 @@ real test_M2L(test_type type, real theta = 0.5) {
 	real err2 = 0.0;
 	real norm = 0.0;
 	long double phi, fx, fy, fz;
-	int flags = FMM_SCALE;
+	int flags = 0;
+//	fmm_set_scale_factor_float(1000);
+//	fmm_set_scale_factor_double(1000);
 	for (int i = 0; i < N; i++) {
 		if (type == EWALD) {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
@@ -792,24 +794,16 @@ real test_M2L(test_type type, real theta = 0.5) {
 				y1 /= theta;
 				z1 /= theta;
 			}
-/*			x0 *=0.01;
-			y0 *=0.01;
-			z0 *=0.01;
-			x1 *=0.01;
-			y1 *=0.01;
-			z1 *=0.01;
-			x2 *=0.01;
-			y2 *=0.01;
-			z2 *=0.01;*/
-			x0 *= 100;
-			y0 *= 100;
-			z0 *= 100;
-			x1 *= 100;
-			y1 *= 100;
-			z1 *= 100;
-			x2 *= 100;
-			y2 *= 100;
-			z2 *= 100;
+			real eps = 1;
+			x0 *=eps;
+			y0 *=eps;
+			z0 *=eps;
+			x1 *=eps;
+			y1 *=eps;
+			z1 *=eps;
+			x2 *=eps;
+			y2 *=eps;
+			z2 *=eps;
 			double f0 = rand1();
 			double f1 = rand1();
 			double f2 = rand1();

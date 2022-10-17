@@ -253,10 +253,10 @@ void init_reals(std::string var, int cnt) {
 	std::string str;
 	str = "T " + var + "[" + std::to_string(cnt) + "];";
 //			" = {";
-/*	for (int n = 0; n < cnt - 1; n++) {
-		str += "std::numeric_limits<T>::signaling_NaN(), ";
-	}
-	str += "std::numeric_limits<T>::signaling_NaN()};";*/
+	/*	for (int n = 0; n < cnt - 1; n++) {
+	 str += "std::numeric_limits<T>::signaling_NaN(), ";
+	 }
+	 str += "std::numeric_limits<T>::signaling_NaN()};";*/
 	tprint("%s\n", str.c_str());
 }
 
@@ -365,7 +365,6 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 		tprint("typedef %s U;\n", uitype.c_str());
 		tprint("typedef %s V;\n", sitype.c_str());
 		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
-		tprint("const bool doscale = (flags & FMM_SCALE);\n");
 	} else {
 		indent();
 	}
@@ -490,6 +489,7 @@ int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 	}
 	return flops;
 }
+
 
 int m2l(int P, int Q, const char* mname, const char* lname) {
 	int flops = 0;
@@ -988,38 +988,6 @@ int greens_xz(int P) {
 	return flops;
 }
 
-int M2L_prescale(int P) {
-	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
-	tprint("rzero = TCAST(r2 < 1e-37);\n");
-	tprint("rinv0 = rsqrt_%s(r2 + rzero);", type.c_str());
-	tprint("x *= rinv0;\n");
-	tprint("y *= rinv0;\n");
-	tprint("z *= rinv0;\n");
-	tprint("tmp1 = rinv0;\n");
-	for (int n = 1; n < P; n++) {
-		for (int m = -n; m <= n; m++) {
-			tprint("M[%i] *= tmp1;\n", index(n, m));
-		}
-		if (n != P - 1) {
-			tprint("tmp1 *= rinv0;\n");
-		}
-	}
-	return 0;
-}
-
-int M2L_postscale(int P) {
-	tprint("tmp1 = rinv0;\n");
-	for (int n = 0; n <= P; n++) {
-		for (int m = -n; m <= n; m++) {
-			tprint("L[%i] *= tmp1;\n", index(n, m));
-		}
-		if (n != P) {
-			tprint("tmp1 *= rinv0;\n");
-		}
-	}
-	return 0;
-}
-
 int m2l_rot1(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
@@ -1050,17 +1018,7 @@ int m2l_rot1(int P, int Q) {
 	tprint("M[n] = M0[n];\n");
 	deindent();
 	tprint("}\n");
-	tprint("if( doscale ) {\n");
-	indent();
-	M2L_prescale(P);
-	deindent();
-	tprint("}\n");
 	const auto tpo = tprint_on;
-	//tprint("if( doscale ) {\n");
-//	indent();
-//	M2L_prescale(P);
-//	deindent();
-//	tprint("}\n");
 	set_tprint(false);
 	flops += greens_xz(P);
 	set_tprint(tpo);
@@ -1203,17 +1161,7 @@ int m2l_rot1(int P, int Q) {
 	flops++;
 	flops += z_rot(Q, "L", false, false, Q == P);
 	flops++;
-	//tprint("if( doscale ) {\n");
-	//indent();
-	//M2L_postscale(Q);
-	//deindent();
-//	tprint("}\n");
-	tprint("if( doscale ) {\n");
-	indent();
-	M2L_postscale(Q);
-	deindent();
-	tprint("}\n");
-	tprint("for(n = 0; n < %i; n++) {\n", std::max(4,exp_sz(Q) - periodic));
+	tprint("for(n = 0; n < %i; n++) {\n", std::max(4, exp_sz(Q) - periodic));
 	indent();
 	tprint("L0[n] += L[n];\n");
 	deindent();
@@ -1268,9 +1216,9 @@ int m2lg(int P, int Q) {
 int m2l_norot(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	}
 	const auto c = tprint_on;
 	set_tprint(false);
@@ -1284,28 +1232,8 @@ int m2l_norot(int P, int Q) {
 	init_real("rzero");
 	init_real("r0");
 	tprint("int n;\n");
-	tprint("if( doscale ) {\n");
-	indent();
-	tprint("for(n = 0; n < %i; n++) {\n", mul_sz(P));
-	indent();
-	tprint("M1[n] = M0[n];\n");
-	deindent();
-	tprint("}\n");
-	tprint("M = M1;\n");
-	M2L_prescale(P);
-	deindent();
-	tprint("} else {\n");
-	indent();
-	tprint("M = M0;\n");
-	deindent();
-	tprint("}\n");
 	tprint("greens_%s_P%i(O, x, y, z, flags);\n", type.c_str(), P);
 	flops += m2lg_body(P, Q);
-	tprint("if( doscale ) {\n");
-	indent();
-	M2L_postscale(Q);
-	deindent();
-	tprint("}\n");
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -1774,11 +1702,6 @@ int m2l_rot2(int P, int Q) {
 	tprint("M[n] = M0[n];\n");
 	deindent();
 	tprint("}\n");
-	tprint("if( doscale ) {\n");
-	indent();
-	M2L_prescale(P);
-	deindent();
-	tprint("}\n");
 
 	/*	tprint("for( int n = 0; n < %i; n++) {\n", Q == 1 ? 4 : (Q + 1) * (Q + 1) + 1);
 	 indent();
@@ -1800,7 +1723,7 @@ int m2l_rot2(int P, int Q) {
 	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
 	tprint("r2inv = TCAST(1) / r2;\n");
 	flops += 3 + divops - fmaops;
-	tprint("r2przero = (r2 + rzero);");
+	tprint("r2przero = (r2 + rzero);\n");
 	flops += 1;
 	tprint("rinv = rsqrt_%s(r2przero);\n", type.c_str());
 	flops += rsqrt_flops;
@@ -1844,11 +1767,6 @@ int m2l_rot2(int P, int Q) {
 	tprint("sinphi = -sinphi0;\n");
 	flops += 1;
 	flops += z_rot(Q, "L", false, true, false);
-	tprint("if( doscale ) {\n");
-	indent();
-	M2L_postscale(Q);
-	deindent();
-	tprint("}\n");
 	tprint("for(n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
 	indent();
 	tprint("L0[n] += L[n];\n");
@@ -1976,6 +1894,11 @@ int M2M_norot(int P) {
 	set_tprint(c);
 	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
 //const auto Y = spherical_regular_harmonic<T, P>(-x, -y, -z);
+	init_real("rinv0");
+	init_real("rzero");
+	init_real("r");
+	init_real("r2");
+	init_real("tmp1");
 	init_reals("Y", exp_sz(P));
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z, flags);\n", type.c_str(), P);
 	flops += 3;
@@ -2128,7 +2051,7 @@ int M2M_norot(int P) {
 		}
 	}
 	deindent();
-	tprint("}");
+	tprint("}\n");
 	tprint("\n");
 	return flops;
 }
@@ -2148,8 +2071,12 @@ int M2M_rot1(int P) {
 	init_real("R");
 	init_real("Rinv");
 	init_real("tmp1");
+	init_real("rinv0");
+	init_real("r2");
+	init_real("r");
 	init_real("R2");
 	init_real("Rzero");
+	init_real("rzero");
 	init_real("cosphi");
 	init_real("sinphi");
 	tprint("R2 = FMA(x, x, y * y);\n");
@@ -2299,7 +2226,7 @@ int M2M_rot1(int P) {
 	flops++;
 	flops += z_rot(P, "M", false, false, false);
 	deindent();
-	tprint("}");
+	tprint("}\n");
 	tprint("\n");
 	return flops;
 }
@@ -2320,6 +2247,7 @@ int M2M_rot2(int P) {
 	init_real("rzero");
 	init_real("r2inv");
 	init_real("r");
+	init_real("r2");
 	init_real("rinv");
 	init_real("cosphi");
 	init_real("cosphi0");
@@ -2327,7 +2255,7 @@ int M2M_rot2(int P) {
 	init_real("sinphi0");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = TCAST(R2<TCAST(1e-37));");
+	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
@@ -2335,7 +2263,7 @@ int M2M_rot2(int P) {
 	flops += rsqrt_flops;
 	tprint("r2 = FMA(z, z, R2);\n");
 	flops += 2 - fmaops;
-	tprint("rzero = TCAST(r2<TCAST(1e-37));");
+	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
 	flops += 1;
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = rsqrt_%s(tmp1);\n", type.c_str());
@@ -2416,6 +2344,11 @@ int L2L_norot(int P) {
 	set_tprint(c);
 	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
+	init_real("rinv0");
+	init_real("tmp1");
+	init_real("rzero");
+	init_real("r2");
+	init_real("r");
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z, flags);\n", type.c_str(), P);
 	flops += 3;
 	tprint("if( calcpot ) {\n");
@@ -2598,8 +2531,12 @@ int L2L_rot1(int P) {
 	init_real("R2");
 	init_real("Rzero");
 	init_real("tmp1");
+	init_real("rinv0");
 	init_real("cosphi");
 	init_real("sinphi");
+	init_real("rzero");
+	init_real("r2");
+	init_real("r");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = (R2<TCAST(1e-37));\n");
@@ -2771,13 +2708,14 @@ int L2L_rot2(int P) {
 	init_real("r2inv");
 	init_real("r");
 	init_real("rinv");
+	init_real("rinv0");
 	init_real("cosphi");
 	init_real("cosphi0");
 	init_real("sinphi");
 	init_real("sinphi0");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = TCAST(R2<TCAST(1e-37));");
+	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
@@ -2785,7 +2723,7 @@ int L2L_rot2(int P) {
 	flops += rsqrt_flops;
 	tprint("r2 = FMA(z, z, R2);\n");
 	flops += 2 - fmaops;
-	tprint("rzero = TCAST(r2<TCAST(1e-37));");
+	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
 	flops += 1;
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = rsqrt_%s(tmp1);\n", type.c_str());
@@ -2878,8 +2816,13 @@ int L2P(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("L2P", P, true, "L1", PTR, "L", CPTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2P", P, true, "L1", PTR, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
+	init_real("r");
+	init_real("r2");
+	init_real("rzero");
+	init_real("rinv0");
+	init_real("tmp1");
 //tprint("expansion_type<T,1> L1;\n");
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z, flags);\n", type.c_str(), P);
 	flops += 3;
@@ -3450,7 +3393,6 @@ int main() {
 
 	tprint("\n");
 	tprint("#define FMM_NOCALC_POT (0x1)\n");
-	tprint("#define FMM_SCALE (0x2)\n");
 	tprint("\n");
 	tprint("#ifdef __cplusplus\n");
 	tprint("extern \"C\" {\n");
@@ -3676,5 +3618,6 @@ int main() {
 	tprint("\n#endif\n");
 	set_file("./generated_code/src/interface.c");
 	tprint(inter_src.c_str());
+
 	return 0;
 }
