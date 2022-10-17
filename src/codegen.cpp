@@ -25,7 +25,7 @@ static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
 static int pmin = 3;
-static int pmax = 20;
+static int pmax = 10;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -245,6 +245,21 @@ enum arg_type {
 	LIT, PTR, CPTR
 };
 
+void init_real(std::string var) {
+	tprint("T %s;\n", var.c_str());
+}
+
+void init_reals(std::string var, int cnt) {
+	std::string str;
+	str = "T " + var + "[" + std::to_string(cnt) + "];";
+//			" = {";
+/*	for (int n = 0; n < cnt - 1; n++) {
+		str += "std::numeric_limits<T>::signaling_NaN(), ";
+	}
+	str += "std::numeric_limits<T>::signaling_NaN()};";*/
+	tprint("%s\n", str.c_str());
+}
+
 template<class ...Args>
 std::string func_args(const char* arg, arg_type atype, int term) {
 	std::string str;
@@ -349,7 +364,8 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 		tprint("typedef %s T;\n", type.c_str());
 		tprint("typedef %s U;\n", uitype.c_str());
 		tprint("typedef %s V;\n", sitype.c_str());
-		tprint("const bool calcpot = !(flags | FMM_NOCALC_POT);\n");
+		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+		tprint("const bool doscale = (flags & FMM_SCALE);\n");
 	} else {
 		indent();
 	}
@@ -636,7 +652,10 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 
 int greens_body(int P, const char* M = nullptr) {
 	int flops = 0;
-	tprint("T r2, r2inv, ax, ay;\n");
+	init_real("r2");
+	init_real("r2inv");
+	init_real("ax");
+	init_real("ay");
 	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 5 - 2 * fmaops;
 	if (M) {
@@ -893,7 +912,7 @@ int p2l(int P) {
 	int flops = 0;
 	func_header("P2L", P, true, "L", PTR, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
 	tprint("int n;\n");
-	tprint("T O[%i];\n", exp_sz(P));
+	init_reals("O", exp_sz(P));
 	flops += greens_body(P, "M");
 	tprint("for (n = 0; n < %i; n++) {\n;", (P + 1) * (P + 1));
 	indent();
@@ -920,7 +939,8 @@ int greens(int P) {
 int greens_xz(int P) {
 	int flops = 0;
 	func_header("greens_xz", P, false, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
-	tprint("T ax, ay;\n");
+	init_real("ax");
+	init_real("ay");
 	tprint("O[0] = sqrt_%s(r2inv);\n", type.c_str());
 	flops += sqrt_flops;
 	tprint("O[%i] = TCAST(0);\n", (P + 2) * (P + 1) / 2);
@@ -967,6 +987,39 @@ int greens_xz(int P) {
 	tprint("\n");
 	return flops;
 }
+
+int M2L_prescale(int P) {
+	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
+	tprint("rzero = TCAST(r2 < 1e-37);\n");
+	tprint("rinv0 = rsqrt_%s(r2 + rzero);", type.c_str());
+	tprint("x *= rinv0;\n");
+	tprint("y *= rinv0;\n");
+	tprint("z *= rinv0;\n");
+	tprint("tmp1 = rinv0;\n");
+	for (int n = 1; n < P; n++) {
+		for (int m = -n; m <= n; m++) {
+			tprint("M[%i] *= tmp1;\n", index(n, m));
+		}
+		if (n != P - 1) {
+			tprint("tmp1 *= rinv0;\n");
+		}
+	}
+	return 0;
+}
+
+int M2L_postscale(int P) {
+	tprint("tmp1 = rinv0;\n");
+	for (int n = 0; n <= P; n++) {
+		for (int m = -n; m <= n; m++) {
+			tprint("L[%i] *= tmp1;\n", index(n, m));
+		}
+		if (n != P) {
+			tprint("tmp1 *= rinv0;\n");
+		}
+	}
+	return 0;
+}
+
 int m2l_rot1(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
@@ -975,18 +1028,39 @@ int m2l_rot1(int P, int Q) {
 		func_header("M2P", P, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	}
 	tprint("int n;\n");
-	tprint("T R2, Rzero, r2, rzero, tmp1, Rinv, r2inv, R, cosphi, sinphi;\n");
-	tprint("T L[%i];\n", exp_sz(Q));
-	tprint("T M[%i];\n", mul_sz(P));
-	tprint("T O[%i];\n", half_exp_sz(P));
-	tprint("T Rx, Ry, tmp;\n");
+	init_real("R2");
+	init_real("Rzero");
+	init_real("r2");
+	init_real("rinv0");
+	init_real("rzero");
+	init_real("tmp1");
+	init_real("Rinv");
+	init_real("r2inv");
+	init_real("R");
+	init_real("cosphi");
+	init_real("sinphi");
+	init_real("Rx");
+	init_real("Ry");
+	init_real("tmp");
+	init_reals("L", exp_sz(Q));
+	init_reals("M", mul_sz(P));
+	init_reals("O", half_exp_sz(P));
 	tprint("for(n = 0; n < %i; n++) {\n", P * P + 1);
 	indent();
 	tprint("M[n] = M0[n];\n");
 	deindent();
 	tprint("}\n");
+	tprint("if( doscale ) {\n");
+	indent();
+	M2L_prescale(P);
+	deindent();
+	tprint("}\n");
 	const auto tpo = tprint_on;
-
+	//tprint("if( doscale ) {\n");
+//	indent();
+//	M2L_prescale(P);
+//	deindent();
+//	tprint("}\n");
 	set_tprint(false);
 	flops += greens_xz(P);
 	set_tprint(tpo);
@@ -1129,7 +1203,17 @@ int m2l_rot1(int P, int Q) {
 	flops++;
 	flops += z_rot(Q, "L", false, false, Q == P);
 	flops++;
-	tprint("for(n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
+	//tprint("if( doscale ) {\n");
+	//indent();
+	//M2L_postscale(Q);
+	//deindent();
+//	tprint("}\n");
+	tprint("if( doscale ) {\n");
+	indent();
+	M2L_postscale(Q);
+	deindent();
+	tprint("}\n");
+	tprint("for(n = 0; n < %i; n++) {\n", std::max(4,exp_sz(Q) - periodic));
 	indent();
 	tprint("L0[n] += L[n];\n");
 	deindent();
@@ -1146,7 +1230,7 @@ int m2l_ewald(int P) {
 	int flops = 0;
 	if (periodic) {
 		func_header("M2L_ewald", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
-		tprint("T G[%i];\n", exp_sz(P));
+		init_reals("G", exp_sz(P));
 		tprint("greens_ewald_%s_P%i(G, x, y, z, flags);\n", type.c_str(), P);
 		tprint("M2LG_%s_P%i(L, M, G, flags);\n", type.c_str(), P);
 		deindent();
@@ -1184,17 +1268,44 @@ int m2lg(int P, int Q) {
 int m2l_norot(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, "L", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, "L", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	}
 	const auto c = tprint_on;
 	set_tprint(false);
 	flops += greens(P);
 	set_tprint(c);
-	tprint("T O[%i];\n", exp_sz(P));
+	init_reals("O", exp_sz(P));
+	init_reals("M1", mul_sz(P));
+	tprint("T* M = NULL;\n");
+	init_real("rinv0");
+	init_real("tmp1");
+	init_real("rzero");
+	init_real("r0");
+	tprint("int n;\n");
+	tprint("if( doscale ) {\n");
+	indent();
+	tprint("for(n = 0; n < %i; n++) {\n", mul_sz(P));
+	indent();
+	tprint("M1[n] = M0[n];\n");
+	deindent();
+	tprint("}\n");
+	tprint("M = M1;\n");
+	M2L_prescale(P);
+	deindent();
+	tprint("} else {\n");
+	indent();
+	tprint("M = M0;\n");
+	deindent();
+	tprint("}\n");
 	tprint("greens_%s_P%i(O, x, y, z, flags);\n", type.c_str(), P);
 	flops += m2lg_body(P, Q);
+	tprint("if( doscale ) {\n");
+	indent();
+	M2L_postscale(Q);
+	deindent();
+	tprint("}\n");
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -1214,13 +1325,13 @@ int ewald_greens(int P, double alpha) {
 		return 0;
 	}
 	int flops = 0;
-	func_header("greens_ewald", P,  false, "G", PTR, "x0", LIT, "y0", LIT, "z0", LIT);
+	func_header("greens_ewald", P, false, "G", PTR, "x0", LIT, "y0", LIT, "z0", LIT);
 	const auto c = tprint_on;
 
 	//set_tprint(false);
 	//flops += greens(P);
 	//set_tprint(c);
-	tprint("T Gr[%i];\n", exp_sz(P));
+	init_reals("Gr", exp_sz(P));
 	set_tprint(false);
 	flops += greens(P);
 	set_tprint(c);
@@ -1239,7 +1350,23 @@ int ewald_greens(int P, double alpha) {
 	flops *= cnt + 1;
 	bool first = true;
 	int eflops;
-	tprint("T sw, r, r2, xxx, gam1, exp0, xfac, xpow, gam0inv, gam, x, y, z, x2, x2y2, hdotx, phi;\n");
+	init_real("sw");
+	init_real("r");
+	init_real("r2");
+	init_real("xxx");
+	init_real("gam1");
+	init_real("exp0");
+	init_real("xfac");
+	init_real("xpow");
+	init_real("gam0inv");
+	init_real("gam");
+	init_real("x");
+	init_real("y");
+	init_real("z");
+	init_real("x2");
+	init_real("x2y2");
+	init_real("hdotx");
+	init_real("phi");
 	const auto name = [](const char* base, int hx, int hy, int hz) {
 		std::string s = base;
 		const auto add_symbol = [&s](int h) {
@@ -1265,30 +1392,17 @@ int ewald_greens(int P, double alpha) {
 		return name("sin", hx, hy, hz);
 	};
 	bool close = false;
-	std::string str = "T ";
-	int icnt = 0;
 	for (int hx = -H; hx <= H; hx++) {
 		for (int hy = -H; hy <= H; hy++) {
 			for (int hz = -H; hz <= H; hz++) {
 				const int h2 = hx * hx + hy * hy + hz * hz;
 				if (h2 <= H2 && h2 > 0) {
-					if (close) {
-						str += std::string(", ");
-					}
-					if (icnt == 8) {
-						str += "\n\t  ";
-						icnt = 0;
-					}
-					str += cosname(hx, hy, hz).c_str() + std::string(", ");
-					str += sinname(hx, hy, hz).c_str();
-					close = true;
-					icnt++;
+					init_real(cosname(hx, hy, hz));
+					init_real(sinname(hx, hy, hz));
 				}
 			}
 		}
 	}
-	str += ";";
-	tprint("%s\n", str.c_str());
 	tprint("int ix, iy, iz, ii;\n");
 	tprint("r2 = FMA(x0, x0, FMA(y0, y0, z0 * z0));\n");
 	flops += 5 - 2 * fmaops;
@@ -1605,7 +1719,7 @@ int ewald_greens(int P, double alpha) {
 				}
 			}
 		}
-		if( ii == 0 ) {
+		if (ii == 0) {
 			deindent();
 			tprint("}\n");
 		}
@@ -1632,15 +1746,37 @@ int m2l_rot2(int P, int Q) {
 	} else {
 		func_header("M2P", P, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
 	}
-	tprint("T L[%i];\n", exp_sz(Q));
-	tprint("T M[%i];\n", mul_sz(P));
-	tprint("T A[%i];\n", 2 * P + 1);
-	tprint("T Rx, Ry, tmp, R, Rinv, R2, Rzero, tmp1, r2, rzero, r2inv, r2przero, rinv, cosphi, sinphi, cosphi0, sinphi0;\n");
+	init_reals("L", exp_sz(Q));
+	init_reals("M", mul_sz(P));
+	init_reals("A", 2 * P + 1);
+	init_real("R2");
+	init_real("Rzero");
+	init_real("r2");
+	init_real("rzero");
+	init_real("tmp1");
+	init_real("Rinv");
+	init_real("r2inv");
+	init_real("R");
+	init_real("cosphi");
+	init_real("sinphi");
+	init_real("cosphi0");
+	init_real("sinphi0");
+	init_real("Rx");
+	init_real("Ry");
+	init_real("tmp");
+	init_real("r2przero");
+	init_real("rinv");
+	init_real("rinv0");
 	tprint("int n;\n");
 	tprint("bool sw;\n");
 	tprint("for(n = 0; n < %i; n++) {\n", P * P + 1);
 	indent();
 	tprint("M[n] = M0[n];\n");
+	deindent();
+	tprint("}\n");
+	tprint("if( doscale ) {\n");
+	indent();
+	M2L_prescale(P);
 	deindent();
 	tprint("}\n");
 
@@ -1708,6 +1844,11 @@ int m2l_rot2(int P, int Q) {
 	tprint("sinphi = -sinphi0;\n");
 	flops += 1;
 	flops += z_rot(Q, "L", false, true, false);
+	tprint("if( doscale ) {\n");
+	indent();
+	M2L_postscale(Q);
+	deindent();
+	tprint("}\n");
 	tprint("for(n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
 	indent();
 	tprint("L0[n] += L[n];\n");
@@ -1723,7 +1864,9 @@ int m2l_rot2(int P, int Q) {
 int regular_harmonic(int P) {
 	int flops = 0;
 	func_header("regular_harmonic", P, false, "Y", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T ax, ay, r2;\n");
+	init_real("ax");
+	init_real("ay");
+	init_real("r2");
 	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 5 - 2 * fmaops;
 	tprint("Y[0] = TCAST(1);\n");
@@ -1776,8 +1919,10 @@ int regular_harmonic(int P) {
 
 int regular_harmonic_xz(int P) {
 	int flops = 0;
-	func_header("regular_harmonic_xz", P,  false, "Y", PTR, "x", LIT, "z", LIT);
-	tprint("T ax, ay, r2;\n");
+	func_header("regular_harmonic_xz", P, false, "Y", PTR, "x", LIT, "z", LIT);
+	init_real("ax");
+	init_real("ay");
+	init_real("r2");
 	tprint("r2 = FMA(x, x, z * z);\n");
 	flops += 3 - fmaops;
 	tprint("Y[0] = TCAST(1);\n");
@@ -1831,7 +1976,7 @@ int M2M_norot(int P) {
 	set_tprint(c);
 	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
 //const auto Y = spherical_regular_harmonic<T, P>(-x, -y, -z);
-	tprint("T Y[%i];\n", exp_sz(P));
+	init_reals("Y", exp_sz(P));
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z, flags);\n", type.c_str(), P);
 	flops += 3;
 	if (P > 1 && !nophi && periodic) {
@@ -1996,8 +2141,17 @@ int M2M_rot1(int P) {
 	set_tprint(c);
 
 	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T Y[%i];\n", exp_sz(P));
-	tprint("T Rx, Ry, tmp, R, Rinv, tmp1, R2, Rzero, cosphi, sinphi;\n");
+	init_reals("Y", exp_sz(P));
+	init_real("Rx");
+	init_real("Ry");
+	init_real("tmp");
+	init_real("R");
+	init_real("Rinv");
+	init_real("tmp1");
+	init_real("R2");
+	init_real("Rzero");
+	init_real("cosphi");
+	init_real("sinphi");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = (R2<TCAST(1e-37));\n");
@@ -2153,8 +2307,24 @@ int M2M_rot1(int P) {
 int M2M_rot2(int P) {
 	int flops = 0;
 	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T A[%i];\n", 2 * P + 1);
-	tprint("T Rx, Ry, tmp, R, Rinv, R2, Rzero, tmp1, r2, rzero, r2inv, r, rinv, cosphi, sinphi, cosphi0, sinphi0;\n");
+	init_reals("A", 2 * P + 1);
+	init_real("Rx");
+	init_real("Ry");
+	init_real("tmp");
+	init_real("R");
+	init_real("Rinv");
+	init_real("R2");
+	init_real("Rzero");
+	init_real("tmp1");
+	init_real("r2");
+	init_real("rzero");
+	init_real("r2inv");
+	init_real("r");
+	init_real("rinv");
+	init_real("cosphi");
+	init_real("cosphi0");
+	init_real("sinphi");
+	init_real("sinphi0");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = TCAST(R2<TCAST(1e-37));");
@@ -2196,14 +2366,13 @@ int M2M_rot2(int P) {
 		deindent();
 		tprint("}\n");
 	}
-	tprint("T c0[%i];\n", P + 1);
-	tprint("c0[0] = TCAST(1);\n");
+	tprint("A[0] = TCAST(1);\n");
 	for (int n = 1; n <= P; n++) {
-		tprint("c0[%i] = -r * c0[%i];\n", n, n - 1);
+		tprint("A[%i] = -r * A[%i];\n", n, n - 1);
 		flops += 2;
 	}
 	for (int n = 2; n <= P; n++) {
-		tprint("c0[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
+		tprint("A[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
 		flops += 1;
 	}
 	for (int n = P; n >= 0; n--) {
@@ -2215,10 +2384,10 @@ int M2M_rot2(int P) {
 				if (-abs(m) < k - n) {
 					continue;
 				}
-				tprint("M[%i] = FMA(M[%i], c0[%i], M[%i]);\n", index(n, m), index(n - k, m), k, index(n, m));
+				tprint("M[%i] = FMA(M[%i], A[%i], M[%i]);\n", index(n, m), index(n - k, m), k, index(n, m));
 				flops += 2 - fmaops;
 				if (m > 0) {
-					tprint("M[%i] = FMA(M[%i], c0[%i], M[%i]);\n", index(n, -m), index(n - k, -m), k, index(n, -m));
+					tprint("M[%i] = FMA(M[%i], A[%i], M[%i]);\n", index(n, -m), index(n - k, -m), k, index(n, -m));
 					flops += 2 - fmaops;
 				}
 			}
@@ -2246,7 +2415,7 @@ int L2L_norot(int P) {
 	flops += regular_harmonic(P);
 	set_tprint(c);
 	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T Y[%i];\n", exp_sz(P));
+	init_reals("Y", exp_sz(P));
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z, flags);\n", type.c_str(), P);
 	flops += 3;
 	tprint("if( calcpot ) {\n");
@@ -2420,8 +2589,17 @@ int L2L_rot1(int P) {
 	set_tprint(c);
 
 	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T Y[%i];\n", half_exp_sz(P));
-	tprint("T Rx, Ry, tmp, R, Rinv, tmp1, R2, Rzero, cosphi, sinphi;\n");
+	init_reals("Y", half_exp_sz(P));
+	init_real("Rx");
+	init_real("Ry");
+	init_real("tmp");
+	init_real("R");
+	init_real("Rinv");
+	init_real("R2");
+	init_real("Rzero");
+	init_real("tmp1");
+	init_real("cosphi");
+	init_real("sinphi");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = (R2<TCAST(1e-37));\n");
@@ -2579,8 +2757,24 @@ int L2L_rot1(int P) {
 int L2L_rot2(int P) {
 	int flops = 0;
 	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T A[%i];\n", 2 * P + 1);
-	tprint("T Rx, Ry, tmp, R, Rinv, tmp1, R2, Rzero, r2, rzero, r, rinv, cosphi, sinphi, cosphi0, sinphi0;\n");
+	init_reals("A", 2 * P + 1);
+	init_real("Rx");
+	init_real("Ry");
+	init_real("tmp");
+	init_real("R");
+	init_real("Rinv");
+	init_real("R2");
+	init_real("Rzero");
+	init_real("tmp1");
+	init_real("r2");
+	init_real("rzero");
+	init_real("r2inv");
+	init_real("r");
+	init_real("rinv");
+	init_real("cosphi");
+	init_real("cosphi0");
+	init_real("sinphi");
+	init_real("sinphi0");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = TCAST(R2<TCAST(1e-37));");
@@ -2674,7 +2868,7 @@ int L2L_rot2(int P) {
 }
 
 void scaling(int P) {
-	func_header("L2P", P,  true, "L1", PTR, "L", CPTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2P", P, true, "L1", PTR, "L", CPTR, "x", LIT, "y", LIT, "z", LIT);
 
 }
 
@@ -2685,7 +2879,7 @@ int L2P(int P) {
 	flops += regular_harmonic(P);
 	set_tprint(c);
 	func_header("L2P", P, true, "L1", PTR, "L", CPTR, "x", LIT, "y", LIT, "z", LIT);
-	tprint("T Y[%i];\n", exp_sz(P));
+	init_reals("Y", exp_sz(P));
 //tprint("expansion_type<T,1> L1;\n");
 	tprint("regular_harmonic_%s_P%i(Y, -x, -y, -z, flags);\n", type.c_str(), P);
 	flops += 3;
@@ -3239,7 +3433,6 @@ void typecast_functions() {
 #endif
 	fp = nullptr;
 }
-
 int main() {
 	system("[ -e ./generated_code ] && rm -r  ./generated_code\n");
 	system("mkdir generated_code\n");
@@ -3253,8 +3446,11 @@ int main() {
 	tprint("#define SPHERICAL_FMM_HEADER\n");
 	tprint("\n");
 	tprint("#include <math.h>\n");
+//	tprint("#include <limits>\n");
+
 	tprint("\n");
-	tprint("#define FMM_NOCALC_POT 0x1");
+	tprint("#define FMM_NOCALC_POT (0x1)\n");
+	tprint("#define FMM_SCALE (0x2)\n");
 	tprint("\n");
 	tprint("#ifdef __cplusplus\n");
 	tprint("extern \"C\" {\n");
