@@ -242,7 +242,7 @@ void ewald_limits(int& r2, int& h2, double alpha) {
 }
 
 enum arg_type {
-	LIT, PTR, CPTR
+	LIT, PTR, CPTR, EXP, MUL, CEXP, CMUL
 };
 
 void init_real(std::string var) {
@@ -263,42 +263,69 @@ void init_reals(std::string var, int cnt) {
 template<class ...Args>
 std::string func_args(const char* arg, arg_type atype, int term) {
 	std::string str;
-	if (atype == CPTR) {
-		str += std::string("const ");
+	if (atype == EXP || atype == MUL) {
+		str += std::string("void* ") + arg + "_ptr, ";
+	} else if (atype == CEXP || atype == CMUL) {
+		str += std::string("const void* ") + arg + "_ptr, ";
+	} else {
+		if (atype == CPTR) {
+			str += std::string("const ");
+		}
+		str += std::string(type) + " ";
+		if (atype == PTR || atype == CPTR) {
+			str += "*";
+		}
+		str += std::string(arg) + ", ";
 	}
-	str += std::string(type) + " ";
-	if (atype == PTR || atype == CPTR) {
-		str += "*";
-	}
-	str += std::string(arg) + ", ";
 	return str;
 }
 
 template<class ...Args>
 std::string func_args(const char* arg, arg_type atype, Args&& ...args) {
-	std::string str;
-	if (atype == CPTR) {
-		str += std::string("const ");
-	}
-	str += std::string(type) + " ";
-	if (atype == PTR || atype == CPTR) {
-		str += "*";
-	}
-	str += std::string(arg) + ", ";
+	auto str = func_args(arg, atype, 1);
 	str += func_args(std::forward<Args>(args)...);
 	return str;
 }
+
+template<class ...Args>
+void func_args_cover(int P, const char* arg, arg_type atype, int term) {
+	std::string str;
+	if (atype == EXP) {
+		tprint("expansion_%s(%i)* %s_st = (expansion_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("T* %s = %s_st->o;\n", arg, arg);
+	} else if (atype == CEXP) {
+		tprint("const expansion_%s(%i)* %s_st = (expansion_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("const T* %s = %s_st->o;\n", arg, arg);
+	} else if (atype == MUL) {
+		tprint("multipole_%s(%i)* %s_st = (multipole_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("T* %s = %s_st->o;\n", arg, arg);
+	} else if (atype == CMUL) {
+		tprint("const multipole_%s(%i)* %s_st = (multipole_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("const T* %s = %s_st->o;\n", arg, arg);
+	}
+}
+
+template<class ...Args>
+void func_args_cover(int P, const char* arg, arg_type atype, Args&& ...args) {
+	func_args_cover(P, arg, atype, 1);
+	func_args_cover(P, std::forward<Args>(args)...);
+}
+
 template<class ...Args>
 std::string func_args2(const char* arg, arg_type atype, int term) {
 	std::string str;
-	str += std::string(arg) + ", ";
+	if (atype == EXP || atype == MUL || atype == CEXP || atype == CMUL) {
+		str += std::string(arg) + "_ptr, ";
+	} else {
+		str += std::string(arg) + ", ";
+	}
 	return str;
 }
 
 template<class ...Args>
 std::string func_args2(const char* arg, arg_type atype, Args&& ...args) {
 	std::string str;
-	str += std::string(arg) + ", ";
+	str += func_args2(arg, atype, 1);
 	str += func_args2(std::forward<Args>(args)...);
 	return str;
 }
@@ -365,6 +392,7 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 		tprint("typedef %s U;\n", uitype.c_str());
 		tprint("typedef %s V;\n", sitype.c_str());
 		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+		func_args_cover(P, std::forward<Args>(args)..., 0);
 	} else {
 		indent();
 	}
@@ -489,7 +517,6 @@ int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 	}
 	return flops;
 }
-
 
 int m2l(int P, int Q, const char* mname, const char* lname) {
 	int flops = 0;
@@ -910,7 +937,7 @@ bool close2zero(double a) {
 
 int p2l(int P) {
 	int flops = 0;
-	func_header("P2L", P, true, "L", PTR, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
+	func_header("P2L", P, true, "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
 	tprint("int n;\n");
 	init_reals("O", exp_sz(P));
 	flops += greens_body(P, "M");
@@ -991,9 +1018,9 @@ int greens_xz(int P) {
 int m2l_rot1(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	tprint("int n;\n");
 	init_real("R2");
@@ -1177,7 +1204,7 @@ int m2l_rot1(int P, int Q) {
 int m2l_ewald(int P) {
 	int flops = 0;
 	if (periodic) {
-		func_header("M2L_ewald", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L_ewald", P, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 		init_reals("G", exp_sz(P));
 		tprint("greens_ewald_%s_P%i(G, x, y, z, flags);\n", type.c_str(), P);
 		tprint("M2LG_%s_P%i(L, M, G, flags);\n", type.c_str(), P);
@@ -1190,7 +1217,7 @@ int m2l_ewald(int P) {
 
 int m2lg(int P, int Q) {
 	int flops = 0;
-	func_header("M2LG", P, true, "L", PTR, "M", CPTR, "O", CPTR);
+	func_header("M2LG", P, true, "L", EXP, "M", CMUL, "O", CPTR);
 	flops += m2lg_body(P, Q);
 	if (!nophi && P > 2 && periodic) {
 		tprint("if( calcpot ) {\n");
@@ -1216,9 +1243,9 @@ int m2lg(int P, int Q) {
 int m2l_norot(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L", PTR, "M", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, "L", PTR, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	const auto c = tprint_on;
 	set_tprint(false);
@@ -1670,9 +1697,9 @@ int ewald_greens(int P, double alpha) {
 int m2l_rot2(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L0", PTR, "M0", CPTR, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	init_reals("L", exp_sz(Q));
 	init_reals("M", mul_sz(P));
@@ -1892,7 +1919,7 @@ int M2M_norot(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("M2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 //const auto Y = spherical_regular_harmonic<T, P>(-x, -y, -z);
 	init_real("rinv0");
 	init_real("rzero");
@@ -2063,7 +2090,7 @@ int M2M_rot1(int P) {
 	flops += regular_harmonic_xz(P);
 	set_tprint(c);
 
-	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("M2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("Rx");
 	init_real("Ry");
@@ -2233,7 +2260,7 @@ int M2M_rot1(int P) {
 
 int M2M_rot2(int P) {
 	int flops = 0;
-	func_header("M2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("M2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	init_real("Rx");
 	init_real("Ry");
@@ -2342,7 +2369,7 @@ int L2L_norot(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2L", P, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("rinv0");
 	init_real("tmp1");
@@ -2521,7 +2548,7 @@ int L2L_rot1(int P) {
 	flops += regular_harmonic_xz(P);
 	set_tprint(c);
 
-	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2L", P, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", half_exp_sz(P));
 	init_real("Rx");
 	init_real("Ry");
@@ -2693,7 +2720,7 @@ int L2L_rot1(int P) {
 
 int L2L_rot2(int P) {
 	int flops = 0;
-	func_header("L2L", P, true, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2L", P, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	init_real("Rx");
 	init_real("Ry");
@@ -2805,18 +2832,13 @@ int L2L_rot2(int P) {
 	return flops;
 }
 
-void scaling(int P) {
-	func_header("L2P", P, true, "L1", PTR, "L", CPTR, "x", LIT, "y", LIT, "z", LIT);
-
-}
-
 int L2P(int P) {
 	int flops = 0;
 	const auto c = tprint_on;
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("L2P", P, true, "L1", PTR, "L", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2P", P, true, "L1", PTR, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("r");
 	init_real("r2");
@@ -2996,7 +3018,7 @@ int P2M(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("P2M", P + 1, true, "M", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("P2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("regular_harmonic_%s_P%i(M, -x, -y, -z, flags);\n", type.c_str(), P);
 	if (!nophi) {
 		tprint("M[%i] = FMA(x, x, FMA(y, y, z * z));\n", (P + 1) * (P + 1));
@@ -3393,6 +3415,15 @@ int main() {
 
 	tprint("\n");
 	tprint("#define FMM_NOCALC_POT (0x1)\n");
+	tprint("\n");
+#ifdef DOUBLE
+	tprint("#define multipole_double(P) struct { double o[(P)*(P)+1]; }\n");
+	tprint("#define expansion_double(P) struct { double o[(P+1)*(P+1)+1]; }\n");
+#endif
+#ifdef FLOAT
+	tprint("#define multipole_float(P) struct { float o[(P)*(P)+1]; }\n");
+	tprint("#define expansion_float(P) struct { float o[(P+1)*(P+1)+1]; }\n");
+#endif
 	tprint("\n");
 	tprint("#ifdef __cplusplus\n");
 	tprint("extern \"C\" {\n");
