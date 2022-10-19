@@ -264,9 +264,9 @@ template<class ...Args>
 std::string func_args(const char* arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP || atype == MUL) {
-		str += std::string("void* ") + arg + "_ptr, ";
+		str += std::string("void* ") + arg + "_ptr";
 	} else if (atype == CEXP || atype == CMUL) {
-		str += std::string("const void* ") + arg + "_ptr, ";
+		str += std::string("const void* ") + arg + "_ptr";
 	} else {
 		if (atype == CPTR) {
 			str += std::string("const ");
@@ -275,7 +275,7 @@ std::string func_args(const char* arg, arg_type atype, int term) {
 		if (atype == PTR || atype == CPTR) {
 			str += "*";
 		}
-		str += std::string(arg) + ", ";
+		str += std::string(arg);
 	}
 	return str;
 }
@@ -283,6 +283,7 @@ std::string func_args(const char* arg, arg_type atype, int term) {
 template<class ...Args>
 std::string func_args(const char* arg, arg_type atype, Args&& ...args) {
 	auto str = func_args(arg, atype, 1);
+	str += std::string(", ");
 	str += func_args(std::forward<Args>(args)...);
 	return str;
 }
@@ -315,9 +316,9 @@ template<class ...Args>
 std::string func_args2(const char* arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP || atype == MUL || atype == CEXP || atype == CMUL) {
-		str += std::string(arg) + "_ptr, ";
+		str += std::string(arg) + "_ptr";
 	} else {
-		str += std::string(arg) + ", ";
+		str += std::string(arg);
 	}
 	return str;
 }
@@ -326,12 +327,13 @@ template<class ...Args>
 std::string func_args2(const char* arg, arg_type atype, Args&& ...args) {
 	std::string str;
 	str += func_args2(arg, atype, 1);
+	str += std::string(", ");
 	str += func_args2(std::forward<Args>(args)...);
 	return str;
 }
 
 template<class ... Args>
-void func_header(const char* func, int P, bool pub, Args&& ...args) {
+void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) {
 	if (tprint_on) {
 		static std::set<std::string> igen;
 		std::string func_name = std::string(func) + "_" + type + "_P" + std::to_string(P);
@@ -341,7 +343,11 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 			func_name = std::string(prefix) + " " + func_name;
 		}
 		func_name += "(" + func_args(std::forward<Args>(args)..., 0);
-		func_name += "int flags)";
+		if (flags) {
+			func_name += ", int flags)";
+		} else {
+			func_name += ")";
+		}
 		if (!pub) {
 			set_file("./generated_code/include/detail/spherical_fmm.h");
 		} else {
@@ -355,15 +361,24 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 				inter_header += std::string(prefix) + " ";
 			}
 			inter_header += std::string("void ") + func1 + "( int P, " + func_args(std::forward<Args>(args)..., 0);
-			inter_header += std::string("int flags");
+			if (flags) {
+				inter_header += std::string(", int flags");
+			}
 			inter_header += std::string(");\n");
 			if (prefix[0]) {
 				inter_src += std::string(prefix) + " ";
 			}
 			inter_src += std::string("void ") + func1 + "( int P, " + func_args(std::forward<Args>(args)..., 0);
-			inter_src += std::string("int flags");
+			if (flags) {
+				inter_src += std::string(", int flags");
+			}
 			inter_src += std::string(") {\n");
-			inter_src += std::string("\ttypedef void(*func_type)(") + func_args(std::forward<Args>(args)..., 0) + "int);\n";
+			inter_src += std::string("\ttypedef void(*func_type)(") + func_args(std::forward<Args>(args)..., 0);
+			if (flags) {
+				inter_src += +", int);\n";
+			} else {
+				inter_src += ");\n";
+			}
 			const int np = pmax - pmin + 1;
 			inter_src += std::string("\tstatic const func_type funcs[") + std::to_string(np) + "] = {";
 			for (int p = pmin; p <= pmax; p++) {
@@ -374,7 +389,13 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 					inter_src += std::string("};\n");
 				}
 			}
-			inter_src += std::string("\t\t") + "(*funcs[P - " + std::to_string(pmin) + "])(" + func_args2(std::forward<Args>(args)..., 0) + " flags);\n";
+			inter_src += std::string("\t\t") + "(*funcs[P - " + std::to_string(pmin) + "])(" + func_args2(std::forward<Args>(args)..., 0);
+			if (flags) {
+				inter_src += ", flags);\n";
+			} else {
+				inter_src += ");\n";
+			}
+
 			inter_src += std::string("}") + "\n\n";
 		}
 		file_name = std::string("./generated_code/src/") + file_name;
@@ -391,7 +412,9 @@ void func_header(const char* func, int P, bool pub, Args&& ...args) {
 		tprint("typedef %s T;\n", type.c_str());
 		tprint("typedef %s U;\n", uitype.c_str());
 		tprint("typedef %s V;\n", sitype.c_str());
-		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+		if( flags ) {
+			tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+		}
 		func_args_cover(P, std::forward<Args>(args)..., 0);
 	} else {
 		indent();
@@ -471,7 +494,7 @@ bool close21(double a) {
 }
 
 int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
-	//noevenhi = false;
+//noevenhi = false;
 	int flops = 0;
 	tprint("Rx = cosphi;\n");
 	tprint("Ry = sinphi;\n");
@@ -579,7 +602,7 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 }
 
 int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict, bool noevenhi) {
-	//noevenhi = false;
+//noevenhi = false;
 //	tprint("template<class T>\n");
 //	tprint(" inline void %s( array<T,%i>& %s ) {\n", fname, (P + 1) * (P + 1), name);
 	int flops = 0;
@@ -937,7 +960,7 @@ bool close2zero(double a) {
 
 int p2l(int P) {
 	int flops = 0;
-	func_header("P2L", P, true, "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
+	func_header("P2L", P, true, true, "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
 	tprint("int n;\n");
 	init_reals("O", exp_sz(P));
 	flops += greens_body(P, "M");
@@ -955,7 +978,7 @@ int p2l(int P) {
 
 int greens(int P) {
 	int flops = 0;
-	func_header("greens", P, true, "O", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("greens", P, true, true, "O", PTR, "x", LIT, "y", LIT, "z", LIT);
 	flops += greens_body(P);
 	deindent();
 	tprint("}");
@@ -965,7 +988,7 @@ int greens(int P) {
 
 int greens_xz(int P) {
 	int flops = 0;
-	func_header("greens_xz", P, false, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
+	func_header("greens_xz", P, false, true, "O", PTR, "x", LIT, "z", LIT, "r2inv", LIT);
 	init_real("ax");
 	init_real("ay");
 	tprint("O[0] = sqrt_%s(r2inv);\n", type.c_str());
@@ -1018,9 +1041,9 @@ int greens_xz(int P) {
 int m2l_rot1(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	tprint("int n;\n");
 	init_real("R2");
@@ -1204,10 +1227,10 @@ int m2l_rot1(int P, int Q) {
 int m2l_ewald(int P) {
 	int flops = 0;
 	if (periodic) {
-		func_header("M2L_ewald", P, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L_ewald", P, true, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 		init_reals("G", exp_sz(P));
 		tprint("greens_ewald_%s_P%i(G, x, y, z, flags);\n", type.c_str(), P);
-		tprint("M2LG_%s_P%i(L, M, G, flags);\n", type.c_str(), P);
+		tprint("M2LG_%s_P%i(L_ptr, M_ptr, G, flags);\n", type.c_str(), P);
 		deindent();
 		tprint("}");
 		tprint("\n");
@@ -1217,7 +1240,7 @@ int m2l_ewald(int P) {
 
 int m2lg(int P, int Q) {
 	int flops = 0;
-	func_header("M2LG", P, true, "L", EXP, "M", CMUL, "O", CPTR);
+	func_header("M2LG", P, true, true, "L", EXP, "M", CMUL, "O", CPTR);
 	flops += m2lg_body(P, Q);
 	if (!nophi && P > 2 && periodic) {
 		tprint("if( calcpot ) {\n");
@@ -1243,9 +1266,9 @@ int m2lg(int P, int Q) {
 int m2l_norot(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L", PTR, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, true, "L", PTR, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	const auto c = tprint_on;
 	set_tprint(false);
@@ -1280,12 +1303,12 @@ int ewald_greens(int P, double alpha) {
 		return 0;
 	}
 	int flops = 0;
-	func_header("greens_ewald", P, false, "G", PTR, "x0", LIT, "y0", LIT, "z0", LIT);
+	func_header("greens_ewald", P, false, true, "G", EXP, "x0", LIT, "y0", LIT, "z0", LIT);
 	const auto c = tprint_on;
 
-	//set_tprint(false);
-	//flops += greens(P);
-	//set_tprint(c);
+//set_tprint(false);
+//flops += greens(P);
+//set_tprint(c);
 	init_reals("Gr", exp_sz(P));
 	set_tprint(false);
 	flops += greens(P);
@@ -1697,9 +1720,9 @@ int ewald_greens(int P, double alpha) {
 int m2l_rot2(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
-		func_header("M2L", P, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2L", P, true, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	init_reals("L", exp_sz(Q));
 	init_reals("M", mul_sz(P));
@@ -1808,7 +1831,7 @@ int m2l_rot2(int P, int Q) {
 
 int regular_harmonic(int P) {
 	int flops = 0;
-	func_header("regular_harmonic", P, false, "Y", PTR, "x", LIT, "y", LIT, "z", LIT);
+	func_header("regular_harmonic", P, false, true, "Y", PTR, "x", LIT, "y", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
@@ -1864,7 +1887,7 @@ int regular_harmonic(int P) {
 
 int regular_harmonic_xz(int P) {
 	int flops = 0;
-	func_header("regular_harmonic_xz", P, false, "Y", PTR, "x", LIT, "z", LIT);
+	func_header("regular_harmonic_xz", P, false, true, "Y", PTR, "x", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
@@ -1919,7 +1942,7 @@ int M2M_norot(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("M2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	func_header("M2M", P + 1, true, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 //const auto Y = spherical_regular_harmonic<T, P>(-x, -y, -z);
 	init_real("rinv0");
 	init_real("rzero");
@@ -2090,7 +2113,7 @@ int M2M_rot1(int P) {
 	flops += regular_harmonic_xz(P);
 	set_tprint(c);
 
-	func_header("M2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	func_header("M2M", P + 1, true, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("Rx");
 	init_real("Ry");
@@ -2260,7 +2283,7 @@ int M2M_rot1(int P) {
 
 int M2M_rot2(int P) {
 	int flops = 0;
-	func_header("M2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	func_header("M2M", P + 1, true, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	init_real("Rx");
 	init_real("Ry");
@@ -2369,7 +2392,7 @@ int L2L_norot(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("L2L", P, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2L", P, true, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("rinv0");
 	init_real("tmp1");
@@ -2548,7 +2571,7 @@ int L2L_rot1(int P) {
 	flops += regular_harmonic_xz(P);
 	set_tprint(c);
 
-	func_header("L2L", P, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2L", P, true, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", half_exp_sz(P));
 	init_real("Rx");
 	init_real("Ry");
@@ -2720,7 +2743,7 @@ int L2L_rot1(int P) {
 
 int L2L_rot2(int P) {
 	int flops = 0;
-	func_header("L2L", P, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2L", P, true, true, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	init_real("Rx");
 	init_real("Ry");
@@ -2838,7 +2861,7 @@ int L2P(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("L2P", P, true, "L1", PTR, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	func_header("L2P", P, true, true,"L1", PTR, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("r");
 	init_real("r2");
@@ -3011,6 +3034,73 @@ int L2P(int P) {
 	return flops;
 }
 
+void scaling(int P) {
+	int mflops = 0;
+	func_header("multipole_rescale", P, true, false, "M", MUL, "r1", LIT);
+	tprint("T r0 = M_st->r;\n");
+	tprint("T scale = r0 / r1;\n");
+	mflops += divops;
+	tprint("T c = scale;\n");
+	for (int n = 1; n < P; n++) {
+		for (int m = -n; m <= n; m++) {
+			tprint("M[%i] *= c;\n", index(n, m));
+			mflops++;
+		}
+		if (n == 2) {
+			tprint("M[%i] *= c;\n", P * P);
+			mflops++;
+		}
+		if (n != P - 1) {
+			tprint("c *= scale;\n");
+			mflops++;
+		}
+	}
+	deindent();
+	tprint("}\n");
+	int lflops = 0;
+	func_header("expansion_rescale", P, true, false, "L", EXP, "r1", LIT);
+	tprint("T r0 = L_st->r;\n");
+	tprint("T scale = r1 / r0;\n");
+	lflops += divops;
+	tprint("T c = scale;\n");
+	for (int n = 0; n <= P; n++) {
+		for (int m = -n; m <= n; m++) {
+			tprint("L[%i] *= c;\n", index(n, m));
+			lflops++;
+		}
+		if (n == 2) {
+			tprint("L[%i] *= c;\n", P * P);
+			lflops++;
+		}
+		if (n != P) {
+			tprint("c *= scale;\n");
+			lflops++;
+		}
+	}
+	deindent();
+	tprint("}\n");
+	func_header("expansion_initialize", P, true, false, "L", EXP, "r", LIT);
+	tprint("int n;\n");
+	tprint("L_st->r = r;\n");
+	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+	indent();
+	tprint("L[n] = TCAST(0);\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+	func_header("multipole_initialize", P, true, false, "M", MUL, "r", LIT);
+	tprint("int n;\n");
+	tprint("M_st->r = r;\n");
+	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+	indent();
+	tprint("M[n] = TCAST(0);\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+}
+
 int P2M(int P) {
 	int flops = 0;
 	tprint("\n");
@@ -3018,7 +3108,7 @@ int P2M(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("P2M", P + 1, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	func_header("P2M", P + 1, true, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("regular_harmonic_%s_P%i(M, -x, -y, -z, flags);\n", type.c_str(), P);
 	if (!nophi) {
 		tprint("M[%i] = FMA(x, x, FMA(y, y, z * z));\n", (P + 1) * (P + 1));
@@ -3398,6 +3488,7 @@ void typecast_functions() {
 #endif
 	fp = nullptr;
 }
+
 int main() {
 	system("[ -e ./generated_code ] && rm -r  ./generated_code\n");
 	system("mkdir generated_code\n");
@@ -3415,14 +3506,33 @@ int main() {
 
 	tprint("\n");
 	tprint("#define FMM_NOCALC_POT (0x1)\n");
-	tprint("\n");
+	const auto defines = [](const char* type) {
+		for( int p = pmin; p <= pmax; p++) {
+			tprint("\n");
+			tprint( "typedef struct {\n");
+			indent();
+			tprint("%s o[%i];\n", type, (p+1)*(p+1)+1);
+			tprint("%s r;\n", type);
+			deindent();
+			tprint("} expansion_P%i_%s;\n", p, type);
+			tprint("\n");
+			tprint( "typedef struct {\n");
+			indent();
+			tprint("%s o[%i];\n", type, (p)*(p)+1);
+			tprint("%s r;\n", type);
+			deindent();
+			tprint("} multipole_P%i_%s;\n", p, type);
+		}
+		tprint( "\n");
+		tprint("#define expansion_%s(P) expansion_P##P##_%s\n", type, type);
+		tprint("#define multipole_%s(P) multipole_P##P##_%s\n", type, type);
+		tprint("\n");
+	};
 #ifdef DOUBLE
-	tprint("#define multipole_double(P) struct { double o[(P)*(P)+1]; }\n");
-	tprint("#define expansion_double(P) struct { double o[(P+1)*(P+1)+1]; }\n");
+	defines("double");
 #endif
 #ifdef FLOAT
-	tprint("#define multipole_float(P) struct { float o[(P)*(P)+1]; }\n");
-	tprint("#define expansion_float(P) struct { float o[(P+1)*(P+1)+1]; }\n");
+	defines("float");
 #endif
 	tprint("\n");
 	tprint("#ifdef __cplusplus\n");
@@ -3636,6 +3746,7 @@ int main() {
 					ewald_greens(P, alphas[P]);
 				m2lg(P, P);
 				m2l_ewald(P);
+				scaling(P);
 			}
 		}
 	}
