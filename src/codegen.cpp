@@ -242,7 +242,7 @@ void ewald_limits(int& r2, int& h2, double alpha) {
 }
 
 enum arg_type {
-	LIT, PTR, CPTR, EXP, MUL, CEXP, CMUL
+	LIT, PTR, CPTR, EXP, MUL, CEXP, CMUL, FORCE
 };
 
 void init_real(std::string var) {
@@ -267,6 +267,8 @@ std::string func_args(const char* arg, arg_type atype, int term) {
 		str += std::string("void* ") + arg + "_ptr";
 	} else if (atype == CEXP || atype == CMUL) {
 		str += std::string("const void* ") + arg + "_ptr";
+	} else if (atype == FORCE) {
+		str += std::string("fmm_force_") + type + "* " + arg;
 	} else {
 		if (atype == CPTR) {
 			str += std::string("const ");
@@ -294,15 +296,19 @@ void func_args_cover(int P, const char* arg, arg_type atype, int term) {
 	if (atype == EXP) {
 		tprint("expansion_%s(%i)* %s_st = (expansion_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("T* %s = %s_st->o;\n", arg, arg);
+		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	} else if (atype == CEXP) {
 		tprint("const expansion_%s(%i)* %s_st = (expansion_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("const T* %s = %s_st->o;\n", arg, arg);
+		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	} else if (atype == MUL) {
 		tprint("multipole_%s(%i)* %s_st = (multipole_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("T* %s = %s_st->o;\n", arg, arg);
+		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	} else if (atype == CMUL) {
 		tprint("const multipole_%s(%i)* %s_st = (multipole_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("const T* %s = %s_st->o;\n", arg, arg);
+		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	}
 }
 
@@ -409,10 +415,7 @@ void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) 
 		tprint("\n");
 		tprint("%s {\n", func_name.c_str());
 		indent();
-		tprint("typedef %s T;\n", type.c_str());
-		tprint("typedef %s U;\n", uitype.c_str());
-		tprint("typedef %s V;\n", sitype.c_str());
-		if( flags ) {
+		if (flags) {
 			tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
 		}
 		func_args_cover(P, std::forward<Args>(args)..., 0);
@@ -1043,7 +1046,7 @@ int m2l_rot1(int P, int Q) {
 	if (Q > 1) {
 		func_header("M2L", P, true, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, true, "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	tprint("int n;\n");
 	init_real("R2");
@@ -1211,11 +1214,18 @@ int m2l_rot1(int P, int Q) {
 	flops++;
 	flops += z_rot(Q, "L", false, false, Q == P);
 	flops++;
-	tprint("for(n = 0; n < %i; n++) {\n", std::max(4, exp_sz(Q) - periodic));
-	indent();
-	tprint("L0[n] += L[n];\n");
-	deindent();
-	tprint("}\n");
+	if (Q > 1) {
+		tprint("for(n = 0; n < %i; n++) {\n", std::max(4, exp_sz(Q) - periodic));
+		indent();
+		tprint("L0[n] += L[n];\n");
+		deindent();
+		tprint("}\n");
+	} else {
+		tprint( "f->potential += L[0];\n");
+		tprint( "f->force[0] -= L[3];\n");
+		tprint( "f->force[1] -= L[1];\n");
+		tprint( "f->force[2] -= L[2];\n");
+	}
 	flops += (Q + 1) * (Q + 1);
 
 	deindent();
@@ -1268,22 +1278,30 @@ int m2l_norot(int P, int Q) {
 	if (Q > 1) {
 		func_header("M2L", P, true, true, "L", EXP, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, true, "L", PTR, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, true, "f", FORCE, "M", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	const auto c = tprint_on;
 	set_tprint(false);
 	flops += greens(P);
 	set_tprint(c);
 	init_reals("O", exp_sz(P));
-	init_reals("M1", mul_sz(P));
-	tprint("T* M = NULL;\n");
-	init_real("rinv0");
-	init_real("tmp1");
-	init_real("rzero");
-	init_real("r0");
 	tprint("int n;\n");
+	if( Q == 1 ) {
+		init_reals("L", exp_sz(P));
+		tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+		indent();
+		tprint("L[n] = TCAST(0);\n");
+		deindent();
+		tprint("}\n");
+	}
 	tprint("greens_%s_P%i(O, x, y, z, flags);\n", type.c_str(), P);
 	flops += m2lg_body(P, Q);
+	if (Q == 1) {
+		tprint( "f->potential += L[0];\n");
+		tprint( "f->force[0] -= L[3];\n");
+		tprint( "f->force[1] -= L[1];\n");
+		tprint( "f->force[2] -= L[2];\n");
+	}
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -1722,7 +1740,7 @@ int m2l_rot2(int P, int Q) {
 	if (Q > 1) {
 		func_header("M2L", P, true, true, "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		func_header("M2P", P, true, true, "L0", PTR, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		func_header("M2P", P, true, true, "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	init_reals("L", exp_sz(Q));
 	init_reals("M", mul_sz(P));
@@ -1817,11 +1835,18 @@ int m2l_rot2(int P, int Q) {
 	tprint("sinphi = -sinphi0;\n");
 	flops += 1;
 	flops += z_rot(Q, "L", false, true, false);
-	tprint("for(n = 0; n < %i; n++) {\n", (Q + 1) * (Q + 1));
-	indent();
-	tprint("L0[n] += L[n];\n");
-	deindent();
-	tprint("}\n");
+	if (Q > 1) {
+		tprint("for(n = 0; n < %i; n++) {\n", std::max(4, exp_sz(Q) - periodic));
+		indent();
+		tprint("L0[n] += L[n];\n");
+		deindent();
+		tprint("}\n");
+	} else {
+		tprint( "f->potential += L[0];\n");
+		tprint( "f->force[0] -= L[3];\n");
+		tprint( "f->force[1] -= L[1];\n");
+		tprint( "f->force[2] -= L[2];\n");
+	}
 	flops += (Q + 1) * (Q + 1);
 	deindent();
 	tprint("}");
@@ -2861,7 +2886,8 @@ int L2P(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	func_header("L2P", P, true, true,"L1", PTR, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	const char* fstr[4] = {"f->potential", "f->force[3]", "f->force[1]", "f->force[2]"};
+	func_header("L2P", P, true, true, "f", FORCE, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("r");
 	init_real("r2");
@@ -2941,6 +2967,10 @@ int L2P(int P) {
 					} else {
 						asprintf(&gxstr, "Y[%i]", index(k, 0));
 					}
+					if( n > 0 ) {
+						mxsgn = -mxsgn;
+						mysgn = -mysgn;
+					}
 					add_work(mxsgn * gxsgn, 1, mxstr, gxstr);
 					if (gystr && mystr) {
 						add_work(-mysgn * gysgn, 1, mystr, gystr);
@@ -2968,39 +2998,39 @@ int L2P(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint("L1[%i] = -L1[%i];\n", index(n, m), index(n, m));
+				tprint("%s = -%s;\n", fstr[index(n,m)], fstr[index(n,m)]);
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint("L1[%i] = FMA(%s, %s, L1[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n,m)]);
 					flops++;
 				}
-				tprint("L1[%i] = -L1[%i];\n", index(n, m), index(n, m));
+				tprint("%s = -%s;\n", fstr[index(n,m)], fstr[index(n,m)]);
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint("L1[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint("%s -= %s * %s;\n", fstr[index(n,m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint("L1[%i] = FMA(%s, %s, L1[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n,m)]);
 				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint("L1[%i] = -L1[%i];\n", index(n, -m), index(n, -m));
+				tprint("%s = -%s;\n", fstr[index(n,-m)], fstr[index(n,-m)]);
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint("L1[%i] = FMA(%s, %s, L1[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,-m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n,-m)]);
 					flops++;
 				}
-				tprint("L1[%i] = -L1[%i];\n", index(n, -m), index(n, -m));
+				tprint("%s = -%s;\n", fstr[index(n,-m)], fstr[index(n,-m)]);
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint("L1[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint("%s -= %s * %s;\n", fstr[index(n,-m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint("L1[%i] = FMA(%s, %s, L1[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,-m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n,-m)]);
 				flops += 2 - fmaops;
 			}
 		}
@@ -3012,16 +3042,16 @@ int L2P(int P) {
 
 	}
 	if (P >= 1 && periodic) {
-		tprint("L1[%i] = FMA(TCAST(-2) * x, L[%i], L1[%i]);\n", index(1, 1), (P + 1) * (P + 1), index(1, 1));
-		tprint("L1[%i] = FMA(TCAST(-2) * y, L[%i], L1[%i]);\n", index(1, -1), (P + 1) * (P + 1), index(1, -1));
-		tprint("L1[%i] = FMA(TCAST(-2) * z, L[%i], L1[%i]);\n", index(1, 0), (P + 1) * (P + 1), index(1, 0));
+		tprint("%s = FMA(TCAST(-2) * x, L[%i], %s);\n", fstr[index(1, 1)], (P + 1) * (P + 1), fstr[index(1, 1)]);
+		tprint("%s = FMA(TCAST(-2) * y, L[%i], %s);\n", fstr[index(1, -1)], (P + 1) * (P + 1), fstr[index(1, -1)]);
+		tprint("%s = FMA(TCAST(-2) * z, L[%i], %s);\n", fstr[index(1, 0)], (P + 1) * (P + 1), fstr[index(1, 0)]);
 		flops += 9;
 		if (!nophi) {
 			tprint("if( calcpot ) {\n");
 			indent();
-			tprint("L1[%i] = FMA(x * x, L[%i], L1[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
-			tprint("L1[%i] = FMA(y * y, L[%i], L1[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
-			tprint("L1[%i] = FMA(z * z, L[%i], L1[%i]);\n", index(0, 0), (P + 1) * (P + 1), index(0, 0));
+			tprint("%s = FMA(x * x, L[%i], %s);\n", fstr[index(0, 0)], (P + 1) * (P + 1), fstr[index(0, 0)]);
+			tprint("%s = FMA(y * y, L[%i], %s);\n", fstr[index(0, 0)], (P + 1) * (P + 1), fstr[index(0, 0)]);
+			tprint("%s = FMA(z * z, L[%i], %s);\n", fstr[index(0, 0)], (P + 1) * (P + 1), fstr[index(0, 0)]);
 			deindent();
 			tprint("}\n");
 			flops += 9;
@@ -3037,8 +3067,7 @@ int L2P(int P) {
 void scaling(int P) {
 	int mflops = 0;
 	func_header("multipole_rescale", P, true, false, "M", MUL, "r1", LIT);
-	tprint("T r0 = M_st->r;\n");
-	tprint("T scale = r0 / r1;\n");
+	tprint("T scale = M_r / r1;\n");
 	mflops += divops;
 	tprint("T c = scale;\n");
 	for (int n = 1; n < P; n++) {
@@ -3055,12 +3084,12 @@ void scaling(int P) {
 			mflops++;
 		}
 	}
+	tprint("M_st->r = r1;\n");
 	deindent();
 	tprint("}\n");
 	int lflops = 0;
 	func_header("expansion_rescale", P, true, false, "L", EXP, "r1", LIT);
-	tprint("T r0 = L_st->r;\n");
-	tprint("T scale = r1 / r0;\n");
+	tprint("T scale = r1 / L_r;\n");
 	lflops += divops;
 	tprint("T c = scale;\n");
 	for (int n = 0; n <= P; n++) {
@@ -3077,8 +3106,10 @@ void scaling(int P) {
 			lflops++;
 		}
 	}
+	tprint("L_st->r = r1;\n");
 	deindent();
 	tprint("}\n");
+
 	func_header("expansion_initialize", P, true, false, "L", EXP, "r", LIT);
 	tprint("int n;\n");
 	tprint("L_st->r = r;\n");
@@ -3089,12 +3120,77 @@ void scaling(int P) {
 	tprint("}\n");
 	deindent();
 	tprint("}\n");
+
 	func_header("multipole_initialize", P, true, false, "M", MUL, "r", LIT);
 	tprint("int n;\n");
 	tprint("M_st->r = r;\n");
-	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+	tprint("for( n = 0; n < %i; n++) {\n", mul_sz(P));
 	indent();
 	tprint("M[n] = TCAST(0);\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+
+	func_header("expansion_accumulate", P, true, false, "L0", EXP, "L1", CEXP);
+	tprint("int n;\n");
+	tprint("expansion_%s(%i) Lc;\n", type.c_str(), P);
+	tprint("if( L0_r == L1_r ) {\n");
+	indent();
+	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+	indent();
+	tprint("L0[n] += L1[n];\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("} else {\n");
+	indent();
+	tprint("expansion_copy_%s_P%i(&Lc, &L1);\n", type.c_str(), P);
+	tprint("expansion_rescale_%s_P%i(&Lc, L0_r);\n", type.c_str(), P);
+	tprint("expansion_accumulate_%s_P%i(&L0, &Lc);\n", type.c_str(), P);
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+
+	func_header("multipole_accumulate", P, true, false, "M0", EXP, "M1", CEXP);
+	tprint("int n;\n");
+	tprint("multipole_%s(%i) Mc;\n", type.c_str(), P);
+	tprint("if( M0_r == M1_r ) {\n");
+	indent();
+	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+	indent();
+	tprint("M0[n] += M1[n];\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("} else {\n");
+	indent();
+	tprint("multipole_copy_%s_P%i(&Mc, &M1);\n", type.c_str(), P);
+	tprint("multipole_rescale_%s_P%i(&Mc, M0_r);\n", type.c_str(), P);
+	tprint("multipole_accumulate_%s_P%i(&M0, &Mc);\n", type.c_str(), P);
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+
+	func_header("expansion_copy", P, true, false, "L0", EXP, "L1", CEXP);
+	tprint("int n;\n");
+	tprint("L0_st->r = L1_r;\n");
+	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
+	indent();
+	tprint("L0[n] = L1[n];\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+
+	func_header("multipole_copy", P, true, false, "M0", MUL, "M1", CMUL);
+	tprint("int n;\n");
+	tprint("M0_st->r = M1_r;\n");
+	tprint("for( n = 0; n < %i; n++) {\n", mul_sz(P));
+	indent();
+	tprint("M0[n] = M1[n];\n");
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -3523,6 +3619,13 @@ int main() {
 			deindent();
 			tprint("} multipole_P%i_%s;\n", p, type);
 		}
+		tprint( "\n");
+		tprint( "typedef struct {\n");
+		indent();
+		tprint("%s potential;", type);
+		tprint("%s force[3];", type);
+		deindent();
+		tprint("} fmm_force_%s;\n", type);
 		tprint( "\n");
 		tprint("#define expansion_%s(P) expansion_P##P##_%s\n", type, type);
 		tprint("#define multipole_%s(P) multipole_P##P##_%s\n", type, type);

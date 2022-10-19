@@ -23,9 +23,11 @@ using real = float;
 #define M2L_ewald M2L_ewald_float
 #define L2L L2L_float
 #define L2P L2P_float
+#define fmm_force fmm_force_float
 #endif
 #ifdef TEST_TYPE_DOUBLE
 using real = double;
+#define fmm_force fmm_force_double
 #define M2M M2M_double
 #define M2P M2P_double
 #define P2L P2L_double
@@ -737,7 +739,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 			real M[P * P + 1];
 			real L[(P + 1) * (P + 1) + 1];
 			real L0[(P + 1) * (P + 1) + 1];
-			real L2[4] = { 0, 0, 0, 0 };
+			fmm_force L2 = { 0, 0, 0, 0 };
 			for (int n = 0; n <= (P > 2 ? P * P : (P * P - 1)); n++) {
 				M[n] = (0);
 			}
