@@ -35,7 +35,7 @@ static int sincos_flops;
 static int erfcexp_flops;
 static const int divops = 4;
 static const char* prefix = "";
-static std::string inter_src = "#include \"spherical_fmm.h\"\n\n";
+static std::string inter_src = "#include \"spherical_fmm.hpp\"\n\n";
 static std::string inter_header = "";
 
 static bool is_float(std::string str) {
@@ -294,19 +294,19 @@ template<class ...Args>
 void func_args_cover(int P, const char* arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP) {
-		tprint("expansion_%s(%i)* %s_st = (expansion_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("expansion<%s,%i>* %s_st = (expansion<%s,%i>*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("T* %s = %s_st->o;\n", arg, arg);
 		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	} else if (atype == CEXP) {
-		tprint("const expansion_%s(%i)* %s_st = (expansion_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("const expansion<%s,%i>* %s_st = (expansion<%s,%i>*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("const T* %s = %s_st->o;\n", arg, arg);
 		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	} else if (atype == MUL) {
-		tprint("multipole_%s(%i)* %s_st = (multipole_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("multipole<%s,%i>* %s_st = (multipole<%s,%i>*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("T* %s = %s_st->o;\n", arg, arg);
 		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	} else if (atype == CMUL) {
-		tprint("const multipole_%s(%i)* %s_st = (multipole_%s(%i)*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
+		tprint("const multipole<%s,%i>* %s_st = (multipole<%s,%i>*) %s_ptr;\n", type.c_str(), P, arg, type.c_str(), P, arg);
 		tprint("const T* %s = %s_st->o;\n", arg, arg);
 		tprint("T %s_r = %s_st->r;\n", arg, arg);
 	}
@@ -343,7 +343,7 @@ void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) 
 	if (tprint_on) {
 		static std::set<std::string> igen;
 		std::string func_name = std::string(func) + "_" + type + "_P" + std::to_string(P);
-		std::string file_name = func_name + ".c";
+		std::string file_name = func_name + ".cpp";
 		func_name = "void " + func_name;
 		if (prefix[0]) {
 			func_name = std::string(prefix) + " " + func_name;
@@ -355,9 +355,9 @@ void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) 
 			func_name += ")";
 		}
 		if (!pub) {
-			set_file("./generated_code/include/detail/spherical_fmm.h");
+			set_file("./generated_code/include/detail/spherical_fmm.hpp");
 		} else {
-			set_file("./generated_code/include/spherical_fmm.h");
+			set_file("./generated_code/include/spherical_fmm.hpp");
 		}
 		tprint("%s;\n", func_name.c_str());
 		std::string func1 = std::string(func) + std::string("_") + type;
@@ -408,10 +408,10 @@ void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) 
 //		printf("%s ", file_name.c_str());
 		set_file(file_name);
 		tprint("#include <stdio.h>\n");
-		tprint("#include \"spherical_fmm.h\"\n");
-		tprint("#include \"math_%s.h\"\n", type.c_str());
-		tprint("#include \"typecast_%s.h\"\n", type.c_str());
-		tprint("#include \"detail/spherical_fmm.h\"\n");
+		tprint("#include \"spherical_fmm.hpp\"\n");
+		tprint("#include \"math_%s.hpp\"\n", type.c_str());
+		tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
+		tprint("#include \"detail/spherical_fmm.hpp\"\n");
 		tprint("\n");
 		tprint("%s {\n", func_name.c_str());
 		indent();
@@ -1221,10 +1221,10 @@ int m2l_rot1(int P, int Q) {
 		deindent();
 		tprint("}\n");
 	} else {
-		tprint( "f->potential += L[0];\n");
-		tprint( "f->force[0] -= L[3];\n");
-		tprint( "f->force[1] -= L[1];\n");
-		tprint( "f->force[2] -= L[2];\n");
+		tprint("f->potential += L[0];\n");
+		tprint("f->force[0] -= L[3];\n");
+		tprint("f->force[1] -= L[1];\n");
+		tprint("f->force[2] -= L[2];\n");
 	}
 	flops += (Q + 1) * (Q + 1);
 
@@ -1286,7 +1286,7 @@ int m2l_norot(int P, int Q) {
 	set_tprint(c);
 	init_reals("O", exp_sz(P));
 	tprint("int n;\n");
-	if( Q == 1 ) {
+	if (Q == 1) {
 		init_reals("L", exp_sz(P));
 		tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
 		indent();
@@ -1297,10 +1297,10 @@ int m2l_norot(int P, int Q) {
 	tprint("greens_%s_P%i(O, x, y, z, flags);\n", type.c_str(), P);
 	flops += m2lg_body(P, Q);
 	if (Q == 1) {
-		tprint( "f->potential += L[0];\n");
-		tprint( "f->force[0] -= L[3];\n");
-		tprint( "f->force[1] -= L[1];\n");
-		tprint( "f->force[2] -= L[2];\n");
+		tprint("f->potential += L[0];\n");
+		tprint("f->force[0] -= L[3];\n");
+		tprint("f->force[1] -= L[1];\n");
+		tprint("f->force[2] -= L[2];\n");
 	}
 	deindent();
 	tprint("}");
@@ -1321,7 +1321,7 @@ int ewald_greens(int P, double alpha) {
 		return 0;
 	}
 	int flops = 0;
-	func_header("greens_ewald", P, false, true, "G", EXP, "x0", LIT, "y0", LIT, "z0", LIT);
+	func_header("greens_ewald", P, false, true, "G", PTR, "x0", LIT, "y0", LIT, "z0", LIT);
 	const auto c = tprint_on;
 
 //set_tprint(false);
@@ -1842,10 +1842,10 @@ int m2l_rot2(int P, int Q) {
 		deindent();
 		tprint("}\n");
 	} else {
-		tprint( "f->potential += L[0];\n");
-		tprint( "f->force[0] -= L[3];\n");
-		tprint( "f->force[1] -= L[1];\n");
-		tprint( "f->force[2] -= L[2];\n");
+		tprint("f->potential += L[0];\n");
+		tprint("f->force[0] -= L[3];\n");
+		tprint("f->force[1] -= L[1];\n");
+		tprint("f->force[2] -= L[2];\n");
 	}
 	flops += (Q + 1) * (Q + 1);
 	deindent();
@@ -2886,7 +2886,7 @@ int L2P(int P) {
 	set_tprint(false);
 	flops += regular_harmonic(P);
 	set_tprint(c);
-	const char* fstr[4] = {"f->potential", "f->force[3]", "f->force[1]", "f->force[2]"};
+	const char* fstr[4] = { "f->potential", "f->force[2]", "f->force[0]", "f->force[1]" };
 	func_header("L2P", P, true, true, "f", FORCE, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("Y", exp_sz(P));
 	init_real("r");
@@ -2967,7 +2967,7 @@ int L2P(int P) {
 					} else {
 						asprintf(&gxstr, "Y[%i]", index(k, 0));
 					}
-					if( n > 0 ) {
+					if (n > 0) {
 						mxsgn = -mxsgn;
 						mysgn = -mysgn;
 					}
@@ -2998,39 +2998,39 @@ int L2P(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint("%s = -%s;\n", fstr[index(n,m)], fstr[index(n,m)]);
+				tprint("%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n,m)]);
+					tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n, m)]);
 					flops++;
 				}
-				tprint("%s = -%s;\n", fstr[index(n,m)], fstr[index(n,m)]);
+				tprint("%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint("%s -= %s * %s;\n", fstr[index(n,m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint("%s -= %s * %s;\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n,m)]);
+				tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n, m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n, m)]);
 				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint("%s = -%s;\n", fstr[index(n,-m)], fstr[index(n,-m)]);
+				tprint("%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,-m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n,-m)]);
+					tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n, -m)]);
 					flops++;
 				}
-				tprint("%s = -%s;\n", fstr[index(n,-m)], fstr[index(n,-m)]);
+				tprint("%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint("%s -= %s * %s;\n", fstr[index(n,-m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint("%s -= %s * %s;\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n,-m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n,-m)]);
+				tprint("%s = FMA(%s, %s, %s);\n", fstr[index(n, -m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n, -m)]);
 				flops += 2 - fmaops;
 			}
 		}
@@ -3042,9 +3042,9 @@ int L2P(int P) {
 
 	}
 	if (P >= 1 && periodic) {
-		tprint("%s = FMA(TCAST(-2) * x, L[%i], %s);\n", fstr[index(1, 1)], (P + 1) * (P + 1), fstr[index(1, 1)]);
-		tprint("%s = FMA(TCAST(-2) * y, L[%i], %s);\n", fstr[index(1, -1)], (P + 1) * (P + 1), fstr[index(1, -1)]);
-		tprint("%s = FMA(TCAST(-2) * z, L[%i], %s);\n", fstr[index(1, 0)], (P + 1) * (P + 1), fstr[index(1, 0)]);
+		tprint("%s = FMA(TCAST(2) * x, L[%i], %s);\n", fstr[index(1, 1)], (P + 1) * (P + 1), fstr[index(1, 1)]);
+		tprint("%s = FMA(TCAST(2) * y, L[%i], %s);\n", fstr[index(1, -1)], (P + 1) * (P + 1), fstr[index(1, -1)]);
+		tprint("%s = FMA(TCAST(2) * z, L[%i], %s);\n", fstr[index(1, 0)], (P + 1) * (P + 1), fstr[index(1, 0)]);
 		flops += 9;
 		if (!nophi) {
 			tprint("if( calcpot ) {\n");
@@ -3134,7 +3134,7 @@ void scaling(int P) {
 
 	func_header("expansion_accumulate", P, true, false, "L0", EXP, "L1", CEXP);
 	tprint("int n;\n");
-	tprint("expansion_%s(%i) Lc;\n", type.c_str(), P);
+	tprint("expansion<%s,%i> Lc;\n", type.c_str(), P);
 	tprint("if( L0_r == L1_r ) {\n");
 	indent();
 	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
@@ -3155,7 +3155,7 @@ void scaling(int P) {
 
 	func_header("multipole_accumulate", P, true, false, "M0", EXP, "M1", CEXP);
 	tprint("int n;\n");
-	tprint("multipole_%s(%i) Mc;\n", type.c_str(), P);
+	tprint("multipole<%s,%i> Mc;\n", type.c_str(), P);
 	tprint("if( M0_r == M1_r ) {\n");
 	indent();
 	tprint("for( n = 0; n < %i; n++) {\n", exp_sz(P));
@@ -3200,15 +3200,60 @@ void scaling(int P) {
 int P2M(int P) {
 	int flops = 0;
 	tprint("\n");
-	const auto c = tprint_on;
-	set_tprint(false);
-	flops += regular_harmonic(P);
-	set_tprint(c);
-	func_header("P2M", P + 1, true, true, "M", MUL, "x", LIT, "y", LIT, "z", LIT);
-	tprint("regular_harmonic_%s_P%i(M, -x, -y, -z, flags);\n", type.c_str(), P);
-	if (!nophi) {
-		tprint("M[%i] = FMA(x, x, FMA(y, y, z * z));\n", (P + 1) * (P + 1));
-		flops += 5 - 2 * fmaops;
+	func_header("P2M", P + 1, true, true, "M", MUL, "m", LIT, "x", LIT, "y", LIT, "z", LIT);
+	init_real("ax");
+	init_real("ay");
+	init_real("r2");
+	tprint("x = -x;");
+	tprint("y = -y;");
+	tprint("z = -z;");
+	flops += 3;
+	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
+	flops += 5 - 2 * fmaops;
+	tprint("M[0] = m;\n");
+	if (!nophi && periodic) {
+		tprint("M[%i] = m * r2;\n", (P + 1) * (P + 1));
+		flops++;
+	}
+	for (int m = 0; m <= P; m++) {
+		if (m > 0) {
+//	M[index(m, m)] = M[index(m - 1, m - 1)] * R / TCAST(2 * m);
+			if (m - 1 > 0) {
+				tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("ay = M[%i] * TCAST(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
+				tprint("M[%i] = x * ax - y * ay;\n", index(m, m));
+				tprint("M[%i] = FMA(y, ax, x * ay);\n", index(m, -m));
+				flops += 6 - fmaops;
+			} else {
+				tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("M[%i] = x * ax;\n", index(m, m));
+				tprint("M[%i] = y * ax;\n", index(m, -m));
+				flops += 3;
+			}
+		}
+		if (m + 1 <= P) {
+//			M[index(m + 1, m)] = z * M[index(m, m)];
+			if (m == 0) {
+				tprint("M[%i] = z * M[%i];\n", index(m + 1, m), index(m, m));
+				flops += 1;
+			} else {
+				tprint("M[%i] = z * M[%i];\n", index(m + 1, m), index(m, m));
+				tprint("M[%i] = z * M[%i];\n", index(m + 1, -m), index(m, -m));
+				flops += 2;
+			}
+		}
+		for (int n = m + 2; n <= P; n++) {
+			const double inv = double(1) / (double(n * n) - double(m * m));
+//			M[index(n, m)] = inv * (TCAST(2 * n - 1) * z * M[index(n - 1, m)] - r2 * M[index(n - 2, m)]);
+			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
+			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
+			tprint("M[%i] = FMA(ax, M[%i], ay * M[%i]);\n", index(n, m), index(n - 1, m), -(double) inv, index(n - 2, m));
+			flops += 5 - fmaops;
+			if (m != 0) {
+				tprint("M[%i] = FMA(ax, M[%i], ay * M[%i]);\n", index(n, -m), index(n - 1, -m), -(double) inv, index(n - 2, -m));
+				flops += 3 - fmaops;
+			}
+		}
 	}
 	deindent();
 	tprint("}\n");
@@ -3223,28 +3268,22 @@ void math_functions() {
 	const char* sout = "*s";
 	const char* cout = "*c";
 #ifdef FLOAT
-	fp = fopen("./generated_code/include/math_float.h", "wt");
+	fp = fopen("./generated_code/include/math_float.hpp", "wt");
 	tprint("#ifndef SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("#define SPHERICAL_FMM_MATH_FLOAT\n");
 	tprint("\n");
 	tprint("#define FMA(a, b, c) fmaf((a),(b),(c))\n");
 	tprint("\n");
-	tprint("#ifdef __cplusplus\n");
-	tprint("extern \"C\" {\n");
-	tprint("#endif\n");
 	tprint("float rsqrt_float( float );\n");
 	tprint("float sqrt_float( float );\n");
 	tprint("void sincos_float( float, float*, float* );\n");
 	tprint("void erfcexp_float( float, float*, float* );\n");
-	tprint("#ifdef __cplusplus\n");
-	tprint("}\n");
-	tprint("#endif\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_float.c", "wt");
+	fp = fopen("./generated_code/src/math_float.cpp", "wt");
 	tprint("\n");
-	tprint("#include \"typecast_float.h\"\n");
+	tprint("#include \"typecast_float.hpp\"\n");
 	tprint("#include <math.h>\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((float)(a))\n");
@@ -3369,29 +3408,23 @@ void math_functions() {
 	fclose(fp);
 #endif
 #ifdef DOUBLE
-	fp = fopen("./generated_code/include/math_double.h", "wt");
+	fp = fopen("./generated_code/include/math_double.hpp", "wt");
 	tprint("#ifndef SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("#define SPHERICAL_FMM_MATH_DOUBLE\n");
 	tprint("\n");
 	tprint("#define FMA(a, b, c) fma((a),(b),(c))\n");
 	tprint("\n");
-	tprint("#ifdef __cplusplus\n");
-	tprint("extern \"C\" {\n");
-	tprint("#endif\n");
 	tprint("double rsqrt_double( double );\n");
 	tprint("double sqrt_double( double );\n");
 	tprint("void sincos_double( double, double*, double* );\n");
 	tprint("void erfcexp_double( double, double*, double* );\n");
-	tprint("#ifdef __cplusplus\n");
-	tprint("}\n");
-	tprint("#endif\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_double.c", "wt");
+	fp = fopen("./generated_code/src/math_double.cpp", "wt");
 	tprint("\n");
 	tprint("#include <math.h>\n");
-	tprint("#include \"typecast_double.h\"\n");
+	tprint("#include \"typecast_double.hpp\"\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((double)(a))\n");
 	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
@@ -3551,7 +3584,7 @@ void typecast_functions() {
 		fclose(fp);
 	}
 #ifdef FLOAT
-	fp = fopen("./generated_code/include/typecast_float.h", "wt");
+	fp = fopen("./generated_code/include/typecast_float.hpp", "wt");
 	tprint("#ifndef SPHERICAL_FMM_TYPECAST_FLOAT\n");
 	tprint("#define SPHERICAL_FMM_TYPECAST_FLOAT\n");
 	tprint("\n");
@@ -3567,7 +3600,7 @@ void typecast_functions() {
 	fclose(fp);
 #endif
 #ifdef DOUBLE
-	fp = fopen("./generated_code/include/typecast_double.h", "wt");
+	fp = fopen("./generated_code/include/typecast_double.hpp", "wt");
 	tprint("#ifndef SPHERICAL_FMM_TYPECAST_DOUBLE\n");
 	tprint("#define SPHERICAL_FMM_TYPECAST_DOUBLE\n");
 	tprint("\n");
@@ -3593,7 +3626,7 @@ int main() {
 	system("mkdir ./generated_code/src\n");
 	math_functions();
 	typecast_functions();
-	set_file("./generated_code/include/spherical_fmm.h");
+	set_file("./generated_code/include/spherical_fmm.hpp");
 	tprint("#ifndef SPHERICAL_FMM_HEADER\n");
 	tprint("#define SPHERICAL_FMM_HEADER\n");
 	tprint("\n");
@@ -3627,10 +3660,25 @@ int main() {
 		deindent();
 		tprint("} fmm_force_%s;\n", type);
 		tprint( "\n");
-		tprint("#define expansion_%s(P) expansion_P##P##_%s\n", type, type);
-		tprint("#define multipole_%s(P) multipole_P##P##_%s\n", type, type);
-		tprint("\n");
+		tprint("#define fmm_force_initialize_%s(f) (f)->potential = (f)->force[0] = (f)->force[1] = (f)->force[2] = 0\n", type);
 	};
+	tprint("\n");
+	tprint("template<class Type, int P>\n");
+	tprint("struct expansion {\n");
+	indent();
+	tprint("Type o[(P+1)*(P+1)+1];\n");
+	tprint("Type r;\n");
+	deindent();
+	tprint("};\n");
+	tprint("\n");
+	tprint("template<class Type, int P>\n");
+	tprint("struct multipole {\n");
+	indent();
+	tprint("Type o[(P)*(P)+1];\n");
+	tprint("Type r;\n");
+	deindent();
+	tprint("};\n");
+	tprint("\n");
 #ifdef DOUBLE
 	defines("double");
 #endif
@@ -3638,13 +3686,6 @@ int main() {
 	defines("float");
 #endif
 	tprint("\n");
-	tprint("#ifdef __cplusplus\n");
-	tprint("extern \"C\" {\n");
-	tprint("#else\n");
-	tprint("#define bool unsigned char\n");
-	tprint("#define true 1\n");
-	tprint("#define false 0\n");
-	tprint("#endif\n");
 
 	static int rsqrt_float_flops = 15 - 3 * fmaops;
 	static int rsqrt_double_flops = 15 - 3 * fmaops;
@@ -3855,13 +3896,10 @@ int main() {
 	}
 //	printf("./generated_code/include/spherical_fmm.h");
 	fflush(stdout);
-	set_file("./generated_code/include/spherical_fmm.h");
+	set_file("./generated_code/include/spherical_fmm.hpp");
 	tprint(inter_header.c_str());
-	tprint("#ifdef __cplusplus\n");
-	tprint("}\n");
-	tprint("#endif\n");
 	tprint("\n#endif\n");
-	set_file("./generated_code/src/interface.c");
+	set_file("./generated_code/src/interface.cpp");
 	tprint(inter_src.c_str());
 
 	return 0;
