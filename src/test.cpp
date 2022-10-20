@@ -722,15 +722,17 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g0 = rand1();
 			double g1 = rand1();
 			double g2 = rand1();
-			multipole<real, P> M;
-			expansion<real, P> L;
-			fmm_force f;
-			fmm_force_initialize(&f);
+			multipole_type<real, P> M;
+			expansion_type<real, P> L;
+			force_type<real> f;
+			M.init();
+			L.init();
+			f.init();
 			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2, flags);
 			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
 			M2L_ewald(L, M, x1, y1, z1, flags);
 			L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-			L2P(&f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+			L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			for (int l = 0; l <= P; l++) {
 				for (int m = -l; m <= l; m++) {
@@ -786,22 +788,24 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g0 = rand1();
 			double g1 = rand1();
 			double g2 = rand1();
-			multipole<real, P> M;
-			expansion<real, P> L;
-			fmm_force f;
-			fmm_force_initialize(&f);
+			multipole_type<real, P> M;
+			expansion_type<real, P> L;
+			force_type<real> f;
+			M.init();
+			L.init();
+			f.init();
 			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
 			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
 			if (type == CC) {
 				M2L(L, M, x1, y1, z1, flags);
 				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(&f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
 			} else if (type == PC) {
-				M2P(&f, M, x1, y1, z1, flags);
+				M2P(f, M, x1, y1, z1, flags);
 			} else if (type == CP) {
 				P2L(L, 1.0, x1, y1, z1, flags);
 				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(&f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -870,7 +874,7 @@ int main() {
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
 
-	run_tests<11, 3> run;
+	run_tests<13, 3> run;
 	printf("M2L\n");
 	run(CC);
 	printf("M2P\n");
