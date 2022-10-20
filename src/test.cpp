@@ -15,33 +15,13 @@ using complex = std::complex<T>;
 
 #ifdef TEST_TYPE_FLOAT
 using real = float;
-#define M2M M2M_float
-#define M2P M2P_float
-#define P2L P2L_float
-#define P2M P2M_float
-#define M2L M2L_float
-#define M2L_ewald M2L_ewald_float
-#define L2L L2L_float
-#define L2P L2P_float
 #define fmm_force fmm_force_float
-#define multipole_initialize multipole_initialize_float
-#define expansion_initialize expansion_initialize_float
 #define fmm_force_initialize fmm_force_initialize_float
 #endif
 #ifdef TEST_TYPE_DOUBLE
 using real = double;
-#define multipole_initialize multipole_initialize_double
-#define expansion_initialize expansion_initialize_double
 #define fmm_force_initialize fmm_force_initialize_double
 #define fmm_force fmm_force_double
-#define M2M M2M_double
-#define M2P M2P_double
-#define P2L P2L_double
-#define P2M P2M_double
-#define M2L M2L_double
-#define M2L_ewald M2L_ewald_double
-#define L2L L2L_double
-#define L2P L2P_double
 #endif
 
 constexpr double dfactorial(int n) {
@@ -51,7 +31,6 @@ constexpr double dfactorial(int n) {
 		return n * dfactorial(n - 2);
 	}
 }
-
 
 double rand1() {
 	return (double) (rand() + 0.5) / (RAND_MAX);
@@ -708,6 +687,7 @@ template<int P>
 
 real test_M2L(test_type type, real theta = 0.5) {
 	real err = 0.0;
+	using namespace fmm;
 	int N = 4000;
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_INVALID);
@@ -742,17 +722,15 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g0 = rand1();
 			double g1 = rand1();
 			double g2 = rand1();
-			multipole<real,P> M;
-			expansion<real,P> L;
+			multipole<real, P> M;
+			expansion<real, P> L;
 			fmm_force f;
-			multipole_initialize(P, &M,1.0);
-			expansion_initialize(P, &L,1.0);
 			fmm_force_initialize(&f);
-			P2M(P, &M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2, flags);
-			M2M(P, &M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
-			M2L_ewald(P, &L, &M, x1, y1, z1, flags);
-			L2L(P, &L, x2 * g0, y2 * g1, z2 * g2, flags);
-			L2P(P, &f, &L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2, flags);
+			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
+			M2L_ewald(L, M, x1, y1, z1, flags);
+			L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
+			L2P(&f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			for (int l = 0; l <= P; l++) {
 				for (int m = -l; m <= l; m++) {
@@ -793,39 +771,37 @@ real test_M2L(test_type type, real theta = 0.5) {
 				z1 /= theta;
 			}
 			real eps = 1;
-			x0 *=eps;
-			y0 *=eps;
-			z0 *=eps;
-			x1 *=eps;
-			y1 *=eps;
-			z1 *=eps;
-			x2 *=eps;
-			y2 *=eps;
-			z2 *=eps;
+			x0 *= eps;
+			y0 *= eps;
+			z0 *= eps;
+			x1 *= eps;
+			y1 *= eps;
+			z1 *= eps;
+			x2 *= eps;
+			y2 *= eps;
+			z2 *= eps;
 			double f0 = rand1();
 			double f1 = rand1();
 			double f2 = rand1();
 			double g0 = rand1();
 			double g1 = rand1();
 			double g2 = rand1();
-			multipole<real,P> M;
-			expansion<real,P> L;
+			multipole<real, P> M;
+			expansion<real, P> L;
 			fmm_force f;
-			multipole_initialize(P, &M,1.0);
-			expansion_initialize(P, &L,1.0);
 			fmm_force_initialize(&f);
-			P2M(P, &M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
-			M2M(P, &M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
+			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
+			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
 			if (type == CC) {
-				M2L(P, &L, &M, x1, y1, z1, flags);
-				L2L(P, &L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(P, &f, &L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+				M2L(L, M, x1, y1, z1, flags);
+				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
+				L2P(&f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
 			} else if (type == PC) {
-				M2P(P, &f, &M, x1, y1, z1, flags);
+				M2P(&f, M, x1, y1, z1, flags);
 			} else if (type == CP) {
-				P2L(P, &L, 1.0, x1, y1, z1, flags);
-				L2L(P, &L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(P, &f, &L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+				P2L(L, 1.0, x1, y1, z1, flags);
+				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
+				L2P(&f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -836,7 +812,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 			const real fy = dy / (r * r * r);
 			const real fz = dz / (r * r * r);
 			const double fa = sqrt(fx * fx + fy * fy + fz * fz);
-			const double fn = sqrt(sqr(f.force[0],f.force[1], f.force[2]));
+			const double fn = sqrt(sqr(f.force[0], f.force[1], f.force[2]));
 			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
 			err += fabs(fa - fn);
 			norm += fabs(fa);
@@ -872,7 +848,7 @@ float erfc2_float(float x) {
 		for (int n = N - 1; n >= 0; n--) {
 			y = fma(y, q, 1.0 / dfactorial(2 * n + 1));
 		}
-		y *= (float)(2.0 / sqrt(M_PI)) * x * expf(-x * x);
+		y *= (float) (2.0 / sqrt(M_PI)) * x * expf(-x * x);
 		y = 1.0f - y;
 		return y;
 	} else {
@@ -893,7 +869,6 @@ int main() {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-
 
 	run_tests<11, 3> run;
 	printf("M2L\n");
