@@ -725,8 +725,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			multipole_type<real, P> M;
 			expansion_type<real, P> L;
 			force_type<real> f;
-			M.init();
-			L.init();
+			M.init(0.1);
+			L.init(0.01);
 			f.init();
 			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2, flags);
 			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
@@ -791,8 +791,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			multipole_type<real, P> M;
 			expansion_type<real, P> L;
 			force_type<real> f;
-			M.init();
-			L.init();
+			M.init(.1);
+			L.init(.01);
 			f.init();
 			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
 			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
@@ -879,8 +879,8 @@ int main() {
 	run(CC);
 	printf("M2P\n");
 	run(PC);
-	printf("EWALD\n");
-	run(EWALD);
 	printf("P2L\n");
 	run(CP);
+	printf("EWALD\n");
+	run(EWALD);
 }
