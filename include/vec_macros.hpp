@@ -5,7 +5,7 @@
 #define create_binary_op(type, op) \
 		inline type operator op (const type& u ) const { \
 			type w; \
-			w.v = v + u.v; \
+			w.v = v op u.v; \
 			return w; \
 		} \
 		inline type& operator op##= (const type& u ) { \
@@ -21,54 +21,60 @@
 		}
 
 #define create_convert_op_prot(type,otype) \
-		inline type##_vec(const otype##_vec&); \
-		inline type##_vec(const otype&); \
-		inline type##_vec& operator=(const otype##_vec&); \
-		inline type##_vec& operator=(const otype&)
+		inline vec_##type(const vec_##otype&); \
+		inline vec_##type& operator=(const vec_##otype&); \
+		inline vec_##type& operator=(const otype&)
 
 #define create_convert_op_def(type,otype) \
-	inline type##_vec::type##_vec(const otype##_vec& other) { \
+	inline vec_##type::vec_##type(const vec_##otype& other) { \
 		v = __builtin_convertvector(other.v, vtype); \
 	} \
-	inline type##_vec& type##_vec::operator=(const otype##_vec& other) { \
+	inline vec_##type& vec_##type::operator=(const vec_##otype& other) { \
 		v = __builtin_convertvector(other.v, vtype); \
 		return *this; \
 	}
 
+
 #define create_broadcast_op(type) \
-	inline type##_vec(const type& other) { \
+	inline vec_##type(const type& other) { \
 		v = other - vtype{}; \
 	} \
-	inline type##_vec& operator=(const type& other) { \
+	inline vec_##type& operator=(const type& other) { \
 		v = other - vtype{}; \
 		return *this; \
 	}
 
 #define create_compare_op_prot(type, op) \
-	inline type##_vec operator op (const type##_vec&) const
+	inline vec_##type operator op (const vec_##type&) const
 
 #define create_compare_op_def(type, op) \
-	inline type##_vec type##_vec::operator op (const type##_vec& other) const { \
-		type##_vec w; \
+	inline vec_##type vec_##type::operator op (const vec_##type& other) const { \
+		vec_##type w; \
 		w.v = (-(v op other.v)); \
 		return w; \
 	}
 
 #define create_vec_types_fwd(type)              \
-	class type##_vec
+	class vec_##type
 
 #define create_rvec_types(type, sitype, uitype, size)              \
-	class type##_vec {                                           \
+	class vec_##type {                                           \
 		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \
 		vtype v;  \
 	public: \
-	inline constexpr type##_vec() : v() {} \
-	create_binary_op(type##_vec, +); \
-	create_binary_op(type##_vec, -); \
-	create_binary_op(type##_vec, *); \
-	create_binary_op(type##_vec, /); \
-	create_unary_op(type##_vec, +); \
-	create_unary_op(type##_vec, -); \
+	inline constexpr vec_##type() : v() {} \
+	inline type operator[](int i) const {  \
+		return v[i]; \
+	}\
+	inline type& operator[](int i) {  \
+		return v[i]; \
+	}\
+	create_binary_op(vec_##type, +); \
+	create_binary_op(vec_##type, -); \
+	create_binary_op(vec_##type, *); \
+	create_binary_op(vec_##type, /); \
+	create_unary_op(vec_##type, +); \
+	create_unary_op(vec_##type, -); \
 	create_convert_op_prot(type, sitype); \
 	create_convert_op_prot(type, uitype); \
 	create_broadcast_op(type); \
@@ -78,28 +84,34 @@
 	create_compare_op_prot(type, >=); \
 	create_compare_op_prot(type, ==); \
 	create_compare_op_prot(type, !=); \
-	friend class sitype##_vec; \
-	friend class uitype##_vec; \
+	friend class vec_##sitype; \
+	friend class vec_##uitype; \
 }
 
 #define create_ivec_types(type, otype, rtype, size)              \
-	class type##_vec {                                           \
+	class vec_##type {                                           \
 		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \
 		vtype v;  \
 	public: \
-	inline constexpr type##_vec() : v() {} \
-	create_binary_op(type##_vec, +); \
-	create_binary_op(type##_vec, -); \
-	create_binary_op(type##_vec, *); \
-	create_binary_op(type##_vec, /); \
-	create_binary_op(type##_vec, &); \
-	create_binary_op(type##_vec, ^); \
-	create_binary_op(type##_vec, |); \
-	create_binary_op(type##_vec, >>); \
-	create_binary_op(type##_vec, <<); \
-	create_unary_op(type##_vec, +); \
-	create_unary_op(type##_vec, -); \
-	create_unary_op(type##_vec, ~); \
+	inline constexpr vec_##type() : v() {} \
+	inline type operator[](int i) const {  \
+		return v[i]; \
+	}\
+	inline type& operator[](int i) {  \
+		return v[i]; \
+	}\
+	create_binary_op(vec_##type, +); \
+	create_binary_op(vec_##type, -); \
+	create_binary_op(vec_##type, *); \
+	create_binary_op(vec_##type, /); \
+	create_binary_op(vec_##type, &); \
+	create_binary_op(vec_##type, ^); \
+	create_binary_op(vec_##type, |); \
+	create_binary_op(vec_##type, >>); \
+	create_binary_op(vec_##type, <<); \
+	create_unary_op(vec_##type, +); \
+	create_unary_op(vec_##type, -); \
+	create_unary_op(vec_##type, ~); \
 	create_broadcast_op(type); \
 	create_convert_op_prot(type, rtype); \
 	create_convert_op_prot(type, otype); \
@@ -109,8 +121,8 @@
 	create_compare_op_prot(type, >=); \
 	create_compare_op_prot(type, ==); \
 	create_compare_op_prot(type, !=); \
-	friend class rtype##_vec; \
-	friend class otype##_vec; \
+	friend class vec_##rtype; \
+	friend class vec_##otype; \
 }
 
 #define create_rvec_types_def(type, sitype, uitype, size)\
