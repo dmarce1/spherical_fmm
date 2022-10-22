@@ -9,6 +9,8 @@
 #include <set>
 #include <algorithm>
 
+
+
 using complex = std::complex<double>;
 
 static int ntab = 0;
@@ -25,7 +27,7 @@ static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
 static int pmin = 3;
-static int pmax = 18;
+static int pmax = 12;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -35,6 +37,8 @@ static int sincos_flops;
 static int erfcexp_flops;
 static const int divops = 4;
 static const char* prefix = "";
+
+static int cuda = 0;
 
 static bool is_float(std::string str) {
 	return str == "float" || str == "vec_float";
@@ -321,11 +325,8 @@ void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) 
 	if (tprint_on) {
 		static std::set<std::string> igen;
 		std::string func_name = std::string(func);
-		std::string file_name = func_name + "_" + type + "_P" + std::to_string(P) + ".cpp";
+		std::string file_name = func_name + "_" + type + "_P" + std::to_string(P) + (cuda ? ".cu" : ".cpp");
 		func_name = "void " + func_name;
-		if (prefix[0]) {
-			func_name = std::string(prefix) + " " + func_name;
-		}
 		func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
 		if (flags) {
 			func_name += ", int flags)";
@@ -337,7 +338,14 @@ void func_header(const char* func, int P, bool pub, bool flags, Args&& ...args) 
 		} else {
 			set_file("./generated_code/include/spherical_fmm.hpp");
 		}
-		tprint("%s;\n", func_name.c_str());
+		static std::set<std::string> already_printed;
+		if(already_printed.find(func_name) == already_printed.end()) {
+			already_printed.insert(func_name);
+			if (prefix[0]) {
+				func_name = std::string(prefix) + " " + func_name;
+			}
+			tprint("%s;\n", func_name.c_str());
+		}
 		std::string func1 = std::string(func) + std::string("_") + type;
 		file_name = std::string("./generated_code/src/") + file_name;
 //		printf("%s ", file_name.c_str());
@@ -1741,7 +1749,9 @@ int M2L_rot2(int P, int Q) {
 	init_real("rzero");
 	init_real("tmp1");
 	init_real("Rinv");
-	init_real("r2inv");
+	if( Q == 1 ) {
+		init_real("r2inv");
+	}
 	init_real("R");
 	init_real("cosphi");
 	init_real("sinphi");
@@ -1776,7 +1786,7 @@ int M2L_rot2(int P, int Q) {
 	flops += divops;
 	tprint("r2 = (FMA(z, z, R2));\n");
 	tprint("rzero = T(r2<TCAST(1e-37));\n");
-	tprint("r2inv = TCAST(1) / r2;\n");
+//	tprint("r2inv = TCAST(1) / r2;\n");
 	flops += 3 + divops - fmaops;
 	tprint("r2przero = (r2 + rzero);\n");
 	flops += 1;
@@ -3202,34 +3212,30 @@ void math_functions() {
 	tprint("#define SPHERICAL_FMM_FLOAT_MATH\n");
 	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("inline float FMA(float a, float b, float c) {\n");
+	tprint("CUDA_EXPORT inline float FMA(float a, float b, float c) {\n");
 	indent();
 	tprint("return fmaf(a, b, c);\n");
 	deindent();
 	tprint("}\n");
 	tprint("\n");
-	tprint("float rsqrt( float );\n");
-	tprint("float sqrt( float );\n");
-	tprint("void sincos( float, float*, float* );\n");
-	tprint("void erfcexp( float, float*, float* );\n");
+	tprint("CUDA_EXPORT float rsqrt( float );\n");
+	tprint("CUDA_EXPORT float sqrt( float );\n");
+	tprint("CUDA_EXPORT void sincos( float, float*, float* );\n");
+	tprint("CUDA_EXPORT void erfcexp( float, float*, float* );\n");
 	tprint("}\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_float.cpp", "wt");
+	if( cuda ) {
+		fp = fopen("./generated_code/src/math_float.cu", "wt");
+	} else {
+		fp = fopen("./generated_code/src/math_float.cpp", "wt");
+	}
 	tprint("\n");
 	tprint("#include \"typecast_float.hpp\"\n");
 	tprint("#include <math.h>\n");
 	tprint("\n");
-	tprint("#define TCAST(a) ((float)(a))\n");
-	tprint("#define UCAST(a) ((unsigned)(a))\n");
-	tprint("#define VCAST(a) ((int)(a))\n");
-	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("\n");
-	tprint("typedef float T;\n");
-	tprint("typedef unsigned U;\n");
-	tprint("typedef int V;\n");
 	tprint("\n");
 	tprint("T rsqrt( T x ) {\n");
 	indent();
@@ -3369,20 +3375,17 @@ void math_functions() {
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_vec_float.cpp", "wt");
+	if( cuda ) {
+		fp = fopen("./generated_code/src/math_vec_float.cu", "wt");
+	} else {
+		fp = fopen("./generated_code/src/math_vec_float.cpp", "wt");
+	}
 	tprint("\n");
 	tprint("#include \"spherical_fmm.hpp\"\n");
+	tprint("#include \"typecast_vec_float.hpp\"\n");
 	tprint("#include \"math_vec_float.hpp\"\n");
 	tprint("\n");
-	tprint("#define TCAST(a) (vec_float(float(a)))\n");
-	tprint("#define UCAST(a) (vec_uint32_t(unsigned(a)))\n");
-	tprint("#define VCAST(a) (vec_int32_t(int(a)))\n");
-	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("\n");
-	tprint("typedef vec_float T;\n");
-	tprint("typedef vec_uint32_t U;\n");
-	tprint("typedef vec_int32_t V;\n");
 	tprint("\n");
 	tprint("T rsqrt( T x ) {\n");
 	indent();
@@ -3507,34 +3510,30 @@ void math_functions() {
 	tprint("\n");
 	tprint("namespace fmm {\n");
 	tprint("\n");
-	tprint("inline double FMA(double a, double b, double c) {\n");
+	tprint("CUDA_EXPORT inline double FMA(double a, double b, double c) {\n");
 	indent();
 	tprint("return fma(a, b, c);\n");
 	deindent();
 	tprint("}\n");
-	tprint("double rsqrt( double );\n");
-	tprint("double sqrt( double );\n");
-	tprint("void sincos( double, double*, double* );\n");
-	tprint("void erfcexp( double, double*, double* );\n");
+	tprint("CUDA_EXPORT double rsqrt( double );\n");
+	tprint("CUDA_EXPORT double sqrt( double );\n");
+	tprint("CUDA_EXPORT void sincos( double, double*, double* );\n");
+	tprint("CUDA_EXPORT void erfcexp( double, double*, double* );\n");
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_double.cpp", "wt");
+	if( cuda ) {
+		fp = fopen("./generated_code/src/math_double.cu", "wt");
+	} else {
+		fp = fopen("./generated_code/src/math_double.cpp", "wt");
+	}
 	tprint("\n");
 	tprint("#include <math.h>\n");
 	tprint("#include \"typecast_double.hpp\"\n");
 	tprint("\n");
-	tprint("#define TCAST(a) ((double)(a))\n");
-	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
-	tprint("#define VCAST(a) ((long long)(a))\n");
-	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("\n");
-	tprint("typedef double T;\n");
-	tprint("typedef unsigned long long U;\n");
-	tprint("typedef long long V;\n");
 	tprint("\n");
 	tprint("T rsqrt( T x ) {\n");
 	indent();
@@ -3702,20 +3701,16 @@ void math_functions() {
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
-	fp = fopen("./generated_code/src/math_vec_double.cpp", "wt");
+	if( cuda ) {
+		fp = fopen("./generated_code/src/math_vec_double.cu", "wt");
+	} else {
+		fp = fopen("./generated_code/src/math_vec_double.cpp", "wt");
+	}
 	tprint("\n");
 	tprint("#include <math.h>\n");
 	tprint("#include \"typecast_vec_double.hpp\"\n");
 	tprint("\n");
-	tprint("#define TCAST(a) (vec_double(double(a)))\n");
-	tprint("#define UCAST(a) (vec_uint64_t(uint64_t(a)))\n");
-	tprint("#define VCAST(a) (vec_int64_t(int64_t(a)))\n");
-	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("\n");
-	tprint("typedef vec_double T;\n");
-	tprint("typedef vec_uint64_t U;\n");
-	tprint("typedef vec_int64_t V;\n");
 	tprint("\n");
 	tprint("T rsqrt( T x ) {\n");
 	indent();
@@ -3859,6 +3854,15 @@ void math_functions() {
 #endif
 	fp = fopen("./generated_code/include/math.hpp", "wt");
 	tprint("#pragma once\n");
+	tprint("\n");
+	tprint("#ifdef __CUDA_ARCH__\n");
+	tprint("#define CUDA_EXPORT __device__\n");
+	tprint("#else\n");
+	tprint("#define CUDA_EXPORT\n");
+	tprint("#endif\n");
+
+	tprint("#ifndef __CUDACC__");
+	tprint("\n");
 #if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
 	tprint("#include <cstdint>\n");
 	tprint("#include \"vec_macros.hpp\"\n");
@@ -3869,21 +3873,23 @@ void math_functions() {
 #ifdef VEC_DOUBLE
 	tprint("create_vec_types(double, int64_t, uint64_t, %i);\n", VEC_DOUBLE_SIZE);
 #endif
-	tprint("\n");
 #ifdef VEC_FLOAT
 	tprint("create_vec_types(float, int32_t, uint32_t, %i);\n", VEC_FLOAT_SIZE);
 #endif
 	tprint("}\n");
-#ifdef FLOAT
 	tprint("\n");
-	tprint("#include \"math_float.hpp\"\n");
-#endif
 #ifdef VEC_FLOAT
-	tprint("\n");
 	tprint("#include \"math_vec_float.hpp\"\n");
 #endif
 #ifdef VEC_DOUBLE
 	tprint("#include \"math_vec_double.hpp\"\n");
+#endif
+	tprint("\n");
+	tprint("#endif");
+	tprint("\n");
+#ifdef FLOAT
+	tprint("\n");
+	tprint("#include \"math_float.hpp\"\n");
 #endif
 #ifdef DOUBLE
 	tprint("#include \"math_double.hpp\"\n");
@@ -3976,7 +3982,7 @@ void typecast_functions() {
 }
 
 int main() {
-	system("[ -e ./generated_code ] && rm -r  ./generated_code\n");
+	system("[ -e ./generated_code ] && rm -rf  ./generated_code\n");
 	system("mkdir generated_code\n");
 	system("mkdir ./generated_code/include\n");
 	system("mkdir ./generated_code/include/detail\n");
@@ -4005,9 +4011,9 @@ int main() {
 	indent();
 	tprint("Type potential;");
 	tprint("Type force[3];");
-	tprint("inline void init() {\n");
+	tprint("CUDA_EXPORT inline void init() {\n");
 	indent();
-	tprint("potential = force[0] = force[1] = force[2] = Type(0);");
+	tprint("potential = force[0] = force[1] = force[2] = Type(0);\n");
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -4018,13 +4024,13 @@ int main() {
 	indent();
 	tprint("Type o[(P+1)*(P+1)+1];\n");
 	tprint("Type r;\n");
-	tprint("expansion_type();\n");
-	tprint("expansion_type(Type);\n");
-	tprint("expansion_type(const expansion_type&);\n");
-	tprint("expansion_type& operator=(const expansion_type&);\n");
-	tprint("expansion_type& operator+=(expansion_type);\n");
-	tprint("inline void init(Type r0 = Type(1));\n");
-	tprint("void rescale(Type);\n");
+	tprint("CUDA_EXPORT expansion_type();\n");
+	tprint("CUDA_EXPORT expansion_type(Type);\n");
+	tprint("CUDA_EXPORT expansion_type(const expansion_type&);\n");
+	tprint("CUDA_EXPORT expansion_type& operator=(const expansion_type&);\n");
+	tprint("CUDA_EXPORT expansion_type& operator+=(expansion_type);\n");
+	tprint("CUDA_EXPORT inline void init(Type r0 = Type(1));\n");
+	tprint("CUDA_EXPORT void rescale(Type);\n");
 	deindent();
 	tprint("};\n");
 	tprint("\n");
@@ -4034,13 +4040,13 @@ int main() {
 	indent();
 	tprint("Type o[(P)*(P)+1];\n");
 	tprint("Type r;\n");
-	tprint("multipole_type();\n");
-	tprint("multipole_type(Type);\n");
-	tprint("multipole_type(const multipole_type&);\n");
-	tprint("multipole_type& operator=(const multipole_type&);\n");
-	tprint("multipole_type& operator+=(multipole_type);\n");
-	tprint("inline void init(Type r0 = Type(1));\n");
-	tprint("void rescale(Type);\n");
+	tprint("CUDA_EXPORT multipole_type();\n");
+	tprint("CUDA_EXPORT multipole_type(Type);\n");
+	tprint("CUDA_EXPORT multipole_type(const multipole_type&);\n");
+	tprint("CUDA_EXPORT multipole_type& operator=(const multipole_type&);\n");
+	tprint("CUDA_EXPORT multipole_type& operator+=(multipole_type);\n");
+	tprint("CUDA_EXPORT inline void init(Type r0 = Type(1));\n");
+	tprint("CUDA_EXPORT void rescale(Type);\n");
 	deindent();
 	tprint("};\n");
 	tprint("\n");
@@ -4053,9 +4059,9 @@ int main() {
 		indent();
 		tprint("Type o[%i];\n", (P + 1) * (P + 1) + 1);
 		tprint("Type r;\n");
-		tprint("inline expansion_type() {\n");
+		tprint("CUDA_EXPORT inline expansion_type() {\n");
 		tprint("}\n");
-		tprint("inline void init(Type r0 = Type(1)) {\n");
+		tprint("CUDA_EXPORT inline void init(Type r0 = Type(1)) {\n");
 		indent();
 		tprint("for( int n = 0; n < %i; n++ ) {\n", (P + 1) * (P + 1) + 1);
 		indent();
@@ -4065,13 +4071,13 @@ int main() {
 		tprint("r = r0;\n");
 		deindent();
 		tprint("}\n");
-		tprint("inline expansion_type(const expansion_type& other) {\n");
+		tprint("CUDA_EXPORT inline expansion_type(const expansion_type& other) {\n");
 		indent();
 		tprint("*this = other;\n");
 		deindent();
 		tprint("}\n");
 
-		tprint("inline expansion_type& operator=(const expansion_type& other) {\n");
+		tprint("CUDA_EXPORT inline expansion_type& operator=(const expansion_type& other) {\n");
 		indent();
 		tprint("for( int n = 0; n < %i; n++ ) {\n", (P + 1) * (P + 1) + 1);
 		indent();
@@ -4083,7 +4089,7 @@ int main() {
 		deindent();
 		tprint("}\n");
 
-		tprint("inline expansion_type& operator+=(expansion_type other) {\n");
+		tprint("CUDA_EXPORT inline expansion_type& operator+=(expansion_type other) {\n");
 		indent();
 		tprint("other.rescale(r);\n");
 		tprint("for( int n = 0; n < %i; n++ ) {\n", (P + 1) * (P + 1) + 1);
@@ -4096,7 +4102,7 @@ int main() {
 		deindent();
 		tprint("}\n");
 
-		tprint("void rescale(Type r0) {\n");
+		tprint("CUDA_EXPORT void rescale(Type r0) {\n");
 		indent();
 		tprint("const Type a = r0 / r;\n");
 		tprint("Type b = a;\n");
@@ -4124,9 +4130,9 @@ int main() {
 			indent();
 			tprint("Type o[%i];\n", P * P + 1);
 			tprint("Type r;\n");
-			tprint("inline multipole_type() {\n");
+			tprint("CUDA_EXPORT inline multipole_type() {\n");
 			tprint("}\n");
-			tprint("inline void init(Type r0 = Type(1)) {\n");
+			tprint("CUDA_EXPORT inline void init(Type r0 = Type(1)) {\n");
 			indent();
 			tprint("for( int n = 0; n < %i; n++ ) {\n", P * P + 1);
 			indent();
@@ -4136,13 +4142,13 @@ int main() {
 			tprint("r = r0;\n");
 			deindent();
 			tprint("}\n");
-			tprint("inline multipole_type(const multipole_type& other) {\n");
+			tprint("CUDA_EXPORT inline multipole_type(const multipole_type& other) {\n");
 			indent();
 			tprint("*this = other;\n");
 			deindent();
 			tprint("}\n");
 
-			tprint("inline multipole_type& operator=(const multipole_type& other) {\n");
+			tprint("CUDA_EXPORT inline multipole_type& operator=(const multipole_type& other) {\n");
 			indent();
 			tprint("for( int n = 0; n < %i; n++ ) {\n", P * P + 1);
 			indent();
@@ -4154,7 +4160,7 @@ int main() {
 			deindent();
 			tprint("}\n");
 
-			tprint("inline multipole_type& operator+=(multipole_type other) {\n");
+			tprint("CUDA_EXPORT inline multipole_type& operator+=(multipole_type other) {\n");
 			indent();
 			tprint("other.rescale(r);\n");
 			tprint("for( int n = 0; n < %i; n++ ) {\n", P * P + 1);
@@ -4167,7 +4173,7 @@ int main() {
 			deindent();
 			tprint("}\n");
 
-			tprint("void rescale(Type r0) {\n");
+			tprint("CUDA_EXPORT void rescale(Type r0) {\n");
 			indent();
 			tprint("const Type a = r / r0;\n");
 			tprint("Type b = a;\n");
@@ -4203,30 +4209,48 @@ int main() {
 	static int erfcexp_float_flops = exp_float_flops + 56 - 24 * fmaops;
 	static int erfcexp_double_flops = exp_double_flops + 72 - 35 * fmaops + divops;
 
-	const int rsqrt_flops_array[] = { rsqrt_float_flops, rsqrt_double_flops, rsqrt_float_flops, rsqrt_double_flops };
-	const int sqrt_flops_array[] = { sqrt_float_flops, sqrt_double_flops, sqrt_float_flops, sqrt_double_flops };
-	const int sincos_flops_array[] = { sincos_float_flops, sincos_double_flops, sincos_float_flops, sincos_double_flops };
-	const int erfcexp_flops_array[] = { erfcexp_float_flops, erfcexp_double_flops, erfcexp_float_flops, erfcexp_double_flops };
+	const int rsqrt_flops_array[] = { rsqrt_float_flops, rsqrt_double_flops, rsqrt_float_flops, rsqrt_double_flops, rsqrt_float_flops, rsqrt_double_flops };
+	const int sqrt_flops_array[] = { sqrt_float_flops, sqrt_double_flops, sqrt_float_flops, sqrt_float_flops, sqrt_double_flops, sqrt_float_flops, sqrt_double_flops };
+	const int sincos_flops_array[] = { sincos_float_flops, sincos_double_flops, sincos_float_flops, sincos_double_flops, sincos_float_flops, sincos_double_flops };
+	const int erfcexp_flops_array[] = { erfcexp_float_flops, erfcexp_double_flops,erfcexp_float_flops, erfcexp_double_flops, erfcexp_float_flops, erfcexp_double_flops };
 	int ntypenames = 0;
 	std::vector<std::string> rtypenames;
 	std::vector<std::string> sitypenames;
 	std::vector<std::string> uitypenames;
+	std::vector<int> ucuda;
 #ifdef FLOAT
 	rtypenames.push_back("float");
 	sitypenames.push_back("int32_t");
 	uitypenames.push_back("uint32_t");
+	ucuda.push_back(true);
 	ntypenames++;
 #endif
 #ifdef DOUBLE
 	rtypenames.push_back("double");
 	sitypenames.push_back("int64_t");
 	uitypenames.push_back("uint64_t");
+	ucuda.push_back(true);
+	ntypenames++;
+#endif
+#ifdef FLOAT
+	rtypenames.push_back("float");
+	sitypenames.push_back("int32_t");
+	uitypenames.push_back("uint32_t");
+	ucuda.push_back(false);
+	ntypenames++;
+#endif
+#ifdef DOUBLE
+	rtypenames.push_back("double");
+	sitypenames.push_back("int64_t");
+	uitypenames.push_back("uint64_t");
+	ucuda.push_back(false);
 	ntypenames++;
 #endif
 #ifdef VEC_FLOAT
 	rtypenames.push_back("vec_float");
 	sitypenames.push_back("vec_int32_t");
 	uitypenames.push_back("vec_uint32_t");
+	ucuda.push_back(false);
 	ntypenames++;
 #endif
 
@@ -4234,11 +4258,14 @@ int main() {
 	rtypenames.push_back("vec_double");
 	sitypenames.push_back("vec_int64_t");
 	uitypenames.push_back("vec_uint64_t");
+	ucuda.push_back(false);
 	ntypenames++;
 #endif
 
 	for (int ti = 0; ti < ntypenames; ti++) {
-		fprintf( stderr, "%s %i %i\n", rtypenames[ti].c_str(), ti, ntypenames);
+		fprintf( stderr, "%s cuda:%i\n", rtypenames[ti].c_str(), ucuda[ti]);
+		cuda = ucuda[ti];
+		prefix = ucuda[ti] ? "CUDA_EXPORT" : "";
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
@@ -4247,6 +4274,12 @@ int main() {
 		sincos_flops = sincos_flops_array[ti];
 		erfcexp_flops = erfcexp_flops_array[ti];
 		std::vector<double> alphas(pmax + 1);
+		if( is_vec(type)) {
+			set_file("./generated_code/include/spherical_fmm.hpp");
+			tprint( "#ifndef __CUDACC__\n");
+			set_file("./generated_code/include/detail/spherical_fmm.hpp");
+			tprint( "#ifndef __CUDACC__\n");
+		}
 		for (int b = 0; b < 1; b++) {
 			nophi = b != 0;
 			std::vector<int> pc_flops(pmax + 1);
@@ -4424,6 +4457,13 @@ int main() {
 				scaling(P);
 			}
 		}
+		if( is_vec(type)) {
+			set_file("./generated_code/include/spherical_fmm.hpp");
+			tprint( "#endif\n");
+			set_file("./generated_code/include/detail/spherical_fmm.hpp");
+			tprint( "#endif\n");
+		}
+
 	}
 //	printf("./generated_code/include/spherical_fmm.h");
 	fflush(stdout);

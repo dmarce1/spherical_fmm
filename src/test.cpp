@@ -1078,7 +1078,7 @@ int main() {
 
 	printf("\n");
 
-	run_tests<19, 3> run;
+	run_tests<13, 3> run;
 	printf("M2L\n");
 	run(CC);
 	printf("M2P\n");

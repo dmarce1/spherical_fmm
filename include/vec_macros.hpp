@@ -1,5 +1,5 @@
-#ifndef VEC_MACROS_HPP_
-#define VEC_MACROS_HPP_
+#ifndef VEC_MACROS12_HPP_
+#define VEC_MACROS12_HPP_
 
 
 #define create_binary_op(type, op) \
