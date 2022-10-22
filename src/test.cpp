@@ -14,8 +14,13 @@
 template<class T>
 using complex = std::complex<T>;
 
-#define TEST_TYPE_VEC_FLOAT
+#define TEST_TYPE_VEC_DOUBLE
 
+#ifdef TEST_TYPE_VEC_DOUBLE
+#define VECTOR
+using vec_real = fmm::vec_double;
+using real = double;
+#endif
 #ifdef TEST_TYPE_VEC_FLOAT
 #define VECTOR
 using vec_real = fmm::vec_float;
@@ -1073,7 +1078,7 @@ int main() {
 
 	printf("\n");
 
-	run_tests<13, 5> run;
+	run_tests<19, 3> run;
 	printf("M2L\n");
 	run(CC);
 	printf("M2P\n");
