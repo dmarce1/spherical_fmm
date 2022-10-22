@@ -44,12 +44,12 @@
 		return *this; \
 	}
 
-#define create_compare_op_prot(type, op) \
-	inline vec_##type operator op (const vec_##type&) const
+#define create_compare_op_prot(type,sitype,  op) \
+	inline vec_##sitype operator op (const vec_##type&) const
 
-#define create_compare_op_def(type, op) \
-	inline vec_##type vec_##type::operator op (const vec_##type& other) const { \
-		vec_##type w; \
+#define create_compare_op_def(type,sitype,  op) \
+	inline vec_##sitype vec_##type::operator op (const vec_##type& other) const { \
+		vec_##sitype w; \
 		w.v = (-(v op other.v)); \
 		return w; \
 	}
@@ -78,17 +78,17 @@
 	create_convert_op_prot(type, sitype); \
 	create_convert_op_prot(type, uitype); \
 	create_broadcast_op(type); \
-	create_compare_op_prot(type, <); \
-	create_compare_op_prot(type, >); \
-	create_compare_op_prot(type, <=); \
-	create_compare_op_prot(type, >=); \
-	create_compare_op_prot(type, ==); \
-	create_compare_op_prot(type, !=); \
+	create_compare_op_prot(type, sitype, <); \
+	create_compare_op_prot(type, sitype, >); \
+	create_compare_op_prot(type, sitype, <=); \
+	create_compare_op_prot(type, sitype, >=); \
+	create_compare_op_prot(type, sitype, ==); \
+	create_compare_op_prot(type, sitype, !=); \
 	friend class vec_##sitype; \
 	friend class vec_##uitype; \
 }
 
-#define create_ivec_types(type, otype, rtype, size)              \
+#define create_ivec_types(type, otype, rtype, sitype, size)              \
 	class vec_##type {                                           \
 		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \
 		vtype v;  \
@@ -115,12 +115,12 @@
 	create_broadcast_op(type); \
 	create_convert_op_prot(type, rtype); \
 	create_convert_op_prot(type, otype); \
-	create_compare_op_prot(type, <); \
-	create_compare_op_prot(type, >); \
-	create_compare_op_prot(type, <=); \
-	create_compare_op_prot(type, >=); \
-	create_compare_op_prot(type, ==); \
-	create_compare_op_prot(type, !=); \
+	create_compare_op_prot(type,sitype,  <); \
+	create_compare_op_prot(type,sitype,  >); \
+	create_compare_op_prot(type, sitype, <=); \
+	create_compare_op_prot(type,sitype,  >=); \
+	create_compare_op_prot(type, sitype,  ==); \
+	create_compare_op_prot(type, sitype,  !=); \
 	friend class vec_##rtype; \
 	friend class vec_##otype; \
 }
@@ -138,29 +138,29 @@
 		create_vec_types_fwd(uitype); \
 		create_vec_types_fwd(sitype); \
 		create_rvec_types(rtype, sitype, uitype, size); \
-		create_ivec_types(uitype, sitype, rtype, size); \
-		create_ivec_types(sitype, uitype, rtype, size); \
+		create_ivec_types(uitype, sitype, rtype, sitype, size); \
+		create_ivec_types(sitype, uitype, rtype, sitype, size); \
 		create_rvec_types_def(rtype, sitype, uitype, size); \
 		create_ivec_types_def(uitype, sitype, rtype, size); \
 		create_ivec_types_def(sitype, uitype, rtype, size); \
-		create_compare_op_def(rtype, <); \
-		create_compare_op_def(rtype, >); \
-		create_compare_op_def(rtype, <=); \
-		create_compare_op_def(rtype, >=); \
-		create_compare_op_def(rtype, ==); \
-		create_compare_op_def(rtype, !=); \
-		create_compare_op_def(uitype, <); \
-		create_compare_op_def(uitype, >); \
-		create_compare_op_def(uitype, <=); \
-		create_compare_op_def(uitype, >=); \
-		create_compare_op_def(uitype, ==); \
-		create_compare_op_def(uitype, !=); \
-		create_compare_op_def(sitype, <); \
-		create_compare_op_def(sitype, >); \
-		create_compare_op_def(sitype, <=); \
-		create_compare_op_def(sitype, >=); \
-		create_compare_op_def(sitype, ==); \
-		create_compare_op_def(sitype, !=)
+		create_compare_op_def(rtype, sitype, <); \
+		create_compare_op_def(rtype,sitype,  >); \
+		create_compare_op_def(rtype, sitype, <=); \
+		create_compare_op_def(rtype, sitype, >=); \
+		create_compare_op_def(rtype,sitype,  ==); \
+		create_compare_op_def(rtype, sitype, !=); \
+		create_compare_op_def(uitype,sitype,  <); \
+		create_compare_op_def(uitype, sitype, >); \
+		create_compare_op_def(uitype, sitype, <=); \
+		create_compare_op_def(uitype, sitype, >=); \
+		create_compare_op_def(uitype, sitype, ==); \
+		create_compare_op_def(uitype, sitype, !=); \
+		create_compare_op_def(sitype, sitype, <); \
+		create_compare_op_def(sitype,sitype,  >); \
+		create_compare_op_def(sitype,sitype,  <=); \
+		create_compare_op_def(sitype, sitype, >=); \
+		create_compare_op_def(sitype, sitype, ==); \
+		create_compare_op_def(sitype, sitype, !=)
 
 
 #endif /* VEC_MACROS_HPP_ */

@@ -35,11 +35,11 @@ FILE(GLOB GENERATED_DETAIL_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_co
 
 add_library(spherical_fmm ${GENERATED_SRC_FILES} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
 target_include_directories(spherical_fmm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
-target_compile_options(spherical_fmm PUBLIC  -fsanitize=bounds )
-target_link_options(spherical_fmm PUBLIC -fsanitize=bounds )
+target_compile_options(spherical_fmm PUBLIC "-march=native")
 
 add_executable(test ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
 target_include_directories(test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
 target_link_libraries(test PUBLIC spherical_fmm)
+target_compile_options(test PUBLIC "-march=native")
 
 

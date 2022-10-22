@@ -18,7 +18,7 @@ static int tprint_on = true;
 #define DOUBLE
 #define VEC_DOUBLE
 #define VEC_FLOAT
-#define VEC_DOUBLE_SIZE 4
+#define VEC_DOUBLE_SIZE 2
 #define VEC_FLOAT_SIZE 8
 
 static bool nophi = false;
@@ -564,7 +564,7 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 				tprint("A[%i] = %s[%i];\n", m + P, name, index(n, m));
 			}
 		}
-		std::vector<std::vector<std::pair<float, int>>>ops(2 * n + 1);
+		std::vector<std::vector<std::pair<double, int>>>ops(2 * n + 1);
 		int mmax = n;
 		if (m_restrict && mmax > (P) - n) {
 			mmax = (P + 1) - n;
@@ -587,7 +587,7 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 			}
 		}
 		for (int m = 0; m < 2 * n + 1; m++) {
-			std::sort(ops[m].begin(), ops[m].end(), [](std::pair<float,int> a, std::pair<float,int> b) {
+			std::sort(ops[m].begin(), ops[m].end(), [](std::pair<double,int> a, std::pair<double,int> b) {
 				return a.first < b.first;
 			});
 		}
@@ -903,14 +903,10 @@ int p2l(int P) {
 	func_header("P2L", P, true, true, "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
 	init_real("tmp1");
 	tprint("int n;\n");
-	tprint("if( L_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / L_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	init_reals("O", exp_sz(P));
 	flops += greens_body(P, "M");
 	tprint("for (n = 0; n < %i; n++) {\n;", (P + 1) * (P + 1));
@@ -977,6 +973,7 @@ int greens_xz(int P) {
 				if ((n - 1) * (n - 1) - m * m == 1) {
 					tprint("O[%i] = (TCAST(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
 					flops += 4;
+
 				} else {
 					tprint("O[%i] = (TCAST(%i) * z * O[%i] - TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
 							index(n - 2, m));
@@ -1187,11 +1184,11 @@ int ewald_greens(int P, double alpha) {
 	tprint("continue;\n");
 	deindent();
 	tprint("}\n");
-	tprint("x = x0 - TCAST(ix);\n");
+	tprint("x = x0 - T(ix);\n");
 	flops++;
-	tprint("y = y0 - TCAST(iy);\n");
+	tprint("y = y0 - T(iy);\n");
 	flops++;
-	tprint("z = z0 - TCAST(iz);\n");
+	tprint("z = z0 - T(iz);\n");
 	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 3 * cnt;
 	tprint("r = sqrt(r2);\n");
@@ -1474,7 +1471,6 @@ int ewald_greens(int P, double alpha) {
 
 }
 
-
 int M2L_norot(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
@@ -1494,17 +1490,13 @@ int M2L_norot(int P, int Q) {
 	tprint("int n;\n");
 	tprint("auto M_st = M0_st;\n");
 	tprint("auto* M = M_st.o;\n");
-	if( Q > 1 ) {
+	if (Q > 1) {
 		tprint("M_st.rescale(L_st.r);\n");
 	}
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	if (Q == 1) {
 		init_reals("L", exp_sz(Q));
 		tprint("for( n = 0; n < %i; n++) {\n", exp_sz(Q));
@@ -1559,17 +1551,13 @@ int M2L_rot1(int P, int Q) {
 	tprint("T* O = O_st.o;\n", type.c_str(), P);
 	tprint("auto M_st = M0_st;\n");
 	tprint("auto* M = M_st.o;\n");
-	if( Q > 1 ) {
+	if (Q > 1) {
 		tprint("M_st.rescale(L0_st.r);\n");
 	}
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 
 	const auto tpo = tprint_on;
 	set_tprint(false);
@@ -1577,10 +1565,10 @@ int M2L_rot1(int P, int Q) {
 	set_tprint(tpo);
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
+	tprint("Rzero = T(R2<TCAST(1e-37));\n");
 	flops++;
 	tprint("r2 = FMA(z, z, R2);\n");
-	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
+	tprint("rzero = T(r2<TCAST(1e-37));\n");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
@@ -1738,8 +1726,6 @@ int M2L_rot1(int P, int Q) {
 	return flops;
 }
 
-
-
 int M2L_rot2(int P, int Q) {
 	int flops = 0;
 	if (Q > 1) {
@@ -1771,20 +1757,16 @@ int M2L_rot2(int P, int Q) {
 	tprint("bool sw;\n");
 	tprint("auto M_st = M0_st;\n");
 	tprint("auto* M = M_st.o;\n");
-	if( Q > 1 ) {
+	if (Q > 1) {
 		tprint("M_st.rescale(L0_st.r);\n");
 	}
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
+	tprint("Rzero = T(R2<TCAST(1e-37));\n");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
@@ -1793,7 +1775,7 @@ int M2L_rot2(int P, int Q) {
 	tprint("R = TCAST(1) / Rinv;\n");
 	flops += divops;
 	tprint("r2 = (FMA(z, z, R2));\n");
-	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
+	tprint("rzero = T(r2<TCAST(1e-37));\n");
 	tprint("r2inv = TCAST(1) / r2;\n");
 	flops += 3 + divops - fmaops;
 	tprint("r2przero = (r2 + rzero);\n");
@@ -1987,14 +1969,10 @@ int M2M_norot(int P) {
 	init_real("r");
 	init_real("r2");
 	init_real("tmp1");
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.o;\n", type.c_str(), P);
 	tprint("regular_harmonic(Y_st, -x, -y, -z, flags);\n");
@@ -2179,14 +2157,10 @@ int M2M_rot1(int P) {
 	init_real("rzero");
 	init_real("cosphi");
 	init_real("sinphi");
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = (R2<TCAST(1e-37));\n");
@@ -2362,17 +2336,13 @@ int M2M_rot2(int P) {
 	init_real("cosphi0");
 	init_real("sinphi");
 	init_real("sinphi0");
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
+	tprint("Rzero = T(R2<TCAST(1e-37));\n");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
@@ -2380,7 +2350,7 @@ int M2M_rot2(int P) {
 	flops += rsqrt_flops;
 	tprint("r2 = FMA(z, z, R2);\n");
 	flops += 2 - fmaops;
-	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
+	tprint("rzero = T(r2<TCAST(1e-37));\n");
 	flops += 1;
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = rsqrt(tmp1);\n");
@@ -2467,14 +2437,10 @@ int L2L_norot(int P) {
 	init_real("rzero");
 	init_real("r2");
 	init_real("r");
-	tprint("if( L_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / L_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.o;\n", type.c_str(), P);
 	tprint("regular_harmonic(Y_st, -x, -y, -z, flags);\n");
@@ -2666,14 +2632,11 @@ int L2L_rot1(int P) {
 	init_real("rzero");
 	init_real("r2");
 	init_real("r");
-	tprint("if( L_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / L_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
+
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
 	tprint("Rzero = (R2<TCAST(1e-37));\n");
@@ -2854,17 +2817,13 @@ int L2L_rot2(int P) {
 	init_real("cosphi0");
 	init_real("sinphi");
 	init_real("sinphi0");
-	tprint("if( L_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / L_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("R2 = FMA(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = TCAST(R2<TCAST(1e-37));\n");
+	tprint("Rzero = T(R2<TCAST(1e-37));\n");
 	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
 	flops++;
@@ -2872,7 +2831,7 @@ int L2L_rot2(int P) {
 	flops += rsqrt_flops;
 	tprint("r2 = FMA(z, z, R2);\n");
 	flops += 2 - fmaops;
-	tprint("rzero = TCAST(r2<TCAST(1e-37));\n");
+	tprint("rzero = T(r2<TCAST(1e-37));\n");
 	flops += 1;
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = rsqrt(tmp1);\n");
@@ -2973,14 +2932,10 @@ int L2P(int P) {
 	init_real("tmp1");
 	tprint("force_type<%s> f;\n", type.c_str());
 	tprint("f.init();\n");
-	tprint("if( L_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / L_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 //tprint("expansion_type<T,1> L1;\n");
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.o;\n", type.c_str(), P);
@@ -3176,14 +3131,10 @@ int P2M(int P) {
 	tprint("y = -y;");
 	tprint("z = -z;");
 	flops += 3;
-	tprint("if( M_st.r != TCAST(1) ) {\n");
-	indent();
 	tprint("tmp1 = TCAST(1) / M_st.r;\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
-	deindent();
-	tprint("}\n");
 	tprint("r2 = FMA(x, x, FMA(y, y, z * z));\n");
 	flops += 5 - 2 * fmaops;
 	tprint("M[0] = m;\n");
@@ -3247,8 +3198,8 @@ void math_functions() {
 	const char* cout = "*c";
 #ifdef FLOAT
 	fp = fopen("./generated_code/include/math_float.hpp", "wt");
-	tprint("#ifndef SPHERICAL_FMM_MATH\n");
-	tprint("#define SPHERICAL_FMM_MATH\n");
+	tprint("#ifndef SPHERICAL_FMM_FLOAT_MATH\n");
+	tprint("#define SPHERICAL_FMM_FLOAT_MATH\n");
 	tprint("\n");
 	tprint("namespace fmm {\n");
 	tprint("inline float FMA(float a, float b, float c) {\n");
@@ -3286,12 +3237,13 @@ void math_functions() {
 	tprint("T y;\n");
 	tprint("x += TCAST(%.20e);\n", std::numeric_limits<float>::min());
 	tprint("i = *((V*) &x);\n");
+	tprint("x *= TCAST(0.5);");
 	tprint("i >>= VCAST(1);\n");
 	tprint("i = VCAST(0x5F3759DF) - i;\n");
 	tprint("y = *((T*) &i);\n");
-	tprint("y *= fmaf(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
-	tprint("y *= fmaf(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
-	tprint("y *= fmaf(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fmaf(x, y * y, TCAST(-1.5));");
+	tprint("y *= fmaf(x, y * y, TCAST(-1.5));");
+	tprint("y *= TCAST(1.5) - x * y * y;");
 	tprint("return y;\n");
 	deindent();
 	tprint("}\n");
@@ -3396,6 +3348,158 @@ void math_functions() {
 	tprint("\n");
 	fclose(fp);
 #endif
+
+#ifdef VEC_FLOAT
+	fp = fopen("./generated_code/include/math_vec_float.hpp", "wt");
+	tprint("#ifndef SPHERICAL_FMM_VEC_FLOAT_MATH\n");
+	tprint("#define SPHERICAL_FMM_VEC_FLOAT_MATH\n");
+	tprint("\n");
+	tprint("namespace fmm {\n");
+	tprint("inline vec_float FMA(vec_float a, vec_float b, vec_float c) {\n");
+	indent();
+	tprint("return a * b + c;\n");
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+	tprint("vec_float rsqrt( vec_float );\n");
+	tprint("vec_float sqrt( vec_float );\n");
+	tprint("void sincos( vec_float, vec_float*, vec_float* );\n");
+	tprint("void erfcexp( vec_float, vec_float*, vec_float* );\n");
+	tprint("}\n");
+	tprint("\n");
+	tprint("#endif\n");
+	fclose(fp);
+	fp = fopen("./generated_code/src/math_vec_float.cpp", "wt");
+	tprint("\n");
+	tprint("#include \"spherical_fmm.hpp\"\n");
+	tprint("#include \"math_vec_float.hpp\"\n");
+	tprint("\n");
+	tprint("#define TCAST(a) (vec_float(float(a)))\n");
+	tprint("#define UCAST(a) (vec_uint32_t(unsigned(a)))\n");
+	tprint("#define VCAST(a) (vec_int32_t(int(a)))\n");
+	tprint("\n");
+	tprint("namespace fmm {\n");
+	tprint("\n");
+	tprint("typedef vec_float T;\n");
+	tprint("typedef vec_uint32_t U;\n");
+	tprint("typedef vec_int32_t V;\n");
+	tprint("\n");
+	tprint("T rsqrt( T x ) {\n");
+	indent();
+	tprint("V i;\n");
+	tprint("T y;\n");
+	tprint("x += TCAST(%.20e);\n", std::numeric_limits<float>::min());
+	tprint("i = *((V*) &x);\n");
+	tprint("x *= TCAST(0.5);");
+	tprint("i >>= VCAST(1);\n");
+	tprint("i = VCAST(0x5F3759DF) - i;\n");
+	tprint("y = *((T*) &i);\n");
+	tprint("y *= FMA(x, y * y, TCAST(-1.5));");
+	tprint("y *= FMA(x, y * y, TCAST(-1.5));");
+	tprint("y *= TCAST(1.5) - x * y * y;");
+	tprint("return y;\n");
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+	tprint("T sqrt(vec_float x) {\n");
+	indent();
+	tprint("return TCAST(1) / rsqrt(x);\n");
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+	tprint("void sincos( T x, T* s, T* c ) {\n");
+	indent();
+	tprint("V ssgn, j, i, k;\n");
+	tprint("T x2;\n");
+	tprint("ssgn = V(((*((U*) &x) & UCAST(0x80000000)) >> UCAST(30)) - UCAST(1));\n");
+	tprint("j = V((*((U*) &x) & UCAST(0x7FFFFFFF)));\n");
+	tprint("x = *((T*) &j);\n");
+	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
+	tprint("x -= T(i) * TCAST(%.20e);\n", M_PI);
+	tprint("x -= TCAST(%.20e);\n", 0.5 * M_PI);
+	tprint("x2 = x * x;\n");
+	{
+		constexpr int N = 11;
+		tprint("%s = TCAST(%.20e);\n", cout, nonepow(N / 2) / factorial(N));
+		tprint("%s = TCAST(%.20e);\n", sout, cout, nonepow((N - 1) / 2) / factorial(N - 1));
+		for (int n = N - 2; n >= 0; n -= 2) {
+			tprint("%s = FMA(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
+			tprint("%s = FMA(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
+		}
+	}
+	tprint("%s *= x;\n", cout);
+	tprint("k = (((i & VCAST(1)) << VCAST(1)) - VCAST(1));\n");
+	tprint("%s *= T(ssgn * k);\n", sout);
+	tprint("%s *= T(k);\n", cout);
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+
+	tprint("T exp( T x ) {\n");
+	{
+		indent();
+		constexpr int N = 7;
+		tprint("V k;\n");
+		tprint("T y, xxx;\n");
+		tprint("k =  x / TCAST(0.6931471805599453094172) + TCAST(0.5);\n"); // 1 + divops
+		tprint("k -= x < TCAST(0);\n");
+		tprint("xxx = x - T(k) * TCAST(0.6931471805599453094172);\n");
+		tprint("y = TCAST(%.20e);\n", 1.0 / factorial(N));
+		for (int i = N - 1; i >= 0; i--) {
+			tprint("y = FMA(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
+		}
+		tprint("k = (k + VCAST(127)) << VCAST(23);\n");
+		tprint("y *= *((T*) (&k));\n"); //1
+		tprint("return y;\n");
+		deindent();
+		tprint("}\n");
+		tprint("\n");
+	}
+	{
+
+		tprint("void erfcexp( T x, T* erfc0, T* exp0 ) {\n");
+		indent();
+		tprint("T x2, nx2, q0, q1, x0, sw0, sw1, tmp1, tmp0;\n");
+		tprint("x2 = x * x;\n");
+		tprint("nx2 = -x2;\n");
+		tprint("*exp0 = exp(nx2);\n");
+
+		constexpr double x0 = 2.75;
+		tprint("sw0 = (x < TCAST(%.20e) );\n", x0);
+		tprint("sw1 = TCAST(1) - sw0;\n", x0);
+		constexpr int N0 = 25;
+		constexpr int N1 = x0 * x0 + 0.5;
+		tprint("q0 = TCAST(2) * x * x;\n");
+		tprint("q1 = TCAST(1) / (TCAST(2) * x * x);\n");
+		tprint("tmp0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N0 + 1));
+		tprint("tmp1 = TCAST(%.20e);\n", dfactorial(2 * N1 - 1) * nonepow(N1));
+		int n1 = N1 - 1;
+		int n0 = N0 - 1;
+		while (n1 >= 1 || n0 >= 0) {
+			if (n0 >= 0) {
+				tprint("tmp0 = FMA(tmp0, q0, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n0 + 1));
+			}
+			if (n1 >= 1) {
+				tprint("tmp1 = FMA(tmp1, q1, TCAST(%.20e));\n", dfactorial(2 * n1 - 1) * nonepow(n1));
+			}
+			n1--;
+			n0--;
+		}
+		tprint("tmp0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
+		tprint("tmp1 = FMA(tmp1, q1, TCAST(1));\n");
+		tprint("tmp0 = TCAST(1) - tmp0;\n");
+		tprint("tmp1 *= *exp0 * TCAST(%.20e) / x;\n", 1.0 / sqrt(M_PI));
+		tprint("*erfc0 = sw0 * tmp0 + sw1 * tmp1;\n");
+		deindent();
+		tprint("}\n");
+		tprint("\n");
+	}
+	tprint("\n");
+	tprint("}\n");
+	tprint("\n");
+	fclose(fp);
+#endif
+
 #ifdef DOUBLE
 	fp = fopen("./generated_code/include/math_double.hpp", "wt");
 	tprint("#ifndef SPHERICAL_FMM_MATH_DOUBLE\n");
@@ -3438,13 +3542,14 @@ void math_functions() {
 	tprint("T y;\n");
 	tprint("x += TCAST(%.20e);\n", std::numeric_limits<double>::min());
 	tprint("i = *((V*) &x);\n");
+	tprint("x *= TCAST(0.5);");
 	tprint("i >>= VCAST(1);\n");
 	tprint("i = VCAST(0x5FE6EB50C7B537A9) - i;\n");
 	tprint("y = *((T*) &i);\n");
-	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
-	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
-	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
-	tprint("y *= fma(TCAST(-0.5), x * y * y, TCAST(1.5));\n");
+	tprint("y *= fma(x, y * y, TCAST(-1.5));");
+	tprint("y *= fma(x, y * y, TCAST(-1.5));");
+	tprint("y *= fma(x, y * y, TCAST(-1.5));");
+	tprint("y *= fma(x, y * y, TCAST(-1.5));");
 	tprint("return y;\n");
 	deindent();
 	tprint("}\n");
@@ -3578,9 +3683,28 @@ void math_functions() {
 #endif
 	fp = fopen("./generated_code/include/math.hpp", "wt");
 	tprint("#pragma once\n");
+#if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
+	tprint("#include <cstdint>\n");
+	tprint("#include \"vec_macros.hpp\"\n");
+#endif
+	tprint("\n");
+	tprint("namespace fmm {\n");
+	tprint("\n");
+#ifdef VEC_DOUBLE
+	tprint("create_vec_types(double, int64_t, uint64_t, %i);\n", VEC_DOUBLE_SIZE);
+#endif
+	tprint("\n");
+#ifdef VEC_FLOAT
+	tprint("create_vec_types(float, int32_t, uint32_t, %i);\n", VEC_FLOAT_SIZE);
+#endif
+	tprint("}\n");
 #ifdef FLOAT
 	tprint("\n");
 	tprint("#include \"math_float.hpp\"\n");
+#endif
+#ifdef VEC_FLOAT
+	tprint("\n");
+	tprint("#include \"math_vec_float.hpp\"\n");
 #endif
 #ifdef DOUBLE
 	tprint("#include \"math_double.hpp\"\n");
@@ -3602,9 +3726,31 @@ void typecast_functions() {
 	tprint("#define UCAST(a) ((unsigned)(a))\n");
 	tprint("#define VCAST(a) ((int)(a))\n");
 	tprint("\n");
+	tprint("namespace fmm {\n");
 	tprint("typedef float T;\n");
 	tprint("typedef unsigned U;\n");
 	tprint("typedef int V;\n");
+	tprint("}\n");
+	tprint("\n");
+	tprint("#endif\n");
+	fclose(fp);
+#endif
+#ifdef VEC_FLOAT
+	fp = fopen("./generated_code/include/typecast_vec_float.hpp", "wt");
+	tprint("#ifndef SPHERICAL_FMM_TYPECAST_VEC_FLOAT\n");
+	tprint("#define SPHERICAL_FMM_TYPECAST_VEC_FLOAT\n");
+	tprint("\n");
+	tprint("#include \"math.hpp\"\n");
+	tprint("\n");
+	tprint("#define TCAST(a) (vec_float(float(a)))\n");
+	tprint("#define UCAST(a) (vec_uint32_t(unsigned(a)))\n");
+	tprint("#define VCAST(a) (vec_int32_t(int(a)))\n");
+	tprint("\n");
+	tprint("namespace fmm {\n");
+	tprint("typedef vec_float T;\n");
+	tprint("typedef vec_uint32_t U;\n");
+	tprint("typedef vec_int32_t V;\n");
+	tprint("}\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
@@ -3618,9 +3764,11 @@ void typecast_functions() {
 	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
 	tprint("#define VCAST(a) ((long long)(a))\n");
 	tprint("\n");
+	tprint("namespace fmm {\n");
 	tprint("typedef double T;\n");
 	tprint("typedef unsigned long long U;\n");
 	tprint("typedef long long V;\n");
+	tprint("}\n");
 	tprint("\n");
 	tprint("#endif\n");
 	fclose(fp);
@@ -3641,7 +3789,6 @@ int main() {
 	tprint("#define SPHERICAL_FMM_DETAIL_HEADER\n");
 	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("\n");
 
 	tprint("\n");
 	tprint("#define FMM_NOCALC_POT (0x1)\n");
@@ -3650,6 +3797,7 @@ int main() {
 	tprint("#define SPHERICAL_FMM_HEADER\n");
 	tprint("\n");
 	tprint("#include <math.h>\n");
+	tprint("#include \"math.hpp\"\n", type.c_str());
 	tprint("\n");
 	tprint("namespace fmm {\n");
 	tprint("\n");
@@ -3856,16 +4004,42 @@ int main() {
 	static int erfcexp_float_flops = exp_float_flops + 56 - 24 * fmaops;
 	static int erfcexp_double_flops = exp_double_flops + 72 - 35 * fmaops + divops;
 
-	const int rsqrt_flops_array[] = { rsqrt_float_flops, rsqrt_double_flops };
-	const int sqrt_flops_array[] = { sqrt_float_flops, sqrt_double_flops };
-	const int sincos_flops_array[] = { sincos_float_flops, sincos_double_flops };
-	const int erfcexp_flops_array[] = { erfcexp_float_flops, erfcexp_double_flops };
-	const char* rtypenames[] = { "float", "double" };
-	const char* sitypenames[] = { "int", "long long" };
-	const char* uitypenames[] = { "unsigned", "unsigned long long" };
-	const int ntypenames = 2;
+	const int rsqrt_flops_array[] = { rsqrt_float_flops, rsqrt_double_flops,  rsqrt_float_flops, rsqrt_double_flops };
+	const int sqrt_flops_array[] = { sqrt_float_flops, sqrt_double_flops, sqrt_float_flops, sqrt_double_flops };
+	const int sincos_flops_array[] = { sincos_float_flops, sincos_double_flops, sincos_float_flops, sincos_double_flops };
+	const int erfcexp_flops_array[] = { erfcexp_float_flops, erfcexp_double_flops, erfcexp_float_flops, erfcexp_double_flops };
+	int ntypenames = 0;
+	std::vector<std::string> rtypenames;
+	std::vector<std::string> sitypenames;
+	std::vector<std::string> uitypenames;
+#ifdef FLOAT
+	rtypenames.push_back("float");
+	sitypenames.push_back("int32_t");
+	uitypenames.push_back("uint32_t");
+	ntypenames++;
+#endif
+#ifdef DOUBLE
+	rtypenames.push_back("double");
+	sitypenames.push_back("int64_t");
+	uitypenames.push_back("uint64_t");
+	ntypenames++;
+#endif
+#ifdef VEC_FLOAT
+	rtypenames.push_back("vec_float");
+	sitypenames.push_back("vec_int32_t");
+	uitypenames.push_back("vec_uint32_t");
+	ntypenames++;
+#endif
+	/*
+	 #ifdef VEC_DOUBLE
+	 rtypenames.push_back( "vec_double");
+	 sitypenames.push_back( "vec_int64_t");
+	 uitypenames.push_back( "vec_uint64_t");
+	 ntypenames++;
+	 #endif*/
 
 	for (int ti = 0; ti < ntypenames; ti++) {
+		fprintf( stderr, "%s %i %i\n", rtypenames[ti].c_str(), ti,  ntypenames);
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
