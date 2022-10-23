@@ -40,7 +40,7 @@ target_compile_options(spherical_fmm PUBLIC "-march=native")
 add_library(cuda_spherical_fmm ${GENERATED_CUDA_SRC_FILES} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
 target_include_directories(cuda_spherical_fmm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
 target_compile_options(cuda_spherical_fmm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
-                      --diag-suppress 177 --use_fast_math --gpu-architecture=sm_${CUDA_ARCH};
+                      --use_fast_math --gpu-architecture=sm_${CUDA_ARCH};
                         >)
 set_property(TARGET cuda_spherical_fmm PROPERTY CUDA_SEPARABLE_COMPILATION ON)
  

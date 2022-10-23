@@ -1044,35 +1044,35 @@ int main() {
 	T b = float(0);
 */
 
-	auto res = test_unary<double>(static_cast<double (*)(double)>(&std::sqrt), static_cast<double(*)(double)>(&fmm::sqrt), 0.0, 10.0);
+	auto res = test_unary<double>(static_cast<double (*)(double)>(&std::sqrt), static_cast<double(*)(double)>(&fmm::detail::sqrt), 0.0, 10.0);
 	printf("sqrt(double)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_unary<double>([](double x) {return 1.0/sqrt(x);}, static_cast<double (*)(double)>(&fmm::rsqrt), 0.0, 10.0);
+	res = test_unary<double>([](double x) {return 1.0/sqrt(x);}, static_cast<double (*)(double)>(&fmm::detail::rsqrt), 0.0, 10.0);
 	printf("rsqrt(double)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>(&sincos), static_cast<void(*)(double,double*,double*)>(&fmm::sincos), 0.001, 10.0);
+	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>(&sincos), static_cast<void(*)(double,double*,double*)>(&fmm::detail::sincos), 0.001, 10.0);
 	printf("sincos(double)   %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
 	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>([](double x, double* e1, double* e2) {
 				*e1 = erfc(x);
 				*e2 = exp(-x*x);
-			}), static_cast<void(*)(double,double*,double*)>(&fmm::erfcexp), 0.01, 5.0);
+			}), static_cast<void(*)(double,double*,double*)>(&fmm::detail::erfcexp), 0.01, 5.0);
 	printf("erfcexp(double)  %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
 	printf("\n");
-	res = test_unary<float>(static_cast<float (*)(float)>(&std::sqrt), static_cast<float(*)(float)>(&fmm::sqrt), 0.0, 10.0);
+	res = test_unary<float>(static_cast<float (*)(float)>(&std::sqrt), static_cast<float(*)(float)>(&fmm::detail::sqrt), 0.0, 10.0);
 	printf("sqrt(float)       %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_unary<float>([](float x) {return 1.0f/sqrtf(x);}, static_cast<float (*)(float)>(&fmm::rsqrt), 0.0, 10.0);
+	res = test_unary<float>([](float x) {return 1.0f/sqrtf(x);}, static_cast<float (*)(float)>(&fmm::detail::rsqrt), 0.0, 10.0);
 	printf("rsqrt(float)      %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>(&sincosf), static_cast<void(*)(float,float*,float*)>(&fmm::sincos), 0.001, 10.0);
+	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>(&sincosf), static_cast<void(*)(float,float*,float*)>(&fmm::detail::sincos), 0.001, 10.0);
 	printf("sincos(float)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
 	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>([](float x, float* e1, float* e2) {
 				*e1 = erfcf(x);
 				*e2 = expf(-x*x);
-			}), static_cast<void(*)(float,float*,float*)>(&fmm::erfcexp), 0.01, 5.0);
+			}), static_cast<void(*)(float,float*,float*)>(&fmm::detail::erfcexp), 0.01, 5.0);
 	printf("erfcexp(float)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
 	printf("\n");
