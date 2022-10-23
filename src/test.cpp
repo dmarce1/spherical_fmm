@@ -1077,7 +1077,7 @@ int main() {
 
 	printf("\n");
 
-	run_tests<13, 3> run;
+	run_tests<11, 3> run;
 	real theta = 0.5;
 	printf("M2L\n");
 	run(CC, theta);
