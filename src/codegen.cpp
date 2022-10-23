@@ -676,48 +676,48 @@ bool close21(double a) {
 int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 //noevenhi = false;
 	int flops = 0;
-	tprint("Rx = cosphi;\n");
-	tprint("Ry = sinphi;\n");
+	tprint("Rx[0] = cosphi;\n");
+	tprint("Ry[0] = sinphi;\n");
+	for (int m = 1; m < P; m++) {
+		tprint("Rx[%i] = Rx[%i] * cosphi - Ry[%i] * sinphi;\n", m, m - 1, m - 1);
+		tprint("Ry[%i] = detail::fma(Rx[%i], sinphi, Ry[%i] * cosphi);\n", m, m - 1, m - 1);
+		flops += 6 - fmaops;
+	}
 	int mmin = 1;
 	bool initR = true;
+	int sw = 1;
 	for (int m = 1; m <= P; m++) {
+		sw = sw == 0 ? 1 : 0;
 		for (int l = m; l <= P; l++) {
 			if (noevenhi && l == P) {
 				if ((((P + l) / 2) % 2 == 1) ? m % 2 == 0 : m % 2 == 1) {
 					continue;
 				}
 			}
-			if (!initR) {
-				tprint("tmp = Rx;\n");
-				tprint("Rx = Rx * cosphi - Ry * sinphi;\n");
-				tprint("Ry = detail::fma(tmp, sinphi, Ry * cosphi);\n");
-				flops += 6 - fmaops;
-				initR = true;
-			}
 			if (exclude && l == P && m % 2 == 1) {
-				tprint("%s[%i] = -%s[%i] * Ry;\n", name, index(l, m), name, index(l, -m));
-				tprint("%s[%i] *= Rx;\n", name, index(l, -m));
+				tprint(sw, "%s[%i] = -%s[%i] * Ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
+				tprint(sw, "%s[%i] *= Rx[%i];\n", name, index(l, -m), m);
 				flops += 3;
 			} else if ((exclude && l == P && m % 2 == 0) || (noimaghi && l == P)) {
-				tprint("%s[%i] = %s[%i] * Ry;\n", name, index(l, -m), name, index(l, m));
-				tprint("%s[%i] *= Rx;\n", name, index(l, m));
+				tprint(sw, "%s[%i] = %s[%i] * Ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
+				tprint(sw, "%s[%i] *= Rx[%i];\n", name, index(l, m), m - 1);
 				flops += 2;
 			} else {
 				if (noevenhi && ((l >= P - 1 && m % 2 == P % 2))) {
-					tprint("%s[%i] = %s[%i] * Ry;\n", name, index(l, -m), name, index(l, m));
-					tprint("%s[%i] *= Rx;\n", name, index(l, m));
+					tprint(sw, "%s[%i] = %s[%i] * Ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
+					tprint(sw, "%s[%i] *= Rx[%i];\n", name, index(l, m), m - 1);
 					flops += 2;
 				} else {
-					tprint("tmp = %s[%i];\n", name, index(l, m));
-					tprint("%s[%i] = %s[%i] * Rx - %s[%i] * Ry;\n", name, index(l, m), name, index(l, m), name, index(l, -m));
-					tprint("%s[%i] = detail::fma(tmp, Ry, %s[%i] * Rx);\n", name, index(l, -m), name, index(l, -m));
+					tprint(sw, "tmp%i = %s[%i];\n", sw, name, index(l, m));
+					tprint(sw, "%s[%i] = %s[%i] * Rx[%i] - %s[%i] * Ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
+					tprint(sw, "%s[%i] = detail::fma(tmp%i, Ry[%i], %s[%i] * Rx[%i]);\n", name, index(l, -m), sw, m - 1, name, index(l, -m), m - 1);
 					flops += 6 - fmaops;
 				}
 			}
 
 		}
-		initR = false;
 	}
+	tprint_flush();
 	return flops;
 }
 
@@ -1769,9 +1769,9 @@ int M2L_rot1(int P, int Q) {
 	init_real("R");
 	init_real("cosphi");
 	init_real("sinphi");
-	init_real("Rx");
-	init_real("Ry");
-	init_real("tmp");
+	tprint("T Rx[%i];\n", P);
+	tprint("T Ry[%i];\n", P);
+	init_real("tmp0");
 	init_reals("L", exp_sz(Q));
 	tprint("expansion_type<%s, %i> O_st;\n", type.c_str(), P);
 	tprint("T* O = O_st.data();\n", type.c_str(), P);
@@ -1978,8 +1978,8 @@ int M2L_rot2(int P, int Q) {
 	init_real("sinphi");
 	init_real("cosphi0");
 	init_real("sinphi0");
-	init_real("Rx");
-	init_real("Ry");
+	tprint("T Rx[%i];\n", P);
+	tprint("T Ry[%i];\n", P);
 	init_real("tmp0");
 	init_real("tmp");
 	init_real("r2przero");
@@ -2379,9 +2379,9 @@ int M2M_rot1(int P) {
 	func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
-	init_real("Rx");
-	init_real("Ry");
-	init_real("tmp");
+	tprint("T Rx[%i];\n", P);
+	tprint("T Ry[%i];\n", P);
+	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
 	init_real("tmp1");
@@ -2551,15 +2551,14 @@ int M2M_rot2(int P) {
 	int flops = 0;
 	func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
-	init_real("Rx");
-	init_real("Ry");
-	init_real("tmp");
+	tprint("T Rx[%i];\n", P);
+	tprint("T Ry[%i];\n", P);
+	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
 	init_real("R2");
 	init_real("Rzero");
 	init_real("tmp1");
-	init_real("tmp0");
 	init_real("r2");
 	init_real("rzero");
 	init_real("r");
@@ -2846,9 +2845,9 @@ int L2L_rot1(int P) {
 	set_tprint(c);
 
 	func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
-	init_real("Rx");
-	init_real("Ry");
-	init_real("tmp");
+	tprint("T Rx[%i];\n", P);
+	tprint("T Ry[%i];\n", P);
+	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
 	init_real("R2");
@@ -3023,9 +3022,9 @@ int L2L_rot2(int P) {
 	int flops = 0;
 	func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
-	init_real("Rx");
-	init_real("Ry");
-	init_real("tmp");
+	tprint("T Rx[%i];\n", P);
+	tprint("T Ry[%i];\n", P);
+	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
 	init_real("R2");
@@ -3033,7 +3032,6 @@ int L2L_rot2(int P) {
 	init_real("tmp1");
 	init_real("r2");
 	init_real("rzero");
-	init_real("tmp0");
 	init_real("r");
 	init_real("rinv");
 	init_real("cosphi");
