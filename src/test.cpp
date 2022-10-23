@@ -8,35 +8,34 @@
 #include <climits>
 #include <functional>
 #include "spherical_fmm.hpp"
-#include "math.hpp"
 #include "timer.hpp"
 
 template<class T>
 using complex = std::complex<T>;
 
-#define TEST_TYPE_VEC_DOUBLE
-
 #ifdef TEST_TYPE_VEC_DOUBLE
 #define VECTOR
 using vec_real = fmm::vec_double;
 using real = double;
+#define FLAG
 #endif
 #ifdef TEST_TYPE_VEC_FLOAT
 #define VECTOR
 using vec_real = fmm::vec_float;
 using real = float;
-#define fmm_force fmm_force_float
-#define fmm_force_initialize fmm_force_initialize_float
+#define FLAG
 #endif
 #ifdef TEST_TYPE_FLOAT
 using real = float;
-#define fmm_force fmm_force_float
-#define fmm_force_initialize fmm_force_initialize_float
+#define FLAG
 #endif
 #ifdef TEST_TYPE_DOUBLE
 using real = double;
-#define fmm_force_initialize fmm_force_initialize_double
-#define fmm_force fmm_force_double
+#define FLAG
+#endif
+
+#ifndef FLAG
+#error
 #endif
 
 constexpr double dfactorial(int n) {
@@ -717,9 +716,9 @@ real test_M2L(test_type type, real theta = 0.5) {
 	for (int i = 0; i < N; i++) {
 		if (type == EWALD) {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
-			random_vector(x0, y0, z0);
+			random_unit(x0, y0, z0);
 			random_unit(x1, y1, z1);
-			random_vector(x2, y2, z2);
+			random_unit(x2, y2, z2);
 			const auto alpha = 0.45 * rand1() + 0.05;
 			x1 *= alpha;
 			y1 *= alpha;
@@ -762,8 +761,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 //			printf( "%e %e %e\n",fa, fn, fn/fa-1.0);
 
 			//	printf("%Le %e %e %e\n", fx, -f.force[0][0], f.force[1][0], f.force[2][1]);
-			err += fabs(fa - fn);
-			norm += fabs(fa);
+			err += fabs(phi - f.potential[0]);
+			norm += fabs(phi);
 #else
 			multipole_type<real, P> M;
 			expansion_type<real, P> L;
@@ -787,14 +786,14 @@ real test_M2L(test_type type, real theta = 0.5) {
 			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
 			const double fn = std::sqrt(sqr(f.force[0], f.force[1], f.force[2]));
 			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(fa - fn);
-			norm += fabs(fa);
+			err += fabs(phi - f.potential);
+			norm += fabs(phi);
 #endif
 		} else {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
-			random_vector(x0, y0, z0);
+			random_unit(x0, y0, z0);
 			random_unit(x1, y1, z1);
-			random_vector(x2, y2, z2);
+			random_unit(x2, y2, z2);
 			if (type == CP) {
 				x0 = y0 = z0 = 0;
 			} else if (type == PC) {
@@ -856,8 +855,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
 			const double fn = std::sqrt(sqr(f.force[0][0], f.force[1][0], f.force[2][0]));
 			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(fa - fn);
-			norm += fabs(fa);
+			err += fabs(phi - f.potential[0]);
+			norm += fabs(phi);
 #else
 			multipole_type<real, P> M;
 			expansion_type<real, P> L;
@@ -889,8 +888,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
 			const double fn = std::sqrt(sqr(f.force[0], f.force[1], f.force[2]));
 			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(fa - fn);
-			norm += fabs(fa);
+			err += fabs(phi - f.potential);
+			norm += fabs(phi);
 #endif
 		}
 	}
@@ -900,17 +899,17 @@ real test_M2L(test_type type, real theta = 0.5) {
 
 template<int NMAX, int N = 3>
 struct run_tests {
-	void operator()(test_type type) {
-		auto a = test_M2L<N>(type);
+	void operator()(test_type type, real theta) {
+		auto a = test_M2L<N>(type, theta);
 		printf("%i %e\n", N, a);
 		run_tests<NMAX, N + 1> run;
-		run(type);
+		run(type, theta);
 	}
 };
 
 template<int NMAX>
 struct run_tests<NMAX, NMAX> {
-	void operator()(test_type type) {
+	void operator()(test_type type, real theta) {
 
 	}
 };
@@ -1079,12 +1078,13 @@ int main() {
 	printf("\n");
 
 	run_tests<13, 3> run;
+	real theta = 0.5;
 	printf("M2L\n");
-	run(CC);
+	run(CC, theta);
 	printf("M2P\n");
-	run(PC);
+	run(PC, theta);
 	printf("P2L\n");
-	run(CP);
+	run(CP, theta);
 	printf("EWALD\n");
-	run(EWALD);
+	run(EWALD, theta);
 }

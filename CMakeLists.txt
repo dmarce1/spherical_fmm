@@ -44,9 +44,24 @@ target_compile_options(cuda_spherical_fmm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
                         >)
 set_property(TARGET cuda_spherical_fmm PROPERTY CUDA_SEPARABLE_COMPILATION ON)
  
-add_executable(test ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
-target_include_directories(test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
-target_link_libraries(test PUBLIC spherical_fmm)
-target_compile_options(test PUBLIC "-march=native")
+add_executable(test_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_float PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_float PUBLIC spherical_fmm)
+target_compile_options(test_float PUBLIC -march=native -DTEST_TYPE_FLOAT)
+
+add_executable(test_double ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_double PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_double PUBLIC spherical_fmm)
+target_compile_options(test_double PUBLIC -march=native -DTEST_TYPE_DOUBLE)
+
+add_executable(test_vec_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_vec_float PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_vec_float PUBLIC spherical_fmm)
+target_compile_options(test_vec_float PUBLIC -march=native -DTEST_TYPE_VEC_FLOAT)
+
+add_executable(test_vec_double ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_vec_double PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_vec_double PUBLIC spherical_fmm)
+target_compile_options(test_vec_double PUBLIC -march=native -DTEST_TYPE_VEC_DOUBLE)
 
 
