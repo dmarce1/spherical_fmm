@@ -27,8 +27,8 @@ static int tprint_on = true;
 static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
-static int pmin = 3;
-static int pmax = 10;
+static int pmin = FMM_PMIN;
+static int pmax = FMM_PMAX;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -1981,7 +1981,6 @@ int M2L_rot2(int P, int Q) {
 	tprint("T Rx[%i];\n", P);
 	tprint("T Ry[%i];\n", P);
 	init_real("tmp0");
-	init_real("tmp");
 	init_real("r2przero");
 	init_real("rinv");
 	if (Q > 1) {

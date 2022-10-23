@@ -1077,7 +1077,7 @@ int main() {
 
 	printf("\n");
 
-	run_tests<11, 3> run;
+	run_tests<FMM_PMAX+1, FMM_PMIN> run;
 	real theta = 0.5;
 	printf("M2L\n");
 	run(CC, theta);
