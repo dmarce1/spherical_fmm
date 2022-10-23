@@ -29,15 +29,17 @@ execute_process(
   COMMAND ${CMAKE_CURRENT_BINARY_DIR}/a.out
 )
 set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH})
-FILE(GLOB GENERATED_SRC_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*.cpp)
-FILE(GLOB GENERATED_CUDA_SRC_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*.cu)
+FILE(GLOB GENERATED_SRC_FILES1 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*.cpp)
+FILE(GLOB GENERATED_SRC_FILES2 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*/*.cpp)
+FILE(GLOB GENERATED_CUDA_SRC_FILES1 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*.cu)
+FILE(GLOB GENERATED_CUDA_SRC_FILES2 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*/*.cu)
 FILE(GLOB GENERATED_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/*)
 FILE(GLOB GENERATED_DETAIL_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/detail/*)
 
-add_library(spherical_fmm ${GENERATED_SRC_FILES} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
+add_library(spherical_fmm ${GENERATED_SRC_FILES1} ${GENERATED_SRC_FILES2} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
 target_include_directories(spherical_fmm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
 target_compile_options(spherical_fmm PUBLIC "-march=native")
-add_library(cuda_spherical_fmm ${GENERATED_CUDA_SRC_FILES} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
+add_library(cuda_spherical_fmm ${GENERATED_CUDA_SRC_FILES1} ${GENERATED_CUDA_SRC_FILES2} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
 target_include_directories(cuda_spherical_fmm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
 target_compile_options(cuda_spherical_fmm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
                       --use_fast_math --gpu-architecture=sm_${CUDA_ARCH};
