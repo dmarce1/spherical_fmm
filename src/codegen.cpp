@@ -8,6 +8,98 @@
 #include <complex>
 #include <set>
 #include <algorithm>
+#include <cstring>
+
+struct flops_t {
+	int r;
+	flops_t() {
+		r = 0;
+	}
+	flops_t& operator+=(const flops_t& other) {
+		r += other.r;
+		return *this;
+	}
+	int load() const {
+		return r;
+	}
+};
+
+flops_t count_flops(std::string fname) {
+	FILE* fp = fopen(fname.c_str(), "rt");
+	if (!fp) {
+		printf("Unable to open %s\n", fname.c_str());
+		abort();
+	}
+	constexpr int N = 1000;
+	char line[N];
+	flops_t fps;
+	int ln = 0;
+	while (fgets(line, N - 2, fp)) {
+		int cnt = 0;
+		if (line[0] != '#') {
+			int j = 0;
+			while (j < strlen(line)) {
+				if (strncmp(line + j, " += ", 4) == 0) {
+					cnt++;
+					j += 4;
+				} else if (strncmp(line + j, " -= ", 4) == 0) {
+					cnt++;
+					j += 4;
+				} else if (strncmp(line + j, " *= ", 4) == 0) {
+					cnt++;
+					j += 4;
+				} else if (strncmp(line + j, " /= ", 4) == 0) {
+					cnt++;
+					j += 4;
+				} else if (strncmp(line + j, " + ", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, " - ", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, " -", 2) == 0) {
+					cnt++;
+					j += 2;
+				} else if (strncmp(line + j, " * ", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, " / ", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, " < ", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, " > ", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, "fma", 3) == 0) {
+					cnt++;
+					j += 3;
+				} else if (strncmp(line + j, "rsqrt", 5) == 0) {
+					cnt++;
+					j += 5;
+				} else if (strncmp(line + j, "sqrt", 4) == 0) {
+					cnt++;
+					j += 4;
+				} else if (strncmp(line + j, "erfcexp", 7) == 0) {
+					cnt++;
+					j += 7;
+				} else if (strncmp(line + j, "sincos", 6) == 0) {
+					cnt++;
+					j += 6;
+				} else {
+					j++;
+				}
+			}
+		}
+		fps.r += cnt;
+//		printf( "%i, %i : %s", fps.r, cnt, line);
+	}
+
+//	printf( "%i\n", ln);
+	fclose(fp);
+	return fps;
+}
 
 using complex = std::complex<double>;
 
@@ -529,77 +621,74 @@ void func_args_cover(int P, const char* arg, arg_type atype, Args&& ...args) {
 }
 
 template<class ... Args>
-void func_header(const char* func, int P, bool pub, bool calcpot, bool flags, std::string head, Args&& ...args) {
-	if (tprint_on) {
-		static std::set<std::string> igen;
-		std::string func_name = std::string(func);
-		std::string file_name = func_name + "_" + type + "_P" + std::to_string(P) + (cuda ? ".cu" : ".cpp");
-		func_name = "void " + func_name;
-		func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
-		auto func_name2 = func_name;
-		if (flags) {
-			func_name += ", int flags = 0)";
-			func_name2 += ", int flags)";
-			if (!pub) {
-				func_name = func_name2;
-			}
-		} else {
-			func_name += ")";
-			func_name2 += ")";
-		}
-		set_file("./generated_code/include/spherical_fmm.hpp");
-		static std::set<std::string> already_printed;
-		if (already_printed.find(func_name) == already_printed.end()) {
-			already_printed.insert(func_name);
-			if (prefix[0]) {
-				func_name = std::string(prefix) + " " + func_name;
-				func_name2 = std::string(prefix) + " " + func_name2;
-			}
-			if (pub) {
-				tprint("%s;\n", func_name.c_str());
-			} else {
-				if (is_vec(type)) {
-					detail_header_vec += func_name + ";\n";
-				} else {
-					detail_header += func_name + ";\n";
-				}
-			}
-		}
-		std::string func1 = std::string(func) + std::string("_") + type;
-		auto dir = std::string("./generated_code/src/") + type;
-		if (cuda) {
-			dir += "_cuda";
-		}
-		std::string cmd = "mkdir -p " + dir;
-		SYSTEM(cmd.c_str());
-		dir += "/P" + std::to_string(P);
-		cmd = "mkdir -p " + dir;
-		SYSTEM(cmd.c_str());
-		file_name = dir + "/" + file_name;
-//		printf("%s ", file_name.c_str());
-		set_file(file_name);
-		tprint("#include <stdio.h>\n");
-		tprint("#include \"spherical_fmm.hpp\"\n");
-		tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
-		tprint("\n");
-		tprint("namespace fmm {\n");
+std::string func_header(const char* func, int P, bool pub, bool calcpot, bool flags, std::string head, Args&& ...args) {
+	static std::set<std::string> igen;
+	std::string func_name = std::string(func);
+	std::string file_name = func_name + "_" + type + "_P" + std::to_string(P) + (cuda ? ".cu" : ".cpp");
+	func_name = "void " + func_name;
+	func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
+	auto func_name2 = func_name;
+	if (flags) {
+		func_name += ", int flags = 0)";
+		func_name2 += ", int flags)";
 		if (!pub) {
-			tprint("namespace detail {\n");
+			func_name = func_name2;
 		}
-		if (head != "") {
-			tprint("\n");
-			tprint("%s\n", head.c_str());
-		}
-		tprint("\n");
-		tprint("%s {\n", func_name2.c_str());
-		indent();
-		if (flags && calcpot) {
-			tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
-		}
-		func_args_cover(P, std::forward<Args>(args)..., 0);
 	} else {
-		indent();
+		func_name += ")";
+		func_name2 += ")";
 	}
+	set_file("./generated_code/include/spherical_fmm.hpp");
+	static std::set<std::string> already_printed;
+	if (already_printed.find(func_name) == already_printed.end()) {
+		already_printed.insert(func_name);
+		if (prefix[0]) {
+			func_name = std::string(prefix) + " " + func_name;
+			func_name2 = std::string(prefix) + " " + func_name2;
+		}
+		if (pub) {
+			tprint("%s;\n", func_name.c_str());
+		} else {
+			if (is_vec(type)) {
+				detail_header_vec += func_name + ";\n";
+			} else {
+				detail_header += func_name + ";\n";
+			}
+		}
+	}
+	std::string func1 = std::string(func) + std::string("_") + type;
+	auto dir = std::string("./generated_code/src/") + type;
+	if (cuda) {
+		dir += "_cuda";
+	}
+	std::string cmd = "mkdir -p " + dir;
+	SYSTEM(cmd.c_str());
+	dir += "/P" + std::to_string(P);
+	cmd = "mkdir -p " + dir;
+	SYSTEM(cmd.c_str());
+	file_name = dir + "/" + file_name;
+//		printf("%s ", file_name.c_str());
+	set_file(file_name);
+	tprint("#include <stdio.h>\n");
+	tprint("#include \"spherical_fmm.hpp\"\n");
+	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
+	tprint("\n");
+	tprint("namespace fmm {\n");
+	if (!pub) {
+		tprint("namespace detail {\n");
+	}
+	if (head != "") {
+		tprint("\n");
+		tprint("%s\n", head.c_str());
+	}
+	tprint("\n");
+	tprint("%s {\n", func_name2.c_str());
+	indent();
+	if (flags && calcpot) {
+		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+	}
+	func_args_cover(P, std::forward<Args>(args)..., 0);
+	return file_name;
 }
 
 void set_tprint(bool c) {
@@ -738,7 +827,7 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 	indent();
 	for (int n = 0; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
-			if( n > 0 ) {
+			if (n > 0) {
 				sw = sw == 0 ? 1 : 0;
 			}
 			bool pfirst = true;
@@ -749,30 +838,30 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 				looped = true;
 				if (pfirst) {
 					pfirst = false;
-					tprint(sw,"%s[%i] = %s[%i] * A[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
+					tprint(sw, "%s[%i] = %s[%i] * A[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
 					flops += 1;
 				} else {
-					tprint(sw,"%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
+					tprint(sw, "%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
 					flops += 2 - fmaops;
 				}
 				if (m != 0) {
 					if (nfirst) {
 						nfirst = false;
-						tprint(sw,"%s[%i] = %s[%i] * A[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
+						tprint(sw, "%s[%i] = %s[%i] * A[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
 						flops += 1;
 					} else {
-						tprint(sw,"%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
+						tprint(sw, "%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
 						flops += 2 - fmaops;
 					}
 				}
 			}
 			if (m % 2 != 0) {
 				if (!pfirst) {
-					tprint(sw,"%s[%i] = -%s[%i];\n", lname, index(n, m), lname, index(n, m));
+					tprint(sw, "%s[%i] = -%s[%i];\n", lname, index(n, m), lname, index(n, m));
 					flops++;
 				}
 				if (!nfirst) {
-					tprint(sw,"%s[%i] = -%s[%i];\n", lname, index(n, -m), lname, index(n, -m));
+					tprint(sw, "%s[%i] = -%s[%i];\n", lname, index(n, -m), lname, index(n, -m));
 					flops++;
 				}
 			}
@@ -960,7 +1049,7 @@ int m2lg_body(int P, int Q) {
 	indent();
 	for (int n = 0; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
-			if( n > 0 ) {
+			if (n > 0) {
 				sw = sw == 0 ? 1 : 0;
 			}
 			const int kmax = std::min(P - n, P - 1);
@@ -1078,46 +1167,46 @@ int m2lg_body(int P, int Q) {
 
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 					flops++;
 				}
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 					flops++;
 				}
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 				flops += 2 - fmaops;
 			}
 
 		}
 		if (n == 0) {
 			deindent();
-			tprint(sw,"}\n");
+			tprint(sw, "}\n");
 			tprint_flush();
 		}
 	}
@@ -1666,7 +1755,7 @@ int ewald_greens(int P, double alpha) {
 		ops[ii] = std::move(next_ops);
 	}
 	int sw = 0;
-	tprint(sw,"if( calcpot ) {\n");
+	tprint(sw, "if( calcpot ) {\n");
 	indent();
 	for (int ii = 0; ii < exp_sz(P); ii++) {
 		std::vector<std::pair<double, std::vector<std::pair<int, std::string> > > > sorted_ops(ops[ii].begin(), ops[ii].end());
@@ -1674,7 +1763,7 @@ int ewald_greens(int P, double alpha) {
 				[](const std::pair<double,std::vector<std::pair<int, std::string> > >& a, const std::pair<double,std::vector<std::pair<int, std::string> > > & b ) {
 					return fabs(a.first) * sqrt(a.second.size()) < fabs(b.first) * sqrt(b.second.size());
 				});
-		if( ii > 0 ) {
+		if (ii > 0) {
 			sw = sw == 0 ? 1 : 0;
 		}
 		for (auto j = sorted_ops.begin(); j != sorted_ops.end(); j++) {
@@ -1682,20 +1771,20 @@ int ewald_greens(int P, double alpha) {
 			if (op.size()) {
 				int sgn = op[0].first > 0 ? 1 : -1;
 				for (int k = 0; k < op.size(); k++) {
-					tprint(sw,"tmp%i %c= %s;\n", sw, k == 0 ? ' ' : (sgn * op[k].first > 0 ? '+' : '-'), op[k].second.c_str());
+					tprint(sw, "tmp%i %c= %s;\n", sw, k == 0 ? ' ' : (sgn * op[k].first > 0 ? '+' : '-'), op[k].second.c_str());
 					flops++;
 				}
 				if (sgn > 0) {
-					tprint(sw,"G[%i] = detail::fma(TCAST(+%.20e), tmp%i, G[%i]);\n", ii, sgn * j->first, sw, ii);
+					tprint(sw, "G[%i] = detail::fma(TCAST(+%.20e), tmp%i, G[%i]);\n", ii, sgn * j->first, sw, ii);
 				} else {
-					tprint(sw,"G[%i] = detail::fma(TCAST(%.20e), tmp%i, G[%i]);\n ", ii, sgn * j->first, sw, ii);
+					tprint(sw, "G[%i] = detail::fma(TCAST(%.20e), tmp%i, G[%i]);\n ", ii, sgn * j->first, sw, ii);
 				}
 				flops += 2 - fmaops;
 			}
 		}
 		if (ii == 0) {
 			deindent();
-			tprint(sw,"}\n");
+			tprint(sw, "}\n");
 			tprint_flush();
 		}
 	}
@@ -1841,7 +1930,7 @@ int M2L_rot1(int P, int Q) {
 	indent();
 	for (int n = 0; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
-			if( n > 0 ) {
+			if (n > 0) {
 				sw = sw == 0 ? 1 : 0;
 			}
 			bool nfirst = true;
@@ -1892,22 +1981,22 @@ int M2L_rot1(int P, int Q) {
 						if (!mreal) {
 							if (mxsgn * gxsgn == sgn) {
 								if (pfirst) {
-									tprint(sw,"L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
+									tprint(sw, "L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
 									pfirst = false;
 									flops += 1;
 								} else {
-									tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
+									tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
 									flops += 2 - fmaops;
 								}
 							}
 							if (mysgn * gxsgn == sgn) {
 								if (m > 0) {
 									if (nfirst) {
-										tprint(sw,"L[%i] = %s * %s;\n", index(n, -m), mystr, gxstr);
+										tprint(sw, "L[%i] = %s * %s;\n", index(n, -m), mystr, gxstr);
 										nfirst = false;
 										flops += 1;
 									} else {
-										tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), mystr, gxstr, index(n, -m));
+										tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), mystr, gxstr, index(n, -m));
 										flops += 2 - fmaops;
 									}
 								}
@@ -1915,11 +2004,11 @@ int M2L_rot1(int P, int Q) {
 						} else {
 							if (mxsgn * gxsgn == sgn) {
 								if (pfirst) {
-									tprint(sw,"L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
+									tprint(sw, "L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
 									pfirst = false;
 									flops += 1;
 								} else {
-									tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
+									tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
 									flops += 2 - fmaops;
 								}
 							}
@@ -1936,11 +2025,11 @@ int M2L_rot1(int P, int Q) {
 					}
 				}
 				if (!pfirst && sgn == -1) {
-					tprint(sw,"L[%i] = -L[%i];\n", index(n, m), index(n, m));
+					tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 					flops++;
 				}
 				if (!nfirst && sgn == -1) {
-					tprint(sw,"L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+					tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 					flops++;
 				}
 
@@ -1948,7 +2037,7 @@ int M2L_rot1(int P, int Q) {
 		}
 		if (n == 0) {
 			deindent();
-			tprint(sw,"}\n");
+			tprint(sw, "}\n");
 			tprint_flush();
 		}
 	}
@@ -2103,9 +2192,9 @@ int M2L_rot2(int P, int Q) {
 	return flops;
 }
 
-int regular_harmonic(int P) {
+std::string regular_harmonic(int P) {
 	int flops = 0;
-	func_header("regular_harmonic", P, false, false, true, "", "Y", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("regular_harmonic", P, false, false, true, "", "Y", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
@@ -2159,7 +2248,7 @@ int regular_harmonic(int P) {
 	tprint("}\n");
 	tprint("}\n");
 	tprint("\n");
-	return flops;
+	return fname;
 }
 
 void cuda_header() {
@@ -2167,9 +2256,9 @@ void cuda_header() {
 	tprint("const int& bsz = blockDim.x;\n");
 }
 
-int regular_harmonic_xz(int P) {
+std::string regular_harmonic_xz(int P) {
 	int flops = 0;
-	func_header("regular_harmonic_xz", P, false, false, true, "", "Y", EXP, "x", LIT, "z", LIT);
+	auto fname = func_header("regular_harmonic_xz", P, false, false, true, "", "Y", EXP, "x", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
@@ -2218,16 +2307,16 @@ int regular_harmonic_xz(int P) {
 	tprint("}\n");
 	tprint("}\n");
 	tprint("\n");
-	return flops;
+	return fname;
 }
 
-int M2M_norot(int P) {
+std::string M2M_norot(int P) {
 	int flops = 0;
 	const auto c = tprint_on;
 	set_tprint(false);
-	flops += regular_harmonic(P);
+
 	set_tprint(c);
-	func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 //const auto Y = spherical_regular_harmonic<T, P>(-x, -y, -z);
 	init_real("tmp1");
 	tprint("tmp1 = TCAST(1) / M_st.scale();\n");
@@ -2351,39 +2440,39 @@ int M2M_norot(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw,"M[%i] = -M[%i];\n", index(n, m), index(n, m));
+				tprint(sw, "M[%i] = -M[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 					flops++;
 				}
-				tprint(sw,"M[%i] = -M[%i];\n", index(n, m), index(n, m));
+				tprint(sw, "M[%i] = -M[%i];\n", index(n, m), index(n, m));
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"M[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint(sw, "M[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw,"M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw,"M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
+				tprint(sw, "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 					flops++;
 				}
-				tprint(sw,"M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
+				tprint(sw, "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"M[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint(sw, "M[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw,"M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 				flops += 2 - fmaops;
 			}
 		}
@@ -2394,17 +2483,13 @@ int M2M_norot(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
-	return flops;
+	return fname;
 }
 
-int M2M_rot1(int P) {
+std::string M2M_rot1(int P) {
 	int flops = 0;
-	const auto c = tprint_on;
-	set_tprint(false);
-	flops += regular_harmonic_xz(P);
-	set_tprint(c);
 
-	func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("T Rx[%i];\n", P);
@@ -2423,7 +2508,7 @@ int M2M_rot1(int P) {
 	tprint("z *= tmp1;\n");
 	tprint("R2 = detail::fma(x, x, y * y);\n");
 	flops += 3 - fmaops;
-	tprint("Rzero = (R2<TCAST(1e-37));\n");
+	tprint("Rzero = (R2 < TCAST(1e-37));\n");
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
 	flops += rsqrt_flops;
@@ -2438,8 +2523,8 @@ int M2M_rot1(int P) {
 	if (P > 1 && !nophi && periodic) {
 		tprint("if( calcpot ) {\n");
 		indent();
-		tprint("M_st.trace2() = detail::fma(TCAST(-4)*R, M[%i], M_st.trace2());\n", index(1, 1));
-		tprint("M_st.trace2() = detail::fma(TCAST(-2)*z, M[%i], M_st.trace2());\n", index(1, 0));
+		tprint("M_st.trace2() = detail::fma(TCAST(-4) * R, M[%i], M_st.trace2());\n", index(1, 1));
+		tprint("M_st.trace2() = detail::fma(TCAST(-2) * z, M[%i], M_st.trace2());\n", index(1, 0));
 		tprint("M_st.trace2() = detail::fma(R * R, M[%i], M_st.trace2());\n", index(0, 0));
 		tprint("M_st.trace2() = detail::fma(z * z, M[%i], M_st.trace2());\n", index(0, 0));
 		deindent();
@@ -2572,12 +2657,12 @@ int M2M_rot1(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
-	return flops;
+	return fname;
 }
 
-int M2M_rot2(int P) {
+std::string M2M_rot2(int P) {
 	int flops = 0;
-	func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	tprint("T Rx[%i];\n", P);
 	tprint("T Ry[%i];\n", P);
@@ -2681,14 +2766,14 @@ int M2M_rot2(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
-	return flops;
+	return fname;
 }
 
 int L2L_norot(int P) {
 	int flops = 0;
 	const auto c = tprint_on;
 	set_tprint(false);
-	flops += regular_harmonic(P);
+
 	set_tprint(c);
 	func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_real("tmp1");
@@ -2701,11 +2786,11 @@ int L2L_norot(int P) {
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z, flags);\n");
 	flops += 3;
 	int sw = 0;
-	tprint(sw,"if( calcpot ) {\n");
+	tprint(sw, "if( calcpot ) {\n");
 	indent();
 	for (int n = 0; n <= P; n++) {
 		for (int m = 0; m <= n; m++) {
-			if( n > 0 ) {
+			if (n > 0) {
 				sw = sw == 0 ? 1 : 0;
 			}
 			std::vector<std::pair<std::string, std::string>> pos_real;
@@ -2803,45 +2888,45 @@ int L2L_norot(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 					flops++;
 				}
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 					flops++;
 				}
-				tprint(sw,"L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw,"L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 				flops += 2 - fmaops;
 			}
 		}
 		if (n == 0) {
 			deindent();
-			tprint(sw,"}\n");
+			tprint(sw, "}\n");
 			tprint_flush();
 		}
 		tprint_flush();
@@ -2873,10 +2958,6 @@ int L2L_norot(int P) {
 
 int L2L_rot1(int P) {
 	int flops = 0;
-	const auto c = tprint_on;
-	set_tprint(false);
-	flops += regular_harmonic_xz(P);
-	set_tprint(c);
 
 	func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("T Rx[%i];\n", P);
@@ -3174,7 +3255,7 @@ int L2P(int P) {
 	int flops = 0;
 	const auto c = tprint_on;
 	set_tprint(false);
-	flops += regular_harmonic(P);
+
 	set_tprint(c);
 	const char* fstr[4] = { "f.potential", "f.force[2]", "f.force[0]", "f.force[1]" };
 	func_header("L2P", P, true, true, true, "", "f0", FORCE, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
@@ -3295,45 +3376,45 @@ int L2P(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw,"%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
+				tprint(sw, "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n, m)]);
+					tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n, m)]);
 					flops++;
 				}
-				tprint(sw,"%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
+				tprint(sw, "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw,"%s -= %s * %s;\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint(sw, "%s -= %s * %s;\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw,"%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n, m)]);
+				tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n, m)]);
 				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw,"%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
+				tprint(sw, "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n, -m)]);
+					tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n, -m)]);
 					flops++;
 				}
-				tprint(sw,"%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
+				tprint(sw, "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw,"%s -= %s * %s;\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint(sw, "%s -= %s * %s;\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw,"%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n, -m)]);
+				tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n, -m)]);
 				flops += 2 - fmaops;
 			}
 		}
 		if (n == 0) {
 			deindent();
-			tprint(sw,"}\n");
+			tprint(sw, "}\n");
 			tprint_flush();
 		}
 	}
@@ -4593,199 +4674,243 @@ int main() {
 #endif
 
 	for (int ti = 0; ti < ntypenames; ti++) {
-		fprintf( stderr, "%s cuda:%i\n", rtypenames[ti].c_str(), ucuda[ti]);
+		printf( "%s cuda:%i\n", rtypenames[ti].c_str(), ucuda[ti]);
 		cuda = ucuda[ti];
 		prefix = ucuda[ti] ? "CUDA_EXPORT" : "";
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
-		rsqrt_flops = rsqrt_flops_array[ti];
-		sqrt_flops = sqrt_flops_array[ti];
-		sincos_flops = sincos_flops_array[ti];
-		erfcexp_flops = erfcexp_flops_array[ti];
-		std::vector<double> alphas(pmax + 1);
+		/*	rsqrt_flops = rsqrt_flops_array[ti];
+		 sqrt_flops = sqrt_flops_array[ti];
+		 sincos_flops = sincos_flops_array[ti];
+		 erfcexp_flops = erfcexp_flops_array[ti];
+		 std::vector<double> alphas(pmax + 1);*/
 		if (is_vec(type)) {
 			set_file("./generated_code/include/spherical_fmm.hpp");
 			tprint("#ifndef __CUDACC__\n");
 		}
-		for (int b = 0; b < 1; b++) {
-			nophi = b != 0;
-			std::vector<int> pc_flops(pmax + 1);
-			std::vector<int> cp_flops(pmax + 1);
-			std::vector<int> cc_flops(pmax + 1);
-			std::vector<int> m2m_flops(pmax + 1);
-			std::vector<int> l2l_flops(pmax + 1);
-			std::vector<int> l2p_flops(pmax + 1);
-			std::vector<int> p2m_flops(pmax + 1);
-			std::vector<int> pc_rot(pmax + 1);
-			std::vector<int> cc_rot(pmax + 1);
-			std::vector<int> m2m_rot(pmax + 1);
-			std::vector<int> l2l_rot(pmax + 1);
+		/*	nophi = b != 0;
+		 std::vector<int> pc_flops(pmax + 1);
+		 std::vector<int> cp_flops(pmax + 1);
+		 std::vector<int> cc_flops(pmax + 1);
+		 std::vector<int> m2m_flops(pmax + 1);
+		 std::vector<int> l2l_flops(pmax + 1);
+		 std::vector<int> l2p_flops(pmax + 1);
+		 std::vector<int> p2m_flops(pmax + 1);
+		 std::vector<int> pc_rot(pmax + 1);
+		 std::vector<int> cc_rot(pmax + 1);
+		 std::vector<int> m2m_rot(pmax + 1);
+		 std::vector<int> l2l_rot(pmax + 1);
 
-			set_tprint(false);
-			fprintf(stderr, "%2s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s ", "p", "M2L", "eff", "-r", "M2P", "eff", "-r", "P2L",
-					"eff", "M2M", "eff", "-r", "L2L", "eff", "-r", "P2M", "eff", "L2P", "eff");
-			if (b == 0) {
-				fprintf(stderr, " %8s %8s %8s %8s\n", "CC_ewald", "green", "m2l", "alpha");
+		 set_tprint(false);
+		 fprintf(stderr, "%2s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s %2s %5s %5s %2s %5s %5s %5s %5s ", "p", "M2L", "eff", "-r", "M2P", "eff", "-r", "P2L", "eff",
+		 "M2M", "eff", "-r", "L2L", "eff", "-r", "P2M", "eff", "L2P", "eff");
+		 if (b == 0) {
+		 fprintf(stderr, " %8s %8s %8s %8s\n", "CC_ewald", "green", "m2l", "alpha");
+		 } else {
+		 fprintf(stderr, " \n");
+
+		 }*/
+		std::vector<std::unordered_map<std::string, flops_t>> flops_map(pmax + 1);
+		std::vector<std::unordered_map<std::string, int>> rot_map(pmax + 1);
+		for (int P = pmin - 1; P <= pmax - 1; P++) {
+			std::string fname;
+			flops_t regular_harmonic_flops;
+			flops_t regular_harmonic_xz_flops;
+			flops_t fps;
+			fname = regular_harmonic(P);
+			fclose(fp);
+			fp = nullptr;
+			regular_harmonic_flops = count_flops(fname);
+
+			fname = regular_harmonic_xz(P);
+			fclose(fp);
+			fp = nullptr;
+			regular_harmonic_xz_flops = count_flops(fname);
+
+			flops_t flops0, flops1, flops2;
+
+			fname = M2M_norot(P);
+			fclose(fp);
+			fp = nullptr;
+			flops0 += regular_harmonic_flops;
+			flops0 += count_flops(fname);
+			SYSTEM((std::string("rm -rf ") + fname).c_str());
+
+			fname = M2M_rot1(P);
+			fclose(fp);
+			fp = nullptr;
+			flops1 += regular_harmonic_xz_flops;
+			flops1 += count_flops(fname);
+			SYSTEM((std::string("rm -rf ") + fname).c_str());
+
+			fname = M2M_rot2(P);
+			fclose(fp);
+			fp = nullptr;
+			flops2 += count_flops(fname);
+			SYSTEM((std::string("rm -rf ") + fname).c_str());
+
+			if (flops2.load() > flops0.load() || flops2.load() > flops1.load()) {
+				if (flops1.load() < flops0.load()) {
+					M2M_rot1(P);
+					flops_map[P]["M2M"] = flops1;
+					rot_map[P]["M2M"] = 1;
+				} else {
+					M2M_norot(P);
+					flops_map[P]["M2M"] = flops0;
+					rot_map[P]["M2M"] = 0;
+				}
 			} else {
-				fprintf(stderr, " \n");
+				M2M_rot2(P);
+				flops_map[P]["M2M"] = flops2;
+				rot_map[P]["M2M"] = 2;
+			}
 
-			}
-			int eflopsg;
-			for (int P = pmin; P <= pmax; P++) {
-				auto r0 = M2L_norot(P, P);
-				auto r1 = M2L_rot1(P, P);
-				auto r2 = M2L_rot2(P, P);
-				if (r0 <= r1 && r0 <= r2) {
-					cc_flops[P] = r0;
-					cc_rot[P] = 0;
-				} else if (r1 <= r0 && r1 <= r2) {
-					cc_flops[P] = r1;
-					cc_rot[P] = 1;
-				} else {
-					cc_flops[P] = r2;
-					cc_rot[P] = 2;
-				}
-				r0 = M2L_norot(P, 1);
-				r1 = M2L_rot1(P, 1);
-				r2 = M2L_rot2(P, 1);
-				if (r0 <= r1 && r0 <= r2) {
-					pc_flops[P] = r0;
-					pc_rot[P] = 0;
-				} else if (r1 <= r0 && r1 <= r2) {
-					pc_flops[P] = r1;
-					pc_rot[P] = 1;
-				} else {
-					pc_flops[P] = r2;
-					pc_rot[P] = 2;
-				}
-				cp_flops[P] = p2l(P);
-				r0 = M2M_norot(P - 1);
-				r1 = M2M_rot1(P - 1);
-				r2 = M2M_rot2(P - 1);
-				if (r0 <= r1 && r0 <= r2) {
-					m2m_flops[P] = r0;
-					m2m_rot[P] = 0;
-				} else if (r1 <= r0 && r1 <= r2) {
-					m2m_flops[P] = r1;
-					m2m_rot[P] = 1;
-				} else {
-					m2m_flops[P] = r2;
-					m2m_rot[P] = 2;
-				}
-				r0 = L2L_norot(P);
-				r1 = L2L_rot1(P);
-				r2 = L2L_rot2(P);
-				if (r0 <= r1 && r0 <= r2) {
-					l2l_flops[P] = r0;
-					l2l_rot[P] = 0;
-				} else if (r1 <= r0 && r1 <= r2) {
-					l2l_flops[P] = r1;
-					l2l_rot[P] = 1;
-				} else {
-					l2l_flops[P] = r2;
-					l2l_rot[P] = 2;
-				}
-				l2p_flops[P] = L2P(P);
-				p2m_flops[P] = P2M(P - 1);
-				int eflopsm = m2lg(P, P);
-				if (b == 0) {
-					double best_alpha;
-					int best_ops = 1000000000;
-					double alpha = is_float(type) ? 2.4 : 2.25;
-					alphas[P] = alpha;
-					/*					for (double alpha = 2.2; alpha <= 2.45; alpha += 0.05) {
-					 int ops = ewald_greens(P, alpha);
-
-					 //					printf( "%i %e %i\n", P, alpha, ops);
-					 if (ops < best_ops) {
-					 best_ops = ops;
-					 best_alpha = alpha;
-					 }
-					 }
-					 alphas[P] = best_alpha;
-					 eflopsg = ewald_greens(P, best_alpha);
-					 */
-				}
-				fprintf(stderr, "%2i %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f ", P, cc_flops[P],
-						cc_flops[P] / pow(P + 1, 3), cc_rot[P], pc_flops[P], pc_flops[P] / pow(P + 1, 2), pc_rot[P], cp_flops[P], cp_flops[P] / pow(P + 1, 2),
-						m2m_flops[P], m2m_flops[P] / pow(P + 1, 3), m2m_rot[P], l2l_flops[P], l2l_flops[P] / pow(P + 1, 3), l2l_rot[P], p2m_flops[P],
-						p2m_flops[P] / pow(P + 1, 2), l2p_flops[P], l2p_flops[P] / pow(P + 1, 2));
-				if (b == 0) {
-					fprintf(stderr, " %8i %8i %8i %f \n", eflopsg + eflopsm, eflopsg, eflopsm, alphas[P]);
-				} else {
-					fprintf(stderr, "\n");
-				}
-			}
-			set_tprint(true);
-			regular_harmonic(pmin - 1);
-			regular_harmonic_xz(pmin - 1);
-			for (int P = 3; P <= pmax; P++) {
-				if (b == 0)
-					greens(P);
-				if (b == 0)
-					greens_xz(P);
-				switch (cc_rot[P]) {
-				case 0:
-					M2L_norot(P, P);
-					break;
-				case 1:
-					M2L_rot1(P, P);
-					break;
-				case 2:
-					M2L_rot2(P, P);
-					break;
-				};
-				if (P > 1) {
-					switch (pc_rot[P]) {
-					case 0:
-						M2L_norot(P, 1);
-						break;
-					case 1:
-						M2L_rot1(P, 1);
-						break;
-					case 2:
-						M2L_rot2(P, 1);
-						break;
-					};
-				}
-				p2l(P);
-				regular_harmonic(P);
-				if (cuda) {
-//					regular_harmonic_cuda(P);
-				}
-				regular_harmonic_xz(P);
-				switch (m2m_rot[P]) {
-				case 0:
-					M2M_norot(P - 1);
-					break;
-				case 1:
-					M2M_rot1(P - 1);
-					break;
-				case 2:
-					M2M_rot2(P - 1);
-					break;
-				};
-				switch (l2l_rot[P]) {
-				case 0:
-					L2L_norot(P);
-					break;
-				case 1:
-					L2L_rot1(P);
-					break;
-				case 2:
-					L2L_rot2(P);
-					break;
-				};
-				L2P(P);
-				P2M(P - 1);
-				if (b == 0)
-					ewald_greens(P, alphas[P]);
-				m2lg(P, P);
-				M2L_ewald(P);
-				scaling(P);
-			}
 		}
+		printf("P  | M2M \n");
+		for (int P = pmin; P <= pmax; P++) {
+			printf("%2i | %4i %1i\n", P, flops_map[P - 1]["M2M"].load(), rot_map[P - 1]["M2M"]);
+		}
+		/*	int eflopsg;
+		 for (int P = pmin; P <= pmax; P++) {
+		 auto r0 = M2L_norot(P, P);
+		 auto r1 = M2L_rot1(P, P);
+		 auto r2 = M2L_rot2(P, P);
+		 if (r0 <= r1 && r0 <= r2) {
+		 cc_flops[P] = r0;
+		 cc_rot[P] = 0;
+		 } else if (r1 <= r0 && r1 <= r2) {
+		 cc_flops[P] = r1;
+		 cc_rot[P] = 1;
+		 } else {
+		 cc_flops[P] = r2;
+		 cc_rot[P] = 2;
+		 }
+		 r0 = M2L_norot(P, 1);
+		 r1 = M2L_rot1(P, 1);
+		 r2 = M2L_rot2(P, 1);
+		 if (r0 <= r1 && r0 <= r2) {
+		 pc_flops[P] = r0;
+		 pc_rot[P] = 0;
+		 } else if (r1 <= r0 && r1 <= r2) {
+		 pc_flops[P] = r1;
+		 pc_rot[P] = 1;
+		 } else {
+		 pc_flops[P] = r2;
+		 pc_rot[P] = 2;
+		 }
+		 cp_flops[P] = p2l(P);
+		 r0 = M2M_norot(P - 1);
+		 r1 = M2M_rot1(P - 1);
+		 r2 = M2M_rot2(P - 1);
+		 if (r0 <= r1 && r0 <= r2) {
+		 m2m_flops[P] = r0;
+		 m2m_rot[P] = 0;
+		 } else if (r1 <= r0 && r1 <= r2) {
+		 m2m_flops[P] = r1;
+		 m2m_rot[P] = 1;
+		 } else {
+		 m2m_flops[P] = r2;
+		 m2m_rot[P] = 2;
+		 }
+		 r0 = L2L_norot(P);
+		 r1 = L2L_rot1(P);
+		 r2 = L2L_rot2(P);
+		 if (r0 <= r1 && r0 <= r2) {
+		 l2l_flops[P] = r0;
+		 l2l_rot[P] = 0;
+		 } else if (r1 <= r0 && r1 <= r2) {
+		 l2l_flops[P] = r1;
+		 l2l_rot[P] = 1;
+		 } else {
+		 l2l_flops[P] = r2;
+		 l2l_rot[P] = 2;
+		 }
+		 l2p_flops[P] = L2P(P);
+		 p2m_flops[P] = P2M(P - 1);
+		 int eflopsm = m2lg(P, P);
+		 if (b == 0) {
+		 double best_alpha;
+		 int best_ops = 1000000000;
+		 double alpha = is_float(type) ? 2.4 : 2.25;
+		 alphas[P] = alpha;
+		 }
+		 fprintf(stderr, "%2i %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f %2i %5i %5.2f %2i %5i %5.2f %5i %5.2f ", P, cc_flops[P],
+		 cc_flops[P] / pow(P + 1, 3), cc_rot[P], pc_flops[P], pc_flops[P] / pow(P + 1, 2), pc_rot[P], cp_flops[P], cp_flops[P] / pow(P + 1, 2),
+		 m2m_flops[P], m2m_flops[P] / pow(P + 1, 3), m2m_rot[P], l2l_flops[P], l2l_flops[P] / pow(P + 1, 3), l2l_rot[P], p2m_flops[P],
+		 p2m_flops[P] / pow(P + 1, 2), l2p_flops[P], l2p_flops[P] / pow(P + 1, 2));
+		 if (b == 0) {
+		 fprintf(stderr, " %8i %8i %8i %f \n", eflopsg + eflopsm, eflopsg, eflopsm, alphas[P]);
+		 } else {
+		 fprintf(stderr, "\n");
+		 }
+		 }
+		 set_tprint(true);
+		 regular_harmonic(pmin - 1);
+		 regular_harmonic_xz(pmin - 1);
+		 for (int P = 3; P <= pmax; P++) {
+		 if (b == 0)
+		 greens(P);
+		 if (b == 0)
+		 greens_xz(P);
+		 switch (cc_rot[P]) {
+		 case 0:
+		 M2L_norot(P, P);
+		 break;
+		 case 1:
+		 M2L_rot1(P, P);
+		 break;
+		 case 2:
+		 M2L_rot2(P, P);
+		 break;
+		 };
+		 if (P > 1) {
+		 switch (pc_rot[P]) {
+		 case 0:
+		 M2L_norot(P, 1);
+		 break;
+		 case 1:
+		 M2L_rot1(P, 1);
+		 break;
+		 case 2:
+		 M2L_rot2(P, 1);
+		 break;
+		 };
+		 }
+		 p2l(P);
+		 regular_harmonic(P);
+		 regular_harmonic_xz(P);
+		 switch (m2m_rot[P]) {
+		 case 0:
+		 M2M_norot(P - 1);
+		 break;
+		 case 1:
+		 M2M_rot1(P - 1);
+		 break;
+		 case 2:
+		 M2M_rot2(P - 1);
+		 break;
+		 };
+		 switch (l2l_rot[P]) {
+		 case 0:
+		 L2L_norot(P);
+		 break;
+		 case 1:
+		 L2L_rot1(P);
+		 break;
+		 case 2:
+		 L2L_rot2(P);
+		 break;
+		 };
+		 L2P(P);
+		 P2M(P - 1);
+		 if (b == 0)
+		 ewald_greens(P, alphas[P]);
+		 m2lg(P, P);
+		 M2L_ewald(P);
+		 scaling(P);
+		 }*/
+
 		if (is_vec(type)) {
 			set_file("./generated_code/include/spherical_fmm.hpp");
 			tprint("#endif\n");
