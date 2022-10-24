@@ -51,6 +51,11 @@ target_compile_options(cuda_spherical_fmm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
                         >)
 set_property(TARGET cuda_spherical_fmm PROPERTY CUDA_SEPARABLE_COMPILATION ON)
  
+add_executable(test_cuda_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cu )
+target_include_directories(test_cuda_float PUBLIC ${CMAKE_CURRENT_CUDA_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_cuda_float PUBLIC cuda_spherical_fmm)
+target_compile_options(test_cuda_float PUBLIC  -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} -DTEST_TYPE_FLOAT)
+
 add_executable(test_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
 target_include_directories(test_float PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
 target_link_libraries(test_float PUBLIC spherical_fmm)

@@ -808,16 +808,6 @@ real test_M2L(test_type type, real theta = 0.5) {
 				y1 /= theta;
 				z1 /= theta;
 			}
-			real eps = 1;
-			x0 *= eps;
-			y0 *= eps;
-			z0 *= eps;
-			x1 *= eps;
-			y1 *= eps;
-			z1 *= eps;
-			x2 *= eps;
-			y2 *= eps;
-			z2 *= eps;
 			double f0 = rand1();
 			double f1 = rand1();
 			double f2 = rand1();
@@ -858,11 +848,21 @@ real test_M2L(test_type type, real theta = 0.5) {
 			err += fabs(phi - f.potential[0]);
 			norm += fabs(phi);
 #else
+			real eps = 1e-7;
+			x0 *= eps;
+			y0 *= eps;
+			z0 *= eps;
+			x1 *= eps;
+			y1 *= eps;
+			z1 *= eps;
+			x2 *= eps;
+			y2 *= eps;
+			z2 *= eps;
 			multipole_type<real, P> M;
 			expansion_type<real, P> L;
 			force_type<real> f;
-			M.init(.1);
-			L.init(.01);
+			M.init(eps);
+			L.init(eps);
 			f.init();
 			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
 			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
@@ -1078,7 +1078,7 @@ int main() {
 	printf("\n");
 
 	run_tests<FMM_PMAX+1, FMM_PMIN> run;
-	real theta = 0.5;
+	real theta = 0.25;
 	printf("M2L\n");
 	run(CC, theta);
 	printf("M2P\n");
