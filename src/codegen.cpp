@@ -1186,7 +1186,7 @@ int m2lg_body(int P, int Q, flops_t& fps) {
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					fps.r+=2;
+					fps.r += 2;
 					flops += 2;
 				}
 			}
@@ -1209,7 +1209,7 @@ int m2lg_body(int P, int Q, flops_t& fps) {
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					fps.r+=2;
+					fps.r += 2;
 					flops += 2;
 				}
 			}
@@ -1271,7 +1271,7 @@ int p2l(int P, flops_t& fps) {
 	tprint("T* O = O_st.data();\n");
 	flops += greens_body(P, fps, "M");
 	tprint("L_st += O_st;\n");
-	fps.r+= exp(P);
+	fps.r += exp(P);
 	flops += exp_sz(P);
 	deindent();
 	tprint("}");
@@ -1331,7 +1331,7 @@ int greens_xz(int P, flops_t& fps) {
 		}
 		if (m + 1 <= P) {
 			tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
-			fps.r+=2;
+			fps.r += 2;
 			flops += 2;
 		}
 		for (int n = m + 2; n <= P; n++) {
@@ -1343,18 +1343,18 @@ int greens_xz(int P, flops_t& fps) {
 				tprint("O[%i] = detail::fma(ax, O[%i], ay * O[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
 				fps.r++;
 				fps.f++;
-			flops += 5 - fmaops;
+				flops += 5 - fmaops;
 			} else {
 				if ((n - 1) * (n - 1) - m * m == 1) {
 					tprint("O[%i] = detail::fma(TCAST(%i) * z, O[%i], r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
 					fps.f++;
-					fps.r+=2;
+					fps.r += 2;
 
 				} else {
-					tprint("O[%i] = detail::fma(TCAST(%i) * z, O[%i], TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
-							index(n - 2, m));
+					tprint("O[%i] = detail::fma(TCAST(%i) * z, O[%i], TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m),
+							(n - 1) * (n - 1) - m * m, index(n - 2, m));
 					fps.f++;
-					fps.r+=3;
+					fps.r += 3;
 				}
 			}
 		}
@@ -1368,21 +1368,55 @@ int greens_xz(int P, flops_t& fps) {
 	return flops;
 }
 
-int M2L_ewald(int P) {
+flops_t rescale_flops(int P) {
+	flops_t fps;
+	fps.a++;
+	fps.r += (P + 1) * (P + 2) + 1;
+	fps.d++;
+	return fps;
+}
+
+flops_t init_flops(int P) {
+	flops_t fps;
+	fps.r += (P + 1) * (P + 1) + 1;
+	return fps;
+}
+
+flops_t copy_flops(int P) {
+	flops_t fps;
+	fps.r += (P + 1) * (P + 1) + 2;
+	return fps;
+}
+
+flops_t accumulate_flops(int P) {
+	flops_t fps;
+	fps = rescale_flops(P);
+	fps.r += (P + 1) * (P + 1) + 1;
+	fps.a++;
+	return fps;
+}
+
+int M2L_ewald(int P, flops_t& fps) {
 	int flops = 0;
 	if (periodic) {
 		func_header("M2L_ewald", P, true, false, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 		tprint("expansion_type<%s, %i> G_st;\n", type.c_str(), P);
 		tprint("T* G = G_st.data();\n", type.c_str(), P);
 		tprint("auto M_st = M0_st;\n");
+		fps += copy_flops(P - 1);
 		tprint("expansion_type<%s,%i> L_st;\n", type.c_str(), P);
 		tprint("auto* M = M_st.data();\n");
 		tprint("auto* L = M_st.data();\n");
 		tprint("L_st.init();\n");
+		fps += init_flops(P);
 		tprint("M_st.rescale(TCAST(1));\n");
+		fps += rescale_flops(P - 1);
 		tprint("greens_ewald(G_st, x, y, z, flags);\n");
+		fps += flops_map[std::string("greens_ewald_") + type];
 		tprint("M2LG(L_st, M_st, G_st, flags);\n");
+		fps += flops_map[std::string("M2LG_") + type];
 		tprint("L0_st += L_st;\n");
+		fps += accumulate_flops(P);
 		deindent();
 		tprint("}");
 		tprint("\n");
@@ -1392,24 +1426,31 @@ int M2L_ewald(int P) {
 	return flops;
 }
 
-int m2lg(int P, int Q) {
+int m2lg(int P, int Q, flops_t fps) {
 	int flops = 0;
-	flops_t fps;
 	func_header("M2LG", P, true, true, true, "", "L", EXP, "M", CMUL, "O", EXP);
 	flops += m2lg_body(P, Q, fps);
 	if (!nophi && P > 2 && periodic) {
 		tprint("if( calcpot ) {\n");
 		indent();
 		tprint("L[%i] = detail::fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
+		fps.f++;
+		fps.r++;
 		deindent();
 		tprint("}\n");
-		flops += 3 - fmaops;
 	}
 	if (P > 1 && periodic) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", index(1, -1), index(1, -1), index(1, -1));
+		fps.f++;
+		fps.r++;
 		tprint("L[%i] -= O_st.trace2() * M[%i];\n", index(1, +0), index(1, +0), index(1, +0));
+		fps.r += 2;
 		tprint("L[%i] = detail::fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", index(1, +1), index(1, +1), index(1, +1));
+		fps.f++;
+		fps.r++;
 		tprint("L_st.trace2() = detail::fma(TCAST(-0.5) * O_st.trace2(), M[%i], L_st.trace2());\n", index(0, 0));
+		fps.f++;
+		fps.r++;
 		flops += 10 - 3 * fmaops;
 	}
 	deindent();
@@ -1417,6 +1458,7 @@ int m2lg(int P, int Q) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	fps += flops_map[std::string("M2LG_") + type] = fps;
 	return flops;
 }
 
@@ -1518,43 +1560,59 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 	}
 	tprint("int ix, iy, iz, ii;\n");
 	tprint("r2 = detail::fma(x0, x0, detail::fma(y0, y0, z0 * z0));\n");
+	fps.f += 2;
+	fps.r++;
 	flops += 5 - 2 * fmaops;
 	tprint("r = detail::sqrt(r2);\n");
+	fps += flops_map[std::string("sqrt_") + type];
 	tprint("greens(Gr_st, x0, y0, z0, flags);\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
+	fps.r++;
 	flops++;
 	tprint("detail::erfcexp(xxx, &gam1, &exp0);\n");
+	fps += flops_map[std::string("erfcexp_") + type];
 	flops += erfcexp_flops;
 	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
+	fps.r++;
 	flops += 1;
 	tprint("xfac = TCAST(%.20e) * r2;\n", alpha * alpha);
+	fps.r++;
 	flops += 1;
 	tprint("xpow = TCAST(%.20e) * r;\n", alpha);
+	fps.r++;
 	flops++;
 	double gam0inv = 1.0 / sqrt(M_PI);
 	tprint("sw = r2 > TCAST(0);\n");
+	fps.r++;
+	fps.i += is_vec(type);
 	flops += 1;
 	for (int l = 0; l <= P; l++) {
 		tprint("gam = gam1 * TCAST(%.20e);\n", gam0inv);
+		fps.r++;
 		flops++;
 		for (int m = -l; m <= l; m++) {
 			tprint("G[%i] = sw*(TCAST(%.1e) - gam) * Gr[%i];\n", index(l, m), nonepow<double>(l), index(l, m));
-			flops += 4;
+			fps.r += 3;
 		}
 		if (l == 0) {
 			tprint("G[%i] += (TCAST(1) - sw)*TCAST(%.20e);\n", index(0, 0), (2) * alpha / sqrt(M_PI));
+			fps.r += 3;
 			flops += 3;
 		}
 		gam0inv *= 1.0 / -(l + 0.5);
 		if (l != P) {
-			tprint("gam1 = TCAST(%.20e) * gam1 + xpow * exp0;\n", l + 0.5);
+			tprint("gam1 = detail::fma(TCAST(%.20e), gam1, xpow * exp0);\n", l + 0.5);
+			fps.r++;
+			fps.f++;
 			flops += 3;
 			if (l != P - 1) {
 				tprint("xpow *= xfac;\n");
+				fps.r++;
 				flops++;
 			}
 		}
 	}
+	fps0.reset();
 	tprint("for (ix = -%i; ix <= %i; ix++) {\n", R, R);
 	indent();
 	tprint("for (iy = -%i; iy <= %i; iy++) {\n", R, R);
@@ -1568,39 +1626,56 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 	deindent();
 	tprint("}\n");
 	tprint("x = x0 - T(ix);\n");
+	fps0.r += 2;
 	flops++;
 	tprint("y = y0 - T(iy);\n");
+	fps0.r += 2;
 	flops++;
 	tprint("z = z0 - T(iz);\n");
+	fps0.r += 2;
 	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
+	fps0.r++;
+	fps0.f++;
 	flops += 3 * cnt;
 	tprint("r = detail::sqrt(r2);\n");
+	fps0 += flops_map[std::string("sqrt_") + type];
+
 	flops += sqrt_flops * cnt;
 	tprint("greens(Gr_st, x, y, z, flags);\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
+	fps0.r++;
 	flops += cnt;
 	tprint("detail::erfcexp(xxx, &gam1, &exp0);\n");
 	flops += erfcexp_flops * cnt;
 	tprint("gam1 *= TCAST(%.20e);\n", -sqrt(M_PI));
+	fps0.r++;
 	flops += cnt;
 	tprint("xfac = TCAST(%.20e) * r2;\n", alpha * alpha);
+	fps0.r++;
 	flops += cnt;
 	tprint("xpow = TCAST(%.20e) * r;\n", alpha);
+	fps0.r++;
 	flops++;
 	tprint("gam0inv = TCAST(%.20e);\n", 1.0 / sqrt(M_PI));
+	fps0.a++;
 	for (int l = 0; l <= P; l++) {
 		tprint("gam = gam1 * gam0inv;\n");
+		fps0.r++;
 		flops += cnt;
 		for (int m = -l; m <= l; m++) {
 			tprint("G[%i] = detail::fma(gam, Gr[%i], G[%i]);\n", index(l, m), index(l, m), index(l, m));
+			fps0.f++;
 			flops += (2 - fmaops) * cnt;
 		}
 		if (l != P) {
 			tprint("gam0inv *= TCAST(%.20e);\n", 1.0 / -(l + 0.5));
-			tprint("gam1 = detail::fma(TCAST(%.20e), gam1, -xpow * exp0);\n", l + 0.5);
+			fps0.r++;
+			tprint("gam1 = TCAST(%.20e) * gam1 - xpow * exp0;\n", l + 0.5);
+			fps0.r += 3;
 			flops += (4 - fmaops) * cnt;
 			if (l != P - 1) {
 				tprint("xpow *= xfac;\n");
+				fps0.r++;
 				flops += cnt;
 			}
 		}
@@ -1617,9 +1692,12 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 		if (hx) {
 			if (abs(hx) == 1) {
 				tprint("x2 = %cx0;\n", hx < 0 ? '-' : ' ');
+				fps.a += hx >= 0;
+				fps.r+=hx<0;
 				flops += hx < 0;
 			} else {
 				tprint("x2 = TCAST(%i) * x0;\n", hx);
+				fps.r++;
 				flops++;
 			}
 		} else {
@@ -1632,9 +1710,11 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 			if (hy) {
 				if (abs(hy) == 1) {
 					tprint("x2y2 = x2 %c y0;\n", hy > 0 ? '+' : '-');
+					fps.r++;
 					flops++;
 				} else {
 					tprint("x2y2 = detail::fma(TCAST(%i), y0, x2);\n", hy);
+					fps.f++;
 					flops += 2 - fmaops;
 				}
 			} else {
@@ -1648,17 +1728,21 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 				if (hz) {
 					if (abs(hz) == 1) {
 						tprint("hdotx = x2y2 %c z0;\n", hz > 0 ? '+' : '-');
+						fps.r++;
 						flops++;
 					} else {
 						tprint("hdotx = detail::fma(TCAST(%i), z0, x2y2);\n", hz);
+						fps.f++;
 						flops += 2 - fmaops;
 					}
 				} else {
 					tprint("hdotx = x2y2;\n", hz);
 				}
 				tprint("phi = TCAST(%.20e) * hdotx;\n", 2.0 * M_PI);
+				fps.r++;
 				flops++;
 				tprint("detail::sincos(phi, &%s, &%s);\n", sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
+				fps += flops_map[std::string("sincos_") + type];
 				flops += sincos_flops;
 			}
 		}
@@ -1815,12 +1899,15 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 				int sgn = op[0].first > 0 ? 1 : -1;
 				for (int k = 0; k < op.size(); k++) {
 					tprint(sw, "tmp%i %c= %s;\n", sw, k == 0 ? ' ' : (sgn * op[k].first > 0 ? '+' : '-'), op[k].second.c_str());
+					fps.r ++;
 					flops++;
 				}
 				if (sgn > 0) {
 					tprint(sw, "G[%i] = detail::fma(TCAST(+%.20e), tmp%i, G[%i]);\n", ii, sgn * j->first, sw, ii);
+					fps.f++;
 				} else {
 					tprint(sw, "G[%i] = detail::fma(TCAST(%.20e), tmp%i, G[%i]);\n ", ii, sgn * j->first, sw, ii);
+					fps.f++;
 				}
 				flops += 2 - fmaops;
 			}
@@ -1835,6 +1922,7 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 	tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
 	if (!nophi) {
 		tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
+		fps.r++;
 		flops++;
 	}
 	int fflops = flops - rflops;
@@ -1846,6 +1934,7 @@ int greens_ewald(int P, double alpha, flops_t& fps) {
 	tprint("}\n");
 	tprint("\n");
 //	printf( "%i\n", flops);
+	flops_map[std::string("greens_ewald_") + type] = fps;
 	return flops;
 
 }
@@ -4999,7 +5088,7 @@ int main() {
 				}
 				l2p_flops[P] = L2P(P);
 				p2m_flops[P] = P2M(P - 1);
-				int eflopsm = m2lg(P, P);
+				int eflopsm = m2lg(P, P, fps);
 				if (b == 0) {
 					double best_alpha;
 					int best_ops = 1000000000;
@@ -5091,8 +5180,8 @@ int main() {
 				L2P(P);
 				P2M(P - 1);
 				greens_ewald(P, alphas[P], fps);
-				m2lg(P, P);
-				M2L_ewald(P);
+				m2lg(P, P, fps);
+				M2L_ewald(P, fps);
 				scaling(P);
 			}
 		}
