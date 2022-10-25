@@ -91,179 +91,255 @@ static const char* prefix = "";
 static std::string detail_header;
 static std::string detail_header_vec;
 static std::vector<std::string> lines[2];
-static std::string vec_header = ""
-		"\n"
-		"#define create_binary_op(type, op) \\\n"
-		"		inline type operator op (const type& u ) const { \\\n"
-		"			type w; \\\n"
-		"			w.v = v op u.v; \\\n"
-		"			return w; \\\n"
-		"		} \\\n"
-		"		inline type& operator op##= (const type& u ) { \\\n"
-		"			*this = *this op u; \\\n"
-		"			return *this; \\\n"
-		"		}\n"
-		"\n"
-		"#define create_unary_op(type, op) \\\n"
-		"		inline type operator op () const { \\\n"
-		"			type w; \\\n"
-		"			w.v = op v; \\\n"
-		"			return w; \\\n"
-		"		}\n"
-		"\n"
-		"#define create_convert_op_prot(type,otype) \\\n"
-		"		inline vec_##type(const vec_##otype&); \\\n"
-		"		inline vec_##type& operator=(const vec_##otype&); \\\n"
-		"		inline vec_##type& operator=(const otype&)\n"
-		"\n"
-		"#define create_convert_op_def(type,otype) \\\n"
-		"	inline vec_##type::vec_##type(const vec_##otype& other) { \\\n"
-		"		v = __builtin_convertvector(other.v, vtype); \\\n"
-		"	} \\\n"
-		"	inline vec_##type& vec_##type::operator=(const vec_##otype& other) { \\\n"
-		"		v = __builtin_convertvector(other.v, vtype); \\\n"
-		"		return *this; \\\n"
-		"	}\n"
-		"\n"
-		"#define create_broadcast_op(type) \\\n"
-		"	inline vec_##type(const type& other) { \\\n"
-		"		v = other - vtype{}; \\\n"
-		"	} \\\n"
-		"	inline vec_##type& operator=(const type& other) { \\\n"
-		"		v = other - vtype{}; \\\n"
-		"		return *this; \\\n"
-		"	}\n"
-		"\n"
-		"#define create_compare_op_prot(type,sitype,  op) \\\n"
-		"	inline vec_##sitype operator op (const vec_##type&) const\n"
-		"\n"
-		"#define create_compare_op_def(type,sitype,  op) \\\n"
-		"	inline vec_##sitype vec_##type::operator op (const vec_##type& other) const { \\\n"
-		"		vec_##sitype w; \\\n"
-		"		w.v = (-(v op other.v)); \\\n"
-		"		return w; \\\n"
-		"	}\n"
-		"\n"
-		"#define create_vec_types_fwd(type)              \\\n"
-		"	class vec_##type\n"
-		"\n"
-		"#define create_rvec_types(type, sitype, uitype, size)              \\\n"
-		"	class vec_##type {                                           \\\n"
-		"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
-		"		vtype v;  \\\n"
-		"	public: \\\n"
-		"	inline constexpr vec_##type() : v() {} \\\n"
-		"	inline type operator[](int i) const {  \\\n"
-		"		return v[i]; \\\n"
-		"	}\\\n"
-		"	inline type& operator[](int i) {  \\\n"
-		"		return v[i]; \\\n"
-		"	}\\\n"
-		"	create_binary_op(vec_##type, +); \\\n"
-		"	create_binary_op(vec_##type, -); \\\n"
-		"	create_binary_op(vec_##type, *); \\\n"
-		"	create_binary_op(vec_##type, /); \\\n"
-		"	create_unary_op(vec_##type, +); \\\n"
-		"	create_unary_op(vec_##type, -); \\\n"
-		"	create_convert_op_prot(type, sitype); \\\n"
-		"	create_convert_op_prot(type, uitype); \\\n"
-		"	create_broadcast_op(type); \\\n"
-		"	create_compare_op_prot(type, sitype, <); \\\n"
-		"	create_compare_op_prot(type, sitype, >); \\\n"
-		"	create_compare_op_prot(type, sitype, <=); \\\n"
-		"	create_compare_op_prot(type, sitype, >=); \\\n"
-		"	create_compare_op_prot(type, sitype, ==); \\\n"
-		"	create_compare_op_prot(type, sitype, !=); \\\n"
-		"	friend class vec_##sitype; \\\n"
-		"	friend class vec_##uitype; \\\n"
-		"}\n"
-		"\n"
-		"#define create_ivec_types(type, otype, rtype, sitype, size)              \\\n"
-		"	class vec_##type {                                           \\\n"
-		"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
-		"		vtype v;  \\\n"
-		"	public: \\\n"
-		"	inline constexpr vec_##type() : v() {} \\\n"
-		"	inline type operator[](int i) const {  \\\n"
-		"		return v[i]; \\\n"
-		"	}\\\n"
-		"	inline type& operator[](int i) {  \\\n"
-		"		return v[i]; \\\n"
-		"	}\\\n"
-		"	create_binary_op(vec_##type, +); \\\n"
-		"	create_binary_op(vec_##type, -); \\\n"
-		"	create_binary_op(vec_##type, *); \\\n"
-		"	create_binary_op(vec_##type, /); \\\n"
-		"	create_binary_op(vec_##type, &); \\\n"
-		"	create_binary_op(vec_##type, ^); \\\n"
-		"	create_binary_op(vec_##type, |); \\\n"
-		"	create_binary_op(vec_##type, >>); \\\n"
-		"	create_binary_op(vec_##type, <<); \\\n"
-		"	create_unary_op(vec_##type, +); \\\n"
-		"	create_unary_op(vec_##type, -); \\\n"
-		"	create_unary_op(vec_##type, ~); \\\n"
-		"	create_broadcast_op(type); \\\n"
-		"	create_convert_op_prot(type, rtype); \\\n"
-		"	create_convert_op_prot(type, otype); \\\n"
-		"	create_compare_op_prot(type,sitype,  <); \\\n"
-		"	create_compare_op_prot(type,sitype,  >); \\\n"
-		"	create_compare_op_prot(type, sitype, <=); \\\n"
-		"	create_compare_op_prot(type,sitype,  >=); \\\n"
-		"	create_compare_op_prot(type, sitype,  ==); \\\n"
-		"	create_compare_op_prot(type, sitype,  !=); \\\n"
-		"	friend class vec_##rtype; \\\n"
-		"	friend class vec_##otype; \\\n"
-		"}\n"
-		"\n"
-		"#define create_rvec_types_def(type, sitype, uitype, size)\\\n"
-		"	create_convert_op_def(type, sitype); \\\n"
-		"	create_convert_op_def(type, uitype)\n"
-		"\n"
-		"#define create_ivec_types_def(type, otype, rtype, size)              \\\n"
-		"	create_convert_op_def(type, rtype); \\\n"
-		"	create_convert_op_def(type, otype)\n"
-		"\n"
-		"#define create_vec_types(rtype, sitype, uitype, size) \\\n"
-		"	create_vec_types_fwd(rtype); \\\n"
-		"	create_vec_types_fwd(uitype); \\\n"
-		"	create_vec_types_fwd(sitype); \\\n"
-		"	create_rvec_types(rtype, sitype, uitype, size); \\\n"
-		"	create_ivec_types(uitype, sitype, rtype, sitype, size); \\\n"
-		"	create_ivec_types(sitype, uitype, rtype, sitype, size); \\\n"
-		"	create_rvec_types_def(rtype, sitype, uitype, size); \\\n"
-		"	create_ivec_types_def(uitype, sitype, rtype, size); \\\n"
-		"	create_ivec_types_def(sitype, uitype, rtype, size); \\\n"
-		"	create_compare_op_def(rtype, sitype, <); \\\n"
-		"	create_compare_op_def(rtype,sitype,  >); \\\n"
-		"	create_compare_op_def(rtype, sitype, <=); \\\n"
-		"	create_compare_op_def(rtype, sitype, >=); \\\n"
-		"	create_compare_op_def(rtype,sitype,  ==); \\\n"
-		"	create_compare_op_def(rtype, sitype, !=); \\\n"
-		"	create_compare_op_def(uitype,sitype,  <); \\\n"
-		"	create_compare_op_def(uitype, sitype, >); \\\n"
-		"	create_compare_op_def(uitype, sitype, <=); \\\n"
-		"	create_compare_op_def(uitype, sitype, >=); \\\n"
-		"	create_compare_op_def(uitype, sitype, ==); \\\n"
-		"	create_compare_op_def(uitype, sitype, !=); \\\n"
-		"	create_compare_op_def(sitype, sitype, <); \\\n"
-		"	create_compare_op_def(sitype,sitype,  >); \\\n"
-		"	create_compare_op_def(sitype,sitype,  <=); \\\n"
-		"	create_compare_op_def(sitype, sitype, >=); \\\n"
-		"	create_compare_op_def(sitype, sitype, ==); \\\n"
-		"	create_compare_op_def(sitype, sitype, !=) \n";
+
+static std::string vec_header() {
+	std::string str = ""
+			"\n"
+			"#define create_binary_op(type, op) \\\n"
+			"		inline type operator op (const type& u ) const { \\\n"
+			"			type w; \\\n"
+			"			w.v = v op u.v; \\\n"
+			"			return w; \\\n"
+			"		} \\\n"
+			"		inline type& operator op##= (const type& u ) { \\\n"
+			"			*this = *this op u; \\\n"
+			"			return *this; \\\n"
+			"		}\n"
+			"\n"
+			"#define create_unary_op(type, op) \\\n"
+			"		inline type operator op () const { \\\n"
+			"			type w; \\\n"
+			"			w.v = op v; \\\n"
+			"			return w; \\\n"
+			"		}\n"
+			"\n"
+			"#define create_convert_op_prot(type,otype,size) \\\n"
+			"		inline vec_##type##size(const vec_##otype##size&); \\\n"
+			"		inline vec_##type##size& operator=(const vec_##otype##size&); \\\n"
+			"		inline vec_##type##size& operator=(const otype&)\n"
+			"\n"
+			"#define create_convert_op_def(type,otype,size) \\\n"
+			"	inline vec_##type##size::vec_##type##size(const vec_##otype##size& other) { \\\n"
+			"		v = __builtin_convertvector(other.v, vtype); \\\n"
+			"	} \\\n"
+			"	inline vec_##type##size& vec_##type##size::operator=(const vec_##otype##size& other) { \\\n"
+			"		v = __builtin_convertvector(other.v, vtype); \\\n"
+			"		return *this; \\\n"
+			"	}\n"
+			"\n"
+			"#define create_broadcast_op(type,size) \\\n"
+			"	inline vec_##type##size(const type& other) { \\\n"
+			"		v = other - vtype{}; \\\n"
+			"	} \\\n"
+			"	inline vec_##type##size& operator=(const type& other) { \\\n"
+			"		v = other - vtype{}; \\\n"
+			"		return *this; \\\n"
+			"	}\n"
+			"\n"
+			"#define create_compare_op_prot(type,sitype,  op,size) \\\n"
+			"	inline vec_##sitype##size operator op (const vec_##type##size&) const\n"
+			"\n"
+			"#define create_compare_op_def(type,sitype,  op,size) \\\n"
+			"	inline vec_##sitype##size vec_##type##size::operator op (const vec_##type##size& other) const { \\\n"
+			"		vec_##sitype##size w; \\\n"
+			"		w.v = (-(v op other.v)); \\\n"
+			"		return w; \\\n"
+			"	}\n"
+			"\n"
+			"#define create_vec_types_fwd(type,size)              \\\n"
+			"	class vec_##type##size\n"
+			"\n"
+			"#define create_rvec_types(type, sitype, uitype, size)              \\\n"
+			"	class vec_##type##size {                                           \\\n"
+			"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
+			"		vtype v;  \\\n"
+			"	public: \\\n"
+			"	inline constexpr vec_##type##size() : v() {} \\\n"
+			"	inline type operator[](int i) const {  \\\n"
+			"		return v[i]; \\\n"
+			"	}\\\n"
+			"	inline type& operator[](int i) {  \\\n"
+			"		return v[i]; \\\n"
+			"	}\\\n"
+			"	create_binary_op(vec_##type##size, +); \\\n"
+			"	create_binary_op(vec_##type##size, -); \\\n"
+			"	create_binary_op(vec_##type##size, *); \\\n"
+			"	create_binary_op(vec_##type##size, /); \\\n"
+			"	create_unary_op(vec_##type##size, +); \\\n"
+			"	create_unary_op(vec_##type##size, -); \\\n"
+			"	create_convert_op_prot(type, sitype, size); \\\n"
+			"	create_convert_op_prot(type, uitype, size); \\\n"
+			"	create_broadcast_op(type, size); \\\n"
+			"	create_compare_op_prot(type, sitype, <, size); \\\n"
+			"	create_compare_op_prot(type, sitype, >, size); \\\n"
+			"	create_compare_op_prot(type, sitype, <=, size); \\\n"
+			"	create_compare_op_prot(type, sitype, >=, size); \\\n"
+			"	create_compare_op_prot(type, sitype, ==, size); \\\n"
+			"	create_compare_op_prot(type, sitype, !=, size); \\\n"
+			"	friend class vec_##sitype##size; \\\n"
+			"	friend class vec_##uitype##size; \\\n"
+			"}\n"
+			"\n"
+			"#define create_ivec_types(type, otype, rtype, sitype, size)              \\\n"
+			"	class vec_##type##size {                                           \\\n"
+			"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
+			"		vtype v;  \\\n"
+			"	public: \\\n"
+			"	inline constexpr vec_##type##size() : v() {} \\\n"
+			"	inline type operator[](int i) const {  \\\n"
+			"		return v[i]; \\\n"
+			"	}\\\n"
+			"	inline type& operator[](int i) {  \\\n"
+			"		return v[i]; \\\n"
+			"	}\\\n"
+			"	create_binary_op(vec_##type##size, +); \\\n"
+			"	create_binary_op(vec_##type##size, -); \\\n"
+			"	create_binary_op(vec_##type##size, *); \\\n"
+			"	create_binary_op(vec_##type##size, /); \\\n"
+			"	create_binary_op(vec_##type##size, &); \\\n"
+			"	create_binary_op(vec_##type##size, ^); \\\n"
+			"	create_binary_op(vec_##type##size, |); \\\n"
+			"	create_binary_op(vec_##type##size, >>); \\\n"
+			"	create_binary_op(vec_##type##size, <<); \\\n"
+			"	create_unary_op(vec_##type##size, +); \\\n"
+			"	create_unary_op(vec_##type##size, -); \\\n"
+			"	create_unary_op(vec_##type##size, ~); \\\n"
+			"	create_broadcast_op(type, size); \\\n"
+			"	create_convert_op_prot(type, rtype, size); \\\n"
+			"	create_convert_op_prot(type, otype, size); \\\n"
+			"	create_compare_op_prot(type,sitype,  <, size); \\\n"
+			"	create_compare_op_prot(type,sitype,  >, size); \\\n"
+			"	create_compare_op_prot(type, sitype, <=, size); \\\n"
+			"	create_compare_op_prot(type,sitype,  >=, size); \\\n"
+			"	create_compare_op_prot(type, sitype,  ==, size); \\\n"
+			"	create_compare_op_prot(type, sitype,  !=, size); \\\n"
+			"	friend class vec_##rtype##size; \\\n"
+			"	friend class vec_##otype##size; \\\n"
+			"}\n"
+			"\n"
+			"#define create_rvec_types_def(type, sitype, uitype, size)\\\n"
+			"	create_convert_op_def(type, sitype, size); \\\n"
+			"	create_convert_op_def(type, uitype, size)\n"
+			"\n"
+			"#define create_ivec_types_def(type, otype, rtype, size)              \\\n"
+			"	create_convert_op_def(type, rtype, size); \\\n"
+			"	create_convert_op_def(type, otype, size)\n"
+			"\n"
+			"#define create_vec_types(rtype, sitype, uitype, size) \\\n"
+			"	create_vec_types_fwd(rtype, size); \\\n"
+			"	create_vec_types_fwd(uitype, size); \\\n"
+			"	create_vec_types_fwd(sitype, size); \\\n"
+			"	create_rvec_types(rtype, sitype, uitype, size); \\\n"
+			"	create_ivec_types(uitype, sitype, rtype, sitype, size); \\\n"
+			"	create_ivec_types(sitype, uitype, rtype, sitype, size); \\\n"
+			"	create_rvec_types_def(rtype, sitype, uitype, size); \\\n"
+			"	create_ivec_types_def(uitype, sitype, rtype, size); \\\n"
+			"	create_ivec_types_def(sitype, uitype, rtype, size); \\\n"
+			"	create_compare_op_def(rtype, sitype, <, size); \\\n"
+			"	create_compare_op_def(rtype,sitype,  >, size); \\\n"
+			"	create_compare_op_def(rtype, sitype, <=, size); \\\n"
+			"	create_compare_op_def(rtype, sitype, >=, size); \\\n"
+			"	create_compare_op_def(rtype,sitype,  ==, size); \\\n"
+			"	create_compare_op_def(rtype, sitype, !=, size); \\\n"
+			"	create_compare_op_def(uitype,sitype,  <, size); \\\n"
+			"	create_compare_op_def(uitype, sitype, >, size); \\\n"
+			"	create_compare_op_def(uitype, sitype, <=, size); \\\n"
+			"	create_compare_op_def(uitype, sitype, >=, size); \\\n"
+			"	create_compare_op_def(uitype, sitype, ==, size); \\\n"
+			"	create_compare_op_def(uitype, sitype, !=, size); \\\n"
+			"	create_compare_op_def(sitype, sitype, <, size); \\\n"
+			"	create_compare_op_def(sitype,sitype,  >, size); \\\n"
+			"	create_compare_op_def(sitype,sitype,  <=, size); \\\n"
+			"	create_compare_op_def(sitype, sitype, >=, size); \\\n"
+			"	create_compare_op_def(sitype, sitype, ==, size); \\\n"
+			"	create_compare_op_def(sitype, sitype, !=, size) \n";
+	str += "\n";
+	char* b;
+#ifdef VEC_DOUBLE
+	ASPRINTF(&b, "create_vec_types(double, int64_t, uint64_t, %i);\n", VEC_DOUBLE_SIZE);
+	str += b;
+	free(b);
+#endif
+#ifdef VEC_FLOAT
+	ASPRINTF(&b,"create_vec_types(float, int32_t, uint32_t, %i);\n", VEC_FLOAT_SIZE);
+	str += b;
+	free(b);
+#endif
+	str += "\n";
+#ifdef VEC_FLOAT
+	ASPRINTF(&b, "inline float sum(vec_float%i v) {\n", VEC_FLOAT_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(float))));\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_FLOAT_SIZE / 2; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2*sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2*sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
+	str += b;
+	free(b);
+	str += "}\n";
+#endif
+
+#ifdef VEC_DOUBLE
+	str += "\n";
+	ASPRINTF(&b, "inline double sum(vec_double%i v) {\n", VEC_DOUBLE_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_DOUBLE_SIZE; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(double))));\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_DOUBLE_SIZE / 2; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2*sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2*sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
+	str += b;
+	free(b);
+	str += "}\n";
+#endif
+
+	return str;
+}
 
 static int cuda = 0;
 
 static bool is_float(std::string str) {
-	return str == "float" || str == "vec_float";
+	return str == "float" || str == (std::string("vec_float") + std::to_string(VEC_FLOAT_SIZE));
 }
 
 static bool is_double(std::string str) {
-	return str == "double" || str == "vec_double";
+	return str == "double" || str == (std::string("vec_double") + std::to_string(VEC_DOUBLE_SIZE));
 }
 
 static bool is_vec(std::string str) {
-	return str == "vec_double" || str == "vec_float";
+	return str == (std::string("vec_float") + std::to_string(VEC_FLOAT_SIZE)) || str == (std::string("vec_double") + std::to_string(VEC_DOUBLE_SIZE));
 }
 
 const double ewald_r2 = (2.6 + 0.5 * sqrt(3));
@@ -814,7 +890,7 @@ void func_args_cover(int P, const char* arg, arg_type atype, Args&& ...args) {
 }
 
 template<class ... Args>
-std::string func_header(const char* func, int P, bool pub, bool calcpot, bool flags, std::string head, Args&& ...args) {
+std::string func_header(const char* func, int P, bool pub, bool calcpot, bool scale, bool flags, std::string head, Args&& ...args) {
 	static std::set<std::string> igen;
 	std::string func_name = std::string(func);
 	std::string file_name = func_name + "_" + type + "_P" + std::to_string(P) + (cuda ? ".cu" : ".cpp");
@@ -884,6 +960,9 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool fl
 	indent();
 	if (flags && calcpot) {
 		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+	}
+	if (flags && scale) {
+		tprint("const bool scaling = !(flags & FMM_IGNORE_SCALING);\n");
 	}
 	func_args_cover(P, std::forward<Args>(args)..., 0);
 	return file_name;
@@ -961,15 +1040,12 @@ bool close21(double a) {
 	return std::abs(1.0 - a) < 1.0e-20;
 }
 
-int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
-//noevenhi = false;
-	int flops = 0;
+void z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 	tprint("rx[0] = cosphi;\n");
 	tprint("ry[0] = sinphi;\n");
 	for (int m = 1; m < P; m++) {
 		tprint("rx[%i] = rx[%i] * cosphi - ry[%i] * sinphi;\n", m, m - 1, m - 1);
 		tprint("ry[%i] = detail::fma(rx[%i], sinphi, ry[%i] * cosphi);\n", m, m - 1, m - 1);
-		flops += 6 - fmaops;
 	}
 	int mmin = 1;
 	bool initR = true;
@@ -985,40 +1061,32 @@ int z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) {
 			if (exclude && l == P && m % 2 == 1) {
 				tprint(sw, "%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
 				tprint(sw, "%s[%i] *= rx[%i];\n", name, index(l, -m), m);
-				flops += 3;
 			} else if ((exclude && l == P && m % 2 == 0) || (noimaghi && l == P)) {
 				tprint(sw, "%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
 				tprint(sw, "%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
-				flops += 2;
 			} else {
 				if (noevenhi && ((l >= P - 1 && m % 2 == P % 2))) {
 					tprint(sw, "%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
 					tprint(sw, "%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
-					flops += 2;
 				} else {
 					tprint(sw, "tmp%i = %s[%i];\n", sw, name, index(l, m));
 					tprint(sw, "%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
 					tprint(sw, "%s[%i] = detail::fma(tmp%i, ry[%i], %s[%i] * rx[%i]);\n", name, index(l, -m), sw, m - 1, name, index(l, -m), m - 1);
-					flops += 6 - fmaops;
 				}
 			}
 
 		}
 	}
 	tprint_flush();
-	return flops;
 }
 
-int m2l(int P, int Q, const char* mname, const char* lname) {
-	int flops = 0;
+void m2l(int P, int Q, const char* mname, const char* lname) {
 	tprint("A[0] = rinv;\n");
 	for (int n = 1; n <= P; n++) {
 		tprint("A[%i] = rinv * A[%i];\n", n, n - 1);
-		flops++;
 	}
 	for (int n = 2; n <= P; n++) {
 		tprint("A[%i] *= TCAST(%.20e);\n", n, factorial(n));
-		flops++;
 	}
 	int sw = 0;
 	tprint(sw, "if( calcpot ) {\n");
@@ -1037,30 +1105,24 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 				if (pfirst) {
 					pfirst = false;
 					tprint(sw, "%s[%i] = %s[%i] * A[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
-					flops += 1;
 				} else {
 					tprint(sw, "%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
-					flops += 2 - fmaops;
 				}
 				if (m != 0) {
 					if (nfirst) {
 						nfirst = false;
 						tprint(sw, "%s[%i] = %s[%i] * A[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
-						flops += 1;
 					} else {
 						tprint(sw, "%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
-						flops += 2 - fmaops;
 					}
 				}
 			}
 			if (m % 2 != 0) {
 				if (!pfirst) {
 					tprint(sw, "%s[%i] = -%s[%i];\n", lname, index(n, m), lname, index(n, m));
-					flops++;
 				}
 				if (!nfirst) {
 					tprint(sw, "%s[%i] = -%s[%i];\n", lname, index(n, -m), lname, index(n, -m));
-					flops++;
 				}
 			}
 		}
@@ -1071,15 +1133,10 @@ int m2l(int P, int Q, const char* mname, const char* lname) {
 		}
 	}
 	tprint_flush();
-	return flops;
 
 }
 
-int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict, bool noevenhi) {
-//noevenhi = false;
-//	tprint("template<class T>\n");
-//	tprint(" inline void %s( array<T,%i>& %s ) {\n", fname, (P + 1) * (P + 1), name);
-	int flops = 0;
+void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict, bool noevenhi) {
 	auto brot = [inv](int n, int m, int l) {
 		if( inv ) {
 			return Brot(n,m,l);
@@ -1140,29 +1197,23 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 				if (len == 1) {
 					if (close21(ops[m][l].first)) {
 						tprint(sw, "%s[%i] %s= A[%i];\n", name, index(n, m - n), l == 0 ? "" : "+", ops[m][l].second);
-						flops += 1 - (l == 0);
 					} else {
 						if (l == 0) {
 							tprint(sw, "%s[%i] = TCAST(%.20e) * A[%i];\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second);
-							flops += 1;
 						} else {
 							tprint(sw, "%s[%i] = detail::fma(TCAST(%.20e), A[%i], %s[%i]);\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second, name,
 									index(n, m - n));
-							flops += 2 - fmaops;
 						}
 					}
 				} else {
 					tprint(sw, "tmp%i = A[%i];\n", sw, ops[m][l].second);
 					for (int p = 1; p < len; p++) {
 						tprint(sw, "tmp%i += A[%i];\n", sw, ops[m][l + p].second);
-						flops++;
 					}
 					if (l == 0) {
 						tprint(sw, "%s[%i] = TCAST(%.20e) * tmp%i;\n", name, index(n, m - n), ops[m][l].first, sw);
-						flops += 1;
 					} else {
 						tprint(sw, "%s[%i] = detail::fma(TCAST(%.20e), tmp%i, %s[%i]);\n", name, index(n, m - n), ops[m][l].first, sw, name, index(n, m - n));
-						flops += 2 - fmaops;
 					}
 				}
 				l += len - 1;
@@ -1170,17 +1221,14 @@ int xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict,
 		}
 		tprint_flush();
 	}
-	return flops;
 }
 
-int greens_body(int P, const char* M = nullptr) {
-	int flops = 0;
+void greens_body(int P, const char* M = nullptr) {
 	init_real("r2");
 	init_real("r2inv");
 	init_real("ax");
 	init_real("ay");
 	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
-	flops += 5 - 2 * fmaops;
 	if (M) {
 		tprint("r2inv = %s / r2;\n", M);
 	} else {
@@ -1189,31 +1237,25 @@ int greens_body(int P, const char* M = nullptr) {
 	tprint("O[0] = detail::rsqrt(r2);\n");
 	if (M) {
 		tprint("O[0] *= %s;\n", M);
-		flops++;
 	}
 	tprint("O_st.trace2() = TCAST(0);\n");
 	tprint("x *= r2inv;\n");
 	tprint("y *= r2inv;\n");
 	tprint("z *= r2inv;\n");
-	flops += 3;
 	for (int m = 0; m <= P; m++) {
 		if (m == 1) {
 			tprint("O[%i] = x * O[0];\n", index(m, m));
 			tprint("O[%i] = y * O[0];\n", index(m, -m));
-			flops += 2;
 		} else if (m > 0) {
 			tprint("ax = O[%i] * TCAST(%i);\n", index(m - 1, m - 1), 2 * m - 1);
 			tprint("ay = O[%i] * TCAST(%i);\n", index(m - 1, -(m - 1)), 2 * m - 1);
 			tprint("O[%i] = x * ax - y * ay;\n", index(m, m));
 			tprint("O[%i] = detail::fma(y, ax, x * ay);\n", index(m, -m));
-			flops += 8 - fmaops;
 		}
 		if (m + 1 <= P) {
 			tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
-			flops += 2;
 			if (m != 0) {
 				tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, -m), 2 * m + 1, index(m, -m));
-				flops += 2;
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
@@ -1222,25 +1264,20 @@ int greens_body(int P, const char* M = nullptr) {
 				tprint("ay = TCAST(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
 				tprint("O[%i] = detail::fma(ax, O[%i], ay * O[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
 				tprint("O[%i] = detail::fma(ax, O[%i], ay * O[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
-				flops += 8 - fmaops;
 			} else {
 				if ((n - 1) * (n - 1) - m * m == 1) {
 					tprint("O[%i] = (TCAST(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
-					flops += 4;
 				} else {
 					tprint("O[%i] = (TCAST(%i) * z * O[%i] - TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
 							index(n - 2, m));
-					flops += 5;
 				}
 
 			}
 		}
 	}
-	return flops;
 }
 
-int m2lg_body(int P, int Q) {
-	int flops = 0;
+void m2lg_body(int P, int Q) {
 	int sw = 0;
 	tprint(sw, "if( calcpot ) {\n");
 	indent();
@@ -1325,7 +1362,6 @@ int m2lg_body(int P, int Q) {
 						if (!greal) {
 							add_work(mxsgn * gxsgn, 1, mxstr, gxstr);
 							add_work(-mysgn * gysgn, 1, mystr, gystr);
-							flops += 4;
 							if (m > 0) {
 								add_work(mysgn * gxsgn, -1, mystr, gxstr);
 								add_work(mxsgn * gysgn, -1, mxstr, gystr);
@@ -1367,37 +1403,29 @@ int m2lg_body(int P, int Q) {
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
-					flops++;
 				}
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
 				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
-				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
-					flops++;
 				}
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
 				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
-				flops += 2 - fmaops;
 			}
 
 		}
@@ -1408,8 +1436,8 @@ int m2lg_body(int P, int Q) {
 		}
 	}
 	tprint_flush();
-	return flops;
 }
+
 std::vector<complex> spherical_singular_harmonic(int P, double x, double y, double z) {
 	const double r2 = x * x + y * y + z * z;
 	const double r2inv = double(1) / r2;
@@ -1437,18 +1465,20 @@ bool close2zero(double a) {
 }
 
 std::string P2L(int P) {
-	int flops = 0;
-	auto fname = func_header("P2L", P, true, false, true, "", "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("P2L", P, true, false, true, true, "", "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
 	init_real("tmp1");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("expansion_type<%s,%i> O_st(L_st.scale());\n", type.c_str(), P);
 	tprint("T* O = O_st.data();\n");
 	greens_body(P, "M");
 	tprint("L_st += O_st;\n");
-	flops += exp_sz(P);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -1458,8 +1488,7 @@ std::string P2L(int P) {
 }
 
 std::string greens(int P) {
-	int flops = 0;
-	auto fname = func_header("greens", P, true, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("greens", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
 	greens_body(P);
 	deindent();
 	tprint("}");
@@ -1470,47 +1499,38 @@ std::string greens(int P) {
 }
 
 std::string greens_xz(int P) {
-	int flops = 0;
-	auto fname = func_header("greens_xz", P, false, false, true, "", "O", EXP, "x", LIT, "z", LIT, "r2inv", LIT);
+	auto fname = func_header("greens_xz", P, false, false, false, true, "", "O", EXP, "x", LIT, "z", LIT, "r2inv", LIT);
 	init_real("ax");
 	init_real("ay");
 	tprint("O[0] = detail::sqrt(r2inv);\n");
 	tprint("O_st.trace2() = TCAST(0);\n");
 	tprint("x *= r2inv;\n");
-	flops += 1;
 	tprint("z *= r2inv;\n");
-	flops += 1;
 	const auto index = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
 	for (int m = 0; m <= P; m++) {
 		if (m == 1) {
 			tprint("O[%i] = x * O[0];\n", index(m, m));
-			flops += 1;
 		} else if (m > 0) {
 			tprint("ax = O[%i] * TCAST(%i);\n", index(m - 1, m - 1), 2 * m - 1);
 			tprint("O[%i] = x * ax;\n", index(m, m));
-			flops += 2;
 		}
 		if (m + 1 <= P) {
 			tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
-			flops += 2;
 		}
 		for (int n = m + 2; n <= P; n++) {
 			if (m != 0) {
 				tprint("ax = TCAST(%i) * z;\n", 2 * n - 1);
 				tprint("ay = TCAST(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
 				tprint("O[%i] = detail::fma(ax, O[%i], ay * O[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
-				flops += 5 - fmaops;
 			} else {
 				if ((n - 1) * (n - 1) - m * m == 1) {
 					tprint("O[%i] = (TCAST(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
-					flops += 4;
 
 				} else {
 					tprint("O[%i] = (TCAST(%i) * z * O[%i] - TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
 							index(n - 2, m));
-					flops += 5;
 				}
 			}
 		}
@@ -1525,8 +1545,7 @@ std::string greens_xz(int P) {
 }
 
 std::string M2L_ewald(int P) {
-	int flops = 0;
-	auto fname = func_header("M2L_ewald", P, true, false, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2L_ewald", P, true, false, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("expansion_type<%s, %i> G_st;\n", type.c_str(), P);
 	tprint("T* G = G_st.data();\n", type.c_str(), P);
 	tprint("auto M_st = M0_st;\n");
@@ -1534,9 +1553,20 @@ std::string M2L_ewald(int P) {
 	tprint("auto* M = M_st.data();\n");
 	tprint("auto* L = M_st.data();\n");
 	tprint("L_st.init();\n");
+
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("M_st.rescale(TCAST(1));\n");
+	deindent();
+	tprint("}\n");
+
 	tprint("greens_ewald(G_st, x, y, z, flags);\n");
 	tprint("M2LG(L_st, M_st, G_st, flags);\n");
+	tprint("if( scaling ) {\n");
+	indent();
+	tprint("L_st.rescale(L0_st.scale());\n");
+	deindent();
+	tprint("}\n");
 	tprint("L0_st += L_st;\n");
 	deindent();
 	tprint("}");
@@ -1547,23 +1577,20 @@ std::string M2L_ewald(int P) {
 }
 
 std::string M2LG(int P, int Q) {
-	int flops = 0;
-	auto fname = func_header("M2LG", P, true, true, true, "", "L", EXP, "M", CMUL, "O", EXP);
-	flops += m2lg_body(P, Q);
+	auto fname = func_header("M2LG", P, true, true, false, true, "", "L", EXP, "M", CMUL, "O", EXP);
+	m2lg_body(P, Q);
 	if (!nophi && P > 2 && periodic) {
 		tprint("if( calcpot ) {\n");
 		indent();
 		tprint("L[%i] = detail::fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		deindent();
 		tprint("}/*calcpot*/\n");
-		flops += 3 - fmaops;
 	}
 	if (P > 1 && periodic) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", index(1, -1), index(1, -1), index(1, -1));
 		tprint("L[%i] -= O_st.trace2() * M[%i];\n", index(1, +0), index(1, +0), index(1, +0));
 		tprint("L[%i] = detail::fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", index(1, +1), index(1, +1), index(1, +1));
 		tprint("L_st.trace2() = detail::fma(TCAST(-0.5) * O_st.trace2(), M[%i], L_st.trace2());\n", index(0, 0));
-		flops += 10 - 3 * fmaops;
 	}
 	deindent();
 	tprint("}");
@@ -1585,7 +1612,7 @@ std::string greens_ewald(int P, double alpha) {
 	if (!periodic) {
 		return 0;
 	}
-	auto fname = func_header("greens_ewald", P, true, true, true, "", "G", EXP, "x0", LIT, "y0", LIT, "z0", LIT);
+	auto fname = func_header("greens_ewald", P, true, true, false, true, "", "G", EXP, "x0", LIT, "y0", LIT, "z0", LIT);
 	const auto c = tprint_on;
 	tprint("expansion_type<%s, %i> Gr_st;\n", type.c_str(), P);
 	tprint("T* Gr = Gr_st.data();\n", type.c_str(), P);
@@ -1925,12 +1952,11 @@ std::string greens_ewald(int P, double alpha) {
 }
 
 std::string M2L_norot(int P, int Q) {
-	int flops = 0;
 	std::string fname;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		fname = func_header("M2P", P, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	init_real("tmp1");
 	if (Q == 1) {
@@ -1944,20 +1970,32 @@ std::string M2L_norot(int P, int Q) {
 	if (Q > 1) {
 		tprint("expansion_type<%s, %i>& L_st = L0_st;\n", type.c_str(), P);
 		tprint("T* L = L_st.data();\n", type.c_str(), P);
+		tprint("if( scaling ) {\n");
+		indent();
 		tprint("M_st.rescale(L_st.scale());\n");
+		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
+		tprint("x *= tmp1;\n");
+		tprint("y *= tmp1;\n");
+		tprint("z *= tmp1;\n");
+		deindent();
+		tprint("}\n");
 	} else {
 		init_reals("L", exp_sz(Q));
 		tprint("L[0] = TCAST(0);\n");
 		tprint("L[1] = TCAST(0);\n");
 		tprint("L[2] = TCAST(0);\n");
 		tprint("L[3] = TCAST(0);\n");
+		tprint("if( scaling ) {\n");
+		indent();
+		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
+		tprint("x *= tmp1;\n");
+		tprint("y *= tmp1;\n");
+		tprint("z *= tmp1;\n");
+		deindent();
+		tprint("}\n");
 	}
-	tprint("tmp1 = TCAST(1) / M_st.scale();\n");
-	tprint("x *= tmp1;\n");
-	tprint("y *= tmp1;\n");
-	tprint("z *= tmp1;\n");
 	tprint("greens(O_st, x, y, z, flags);\n");
-	flops += m2lg_body(P, Q);
+	m2lg_body(P, Q);
 	if (Q == 1) {
 		tprint("rinv = TCAST(1) / M_st.scale();\n");
 		tprint("r2inv = rinv * rinv;\n");
@@ -1975,12 +2013,11 @@ std::string M2L_norot(int P, int Q) {
 }
 
 std::string M2L_rot1(int P, int Q) {
-	int flops = 0;
 	std::string fname;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		fname = func_header("M2P", P, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	init_real("R2");
 	init_real("Rzero");
@@ -2003,6 +2040,8 @@ std::string M2L_rot1(int P, int Q) {
 	if (Q == 1) {
 		init_real("rinv");
 	}
+	tprint("if( scaling ) {\n");
+	indent();
 	if (Q > 1) {
 		tprint("M_st.rescale(L0_st.scale());\n");
 	}
@@ -2010,26 +2049,20 @@ std::string M2L_rot1(int P, int Q) {
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 
 	tprint("R2 = detail::fma(x, x, y * y);\n");
-	flops += 3 - fmaops;
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
-	flops++;
 	tprint("r2 = detail::fma(z, z, R2);\n");
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
-	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
-	flops++;
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
 	tprint("R = TCAST(1) / Rinv;\n");
-	flops += divops;
 	tprint("r2inv = TCAST(1) / (r2 + rzero);\n");
-	flops += 7 - fmaops;
 	tprint("cosphi = detail::fma(x, Rinv, Rzero);\n");
-	flops += 2 - fmaops;
 	tprint("sinphi = -y * Rinv;\n");
-	flops += 2;
-	flops += z_rot(P - 1, "M", false, false, false);
+	z_rot(P - 1, "M", false, false, false);
 	tprint("detail::greens_xz(O_st, R, z, r2inv, flags);\n");
 	const auto oindex = [](int l, int m) {
 		return l*(l+1)/2+m;
@@ -2092,10 +2125,8 @@ std::string M2L_rot1(int P, int Q) {
 								if (pfirst) {
 									tprint(sw, "L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
 									pfirst = false;
-									flops += 1;
 								} else {
 									tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
-									flops += 2 - fmaops;
 								}
 							}
 							if (mysgn * gxsgn == sgn) {
@@ -2103,10 +2134,8 @@ std::string M2L_rot1(int P, int Q) {
 									if (nfirst) {
 										tprint(sw, "L[%i] = %s * %s;\n", index(n, -m), mystr, gxstr);
 										nfirst = false;
-										flops += 1;
 									} else {
 										tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), mystr, gxstr, index(n, -m));
-										flops += 2 - fmaops;
 									}
 								}
 							}
@@ -2115,10 +2144,8 @@ std::string M2L_rot1(int P, int Q) {
 								if (pfirst) {
 									tprint(sw, "L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
 									pfirst = false;
-									flops += 1;
 								} else {
 									tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
-									flops += 2 - fmaops;
 								}
 							}
 						}
@@ -2135,11 +2162,9 @@ std::string M2L_rot1(int P, int Q) {
 				}
 				if (!pfirst && sgn == -1) {
 					tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
-					flops++;
 				}
 				if (!nfirst && sgn == -1) {
 					tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
-					flops++;
 				}
 
 			}
@@ -2152,9 +2177,7 @@ std::string M2L_rot1(int P, int Q) {
 	}
 	tprint_flush();
 	tprint("sinphi = -sinphi;\n");
-	flops++;
-	flops += z_rot(Q, "L", false, false, Q == P);
-	flops++;
+	z_rot(Q, "L", false, false, Q == P);
 	if (Q > 1) {
 		for (int n = 0; n < exp_sz(Q); n++) {
 			tprint("L0[%i] += L[%i];\n", n, n);
@@ -2167,7 +2190,6 @@ std::string M2L_rot1(int P, int Q) {
 		tprint("f.force[1] -= L[1] * r2inv;\n");
 		tprint("f.force[2] -= L[2] * r2inv;\n");
 	}
-	flops += (Q + 1) * (Q + 1);
 
 	deindent();
 	tprint("}");
@@ -2179,11 +2201,10 @@ std::string M2L_rot1(int P, int Q) {
 
 std::string M2L_rot2(int P, int Q) {
 	std::string fname;
-	int flops = 0;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	} else {
-		fname = func_header("M2P", P, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
 	init_reals("L", exp_sz(Q));
 	init_reals("A", 2 * P + 1);
@@ -2208,6 +2229,8 @@ std::string M2L_rot2(int P, int Q) {
 	init_real("rinv");
 	tprint("auto M_st = M0_st;\n");
 	tprint("auto* M = M_st.data();\n");
+	tprint("if( scaling ) {\n");
+	indent();
 	if (Q > 1) {
 		tprint("M_st.rescale(L0_st.scale());\n");
 	}
@@ -2215,49 +2238,38 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("R2 = detail::fma(x, x, y * y);\n");
-	flops += 3 - fmaops;
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
-	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
-	flops++;
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
 	tprint("R = TCAST(1) / Rinv;\n");
-	flops += divops;
 	tprint("r2 = (detail::fma(z, z, R2));\n");
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
-//	tprint("r2inv = TCAST(1) / r2;\n");
-	flops += 3 + divops - fmaops;
 	tprint("r2przero = (r2 + rzero);\n");
-	flops += 1;
 	tprint("rinv = detail::rsqrt(r2przero);\n");
 
 	tprint("cosphi = y * Rinv;\n");
-	flops++;
 	tprint("sinphi = detail::fma(x, Rinv, Rzero);\n");
-	flops += 2 - fmaops;
-	flops += 2 * z_rot(P - 1, "M", false, false, false);
-	flops += xz_swap(P - 1, "M", false, false, false, false);
+	z_rot(P - 1, "M", false, false, false);
+	xz_swap(P - 1, "M", false, false, false, false);
 
 	tprint("cosphi0 = cosphi;\n");
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = detail::fma(z, rinv, rzero);\n");
-	flops += 2 - fmaops;
 	tprint("sinphi = -R * rinv;\n");
-	flops += 2;
-	flops += 2 * z_rot(P - 1, "M", false, false, false);
-	flops += xz_swap(P - 1, "M", false, true, false, false);
-	flops += m2l(P, Q, "M", "L");
-	flops += xz_swap(Q, "L", true, false, true, false);
+	z_rot(P - 1, "M", false, false, false);
+	xz_swap(P - 1, "M", false, true, false, false);
+	m2l(P, Q, "M", "L");
+	xz_swap(Q, "L", true, false, true, false);
 
 	tprint("sinphi = -sinphi;\n");
-	flops += 1;
-	flops += z_rot(Q, "L", true, false, false);
-	flops += xz_swap(Q, "L", true, false, false, true);
+	z_rot(Q, "L", true, false, false);
+	xz_swap(Q, "L", true, false, false, true);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
-	flops += 1;
-	flops += z_rot(Q, "L", false, true, false);
+	z_rot(Q, "L", false, true, false);
 	if (Q > 1) {
 		for (int n = 0; n < exp_sz(Q); n++) {
 			tprint("L0[%i] += L[%i];\n", n, n);
@@ -2270,7 +2282,6 @@ std::string M2L_rot2(int P, int Q) {
 		tprint("f.force[1] -= L[1] * r2inv;\n");
 		tprint("f.force[2] -= L[2] * r2inv;\n");
 	}
-	flops += (Q + 1) * (Q + 1);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -2280,52 +2291,41 @@ std::string M2L_rot2(int P, int Q) {
 }
 
 std::string regular_harmonic(int P) {
-	int flops = 0;
-	auto fname = func_header("regular_harmonic", P, false, false, true, "", "Y", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("regular_harmonic", P, false, false, false, true, "", "Y", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
 	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
-	flops += 5 - 2 * fmaops;
 	tprint("Y[0] = TCAST(1);\n");
 	tprint("Y_st.trace2() = r2;\n");
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
-//	Y[index(m, m)] = Y[index(m - 1, m - 1)] * R / TCAST(2 * m);
 			if (m - 1 > 0) {
 				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("ay = Y[%i] * TCAST(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax - y * ay;\n", index(m, m));
 				tprint("Y[%i] = detail::fma(y, ax, x * ay);\n", index(m, -m));
-				flops += 6 - fmaops;
 			} else {
 				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax;\n", index(m, m));
 				tprint("Y[%i] = y * ax;\n", index(m, -m));
-				flops += 3;
 			}
 		}
 		if (m + 1 <= P) {
-//			Y[index(m + 1, m)] = z * Y[index(m, m)];
 			if (m == 0) {
 				tprint("Y[%i] = z * Y[%i];\n", index(m + 1, m), index(m, m));
-				flops += 1;
 			} else {
 				tprint("Y[%i] = z * Y[%i];\n", index(m + 1, m), index(m, m));
 				tprint("Y[%i] = z * Y[%i];\n", index(m + 1, -m), index(m, -m));
-				flops += 2;
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-//			Y[index(n, m)] = inv * (TCAST(2 * n - 1) * z * Y[index(n - 1, m)] - r2 * Y[index(n - 2, m)]);
 			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
 			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
 			tprint("Y[%i] = detail::fma(ax, Y[%i], ay * Y[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
-			flops += 5 - fmaops;
 			if (m != 0) {
 				tprint("Y[%i] = detail::fma(ax, Y[%i], ay * Y[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
-				flops += 3 - fmaops;
 			}
 		}
 	}
@@ -2344,13 +2344,11 @@ void cuda_header() {
 }
 
 std::string regular_harmonic_xz(int P) {
-	int flops = 0;
-	auto fname = func_header("regular_harmonic_xz", P, false, false, true, "", "Y", EXP, "x", LIT, "z", LIT);
+	auto fname = func_header("regular_harmonic_xz", P, false, false, false, true, "", "Y", EXP, "x", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
 	tprint("r2 = detail::fma(x, x, z * z);\n");
-	flops += 3 - fmaops;
 	tprint("Y[0] = TCAST(1);\n");
 	tprint("Y_st.trace2() = r2;\n");
 	const auto index = [](int l, int m) {
@@ -2358,34 +2356,26 @@ std::string regular_harmonic_xz(int P) {
 	};
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
-//	Y[index(m, m)] = Y[index(m - 1, m - 1)] * R / TCAST(2 * m);
 			if (m - 1 > 0) {
 				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax;\n", index(m, m));
-				flops += 2;
 			} else {
 				tprint("ax = Y[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax;\n", index(m, m));
-				flops += 2;
 			}
 		}
 		if (m + 1 <= P) {
-//			Y[index(m + 1, m)] = z * Y[index(m, m)];
 			if (m == 0) {
 				tprint("Y[%i] = z * Y[%i];\n", index(m + 1, m), index(m, m));
-				flops += 1;
 			} else {
 				tprint("Y[%i] = z * Y[%i];\n", index(m + 1, m), index(m, m));
-				flops += 1;
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-//			Y[index(n, m)] = inv * (TCAST(2 * n - 1) * z * Y[index(n - 1, m)] - r2 * Y[index(n - 2, m)]);
 			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
 			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
 			tprint("Y[%i] = detail::fma(ax, Y[%i], ay * Y[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
-			flops += 5 - fmaops;
 		}
 	}
 	deindent();
@@ -2398,18 +2388,19 @@ std::string regular_harmonic_xz(int P) {
 }
 
 std::string M2M_norot(int P) {
-	int flops = 0;
-	auto fname = func_header("M2M", P + 1, true, false, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
-//const auto Y = spherical_regular_harmonic<T, P>(-x, -y, -z);
+	auto fname = func_header("M2M", P + 1, true, false, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_real("tmp1");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / M_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z, flags);\n");
-	flops += 3;
 	if (P > 1 && !nophi && periodic) {
 		tprint("M_st.trace2() = detail::fma(TCAST(-4) * x, M[%i], M_st.trace2());\n", index(1, 1));
 		tprint("M_st.trace2() = detail::fma(TCAST(-4) * y, M[%i], M_st.trace2());\n", index(1, -1));
@@ -2417,7 +2408,6 @@ std::string M2M_norot(int P) {
 		tprint("M_st.trace2() = detail::fma(x * x, M[%i], M_st.trace2());\n", index(0, 0));
 		tprint("M_st.trace2() = detail::fma(y * y, M[%i], M_st.trace2());\n", index(0, 0));
 		tprint("M_st.trace2() = detail::fma(z * z, M[%i], M_st.trace2());\n", index(0, 0));
-		flops += 18 - 6 * fmaops;
 	}
 	for (int n = P; n >= 0; n--) {
 		int sw = 0;
@@ -2522,37 +2512,29 @@ std::string M2M_norot(int P) {
 				tprint(sw, "M[%i] = -M[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
-					flops++;
 				}
 				tprint(sw, "M[%i] = -M[%i];\n", index(n, m), index(n, m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "M[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
 				tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
-				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
 				tprint(sw, "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
-					flops++;
 				}
 				tprint(sw, "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "M[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
 				tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
-				flops += 2 - fmaops;
 			}
 		}
 		tprint_flush();
@@ -2566,9 +2548,8 @@ std::string M2M_norot(int P) {
 }
 
 std::string M2M_rot1(int P) {
-	int flops = 0;
 
-	auto fname = func_header("M2M", P + 1, true, false, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, false, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("T rx[%i];\n", P);
@@ -2581,36 +2562,33 @@ std::string M2M_rot1(int P) {
 	init_real("Rzero");
 	init_real("cosphi");
 	init_real("sinphi");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / M_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("R2 = detail::fma(x, x, y * y);\n");
-	flops += 3 - fmaops;
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
-	flops++;
 	tprint("R = TCAST(1) / Rinv;\n");
-	flops += divops;
 	tprint("cosphi = detail::fma(x, Rinv, Rzero);\n");
-	flops += 2 - fmaops;
 	tprint("sinphi = -y * Rinv;\n");
-	flops += 2;
-	flops += z_rot(P, "M", false, false, false);
+	z_rot(P, "M", false, false, false);
 	if (P > 1 && !nophi && periodic) {
 		tprint("M_st.trace2() = detail::fma(TCAST(-4) * R, M[%i], M_st.trace2());\n", index(1, 1));
 		tprint("M_st.trace2() = detail::fma(TCAST(-2) * z, M[%i], M_st.trace2());\n", index(1, 0));
 		tprint("M_st.trace2() = detail::fma(R * R, M[%i], M_st.trace2());\n", index(0, 0));
 		tprint("M_st.trace2() = detail::fma(z * z, M[%i], M_st.trace2());\n", index(0, 0));
-		flops += 12;
 	}
 	const auto yindex = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
 
 	tprint("detail::regular_harmonic_xz(Y_st, -R, -z, flags);\n");
-	flops += 2;
 	for (int n = P; n >= 0; n--) {
 		for (int m = 0; m <= n; m++) {
 			std::vector<std::pair<std::string, std::string>> pos_real;
@@ -2689,43 +2667,34 @@ std::string M2M_rot1(int P) {
 				tprint("M[%i] = -M[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint("M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
-					flops++;
 				}
 				tprint("M[%i] = -M[%i];\n", index(n, m), index(n, m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint("M[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
 				tprint("M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
-				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
 				tprint("M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint("M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
-					flops++;
 				}
 				tprint("M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint("M[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
 				tprint("M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
-				flops += 2 - fmaops;
 			}
 		}
 	}
 	tprint("sinphi = -sinphi;\n");
-	flops++;
-	flops += z_rot(P, "M", false, false, false);
+	z_rot(P, "M", false, false, false);
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -2735,8 +2704,7 @@ std::string M2M_rot1(int P) {
 }
 
 std::string M2M_rot2(int P) {
-	int flops = 0;
-	auto fname = func_header("M2M", P + 1, true, false, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, false, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	tprint("T rx[%i];\n", P);
 	tprint("T ry[%i];\n", P);
@@ -2754,53 +2722,44 @@ std::string M2M_rot2(int P) {
 	init_real("cosphi0");
 	init_real("sinphi");
 	init_real("sinphi0");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / M_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("R2 = detail::fma(x, x, y * y);\n");
-	flops += 3 - fmaops;
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
-	flops++;
 	tprint("tmp1 = R2 + Rzero;\n");
-	flops++;
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
 	tprint("r2 = detail::fma(z, z, R2);\n");
-	flops += 2 - fmaops;
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
-	flops += 1;
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = detail::rsqrt(tmp1);\n");
 	tprint("R = TCAST(1) / Rinv;\n");
-	flops += divops;
 	tprint("r = TCAST(1) / rinv;\n");
-	flops += divops;
 	tprint("cosphi = y * Rinv;\n");
-	flops++;
 	tprint("sinphi = detail::fma(x, Rinv, Rzero);\n");
-	flops += 2 - fmaops;
-	flops += z_rot(P, "M", false, false, false);
-	flops += xz_swap(P, "M", false, false, false, false);
+	z_rot(P, "M", false, false, false);
+	xz_swap(P, "M", false, false, false, false);
 	tprint("cosphi0 = cosphi;\n");
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = detail::fma(z, rinv, rzero);\n");
-	flops += 2 - fmaops;
 	tprint("sinphi = -R * rinv;\n");
-	flops += z_rot(P, "M", false, false, false);
-	flops += xz_swap(P, "M", false, false, false, false);
+	z_rot(P, "M", false, false, false);
+	xz_swap(P, "M", false, false, false, false);
 	if (P > 1 && !nophi && periodic) {
 		tprint("M_st.trace2() = detail::fma(TCAST(-2) * r, M[%i], M_st.trace2());\n", index(1, 0));
 		tprint("M_st.trace2() = detail::fma(r * r, M[%i], M_st.trace2());\n", index(0, 0));
-		flops += 6 - 2 * fmaops;
 	}
 	tprint("A[0] = TCAST(1);\n");
 	for (int n = 1; n <= P; n++) {
 		tprint("A[%i] = -r * A[%i];\n", n, n - 1);
-		flops += 2;
 	}
 	for (int n = 2; n <= P; n++) {
 		tprint("A[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
-		flops += 1;
 	}
 	for (int n = P; n >= 0; n--) {
 		for (int m = 0; m <= n; m++) {
@@ -2812,23 +2771,20 @@ std::string M2M_rot2(int P) {
 					continue;
 				}
 				tprint("M[%i] = detail::fma(M[%i], A[%i], M[%i]);\n", index(n, m), index(n - k, m), k, index(n, m));
-				flops += 2 - fmaops;
 				if (m > 0) {
 					tprint("M[%i] = detail::fma(M[%i], A[%i], M[%i]);\n", index(n, -m), index(n - k, -m), k, index(n, -m));
-					flops += 2 - fmaops;
 				}
 			}
 
 		}
 	}
-	flops += xz_swap(P, "M", false, false, false, false);
+	xz_swap(P, "M", false, false, false, false);
 	tprint("sinphi = -sinphi;\n");
-	flops += z_rot(P, "M", false, false, false);
-	flops += xz_swap(P, "M", false, false, false, false);
+	z_rot(P, "M", false, false, false);
+	xz_swap(P, "M", false, false, false, false);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
-	flops += 1;
-	flops += z_rot(P, "M", false, false, false);
+	z_rot(P, "M", false, false, false);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -2838,17 +2794,19 @@ std::string M2M_rot2(int P) {
 }
 
 std::string L2L_norot(int P) {
-	int flops = 0;
-	auto fname = func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_real("tmp1");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z, flags);\n");
-	flops += 3;
 	int sw = 0;
 	tprint(sw, "if( calcpot ) {\n");
 	indent();
@@ -2955,37 +2913,29 @@ std::string L2L_norot(int P) {
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
-					flops++;
 				}
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
 				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
-				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
-					flops++;
 				}
 				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
 				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
-				flops += 2 - fmaops;
 			}
 		}
 		if (n == 0) {
@@ -2999,7 +2949,6 @@ std::string L2L_norot(int P) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * x, L_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
 		tprint("L[%i] = detail::fma(TCAST(-2) * y, L_st.trace2(), L[%i]);\n", index(1, -1), index(1, -1));
 		tprint("L[%i] = detail::fma(TCAST(-2) * z, L_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
-		flops += 9 - 3 * fmaops;
 		if (!nophi) {
 			tprint("if( calcpot ) {\n");
 			indent();
@@ -3008,7 +2957,6 @@ std::string L2L_norot(int P) {
 			tprint("L[%i] = detail::fma(z * z, L_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 			deindent();
 			tprint("}/*calcpot*/\n");
-			flops += 9 - 3 * fmaops;
 		}
 	}
 
@@ -3021,9 +2969,8 @@ std::string L2L_norot(int P) {
 }
 
 std::string L2L_rot1(int P) {
-	int flops = 0;
 
-	auto fname = func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("T rx[%i];\n", P);
 	tprint("T ry[%i];\n", P);
 	init_real("tmp0");
@@ -3034,24 +2981,23 @@ std::string L2L_rot1(int P) {
 	init_real("tmp1");
 	init_real("cosphi");
 	init_real("sinphi");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 
 	tprint("R2 = detail::fma(x, x, y * y);\n");
-	flops += 3 - fmaops;
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
-	flops++;
 	tprint("R = TCAST(1) / Rinv;\n");
-	flops += divops;
 	tprint("cosphi = detail::fma(x, Rinv, Rzero);\n");
-	flops += 2 - fmaops;
 	tprint("sinphi = -y * Rinv;\n");
-	flops += 2;
-	flops += z_rot(P, "L", false, false, false);
+	z_rot(P, "L", false, false, false);
 	const auto yindex = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
@@ -3059,7 +3005,6 @@ std::string L2L_rot1(int P) {
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("detail::regular_harmonic_xz(Y_st, -R, -z, flags);\n");
-	flops += 2;
 	for (int n = 0; n <= P; n++) {
 		for (int m = 0; m <= n; m++) {
 			std::vector<std::pair<std::string, std::string>> pos_real;
@@ -3136,46 +3081,36 @@ std::string L2L_rot1(int P) {
 				tprint("L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
-					flops++;
 				}
 				tprint("L[%i] = -L[%i];\n", index(n, m), index(n, m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint("L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
 				tprint("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
-				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
 				tprint("L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
-					flops++;
 				}
 				tprint("L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint("L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
 				tprint("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
-				flops += 2 - fmaops;
 			}
 		}
 	}
 	tprint("sinphi = -sinphi;\n");
-	flops++;
 	if (P > 1 && periodic) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * R, L_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
 		tprint("L[%i] = detail::fma(TCAST(-2) * z, L_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
-		flops += 6;
 		if (!nophi) {
 			tprint("if( calcpot ) {\n");
 			indent();
@@ -3183,11 +3118,9 @@ std::string L2L_rot1(int P) {
 			tprint("L[%i] = detail::fma(z * z, L_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 			deindent();
 			tprint("}/*calcpot*/\n");
-			flops += 5;
 		}
 	}
-	flops += z_rot(P, "L", false, false, false);
-	flops++;
+	z_rot(P, "L", false, false, false);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -3197,8 +3130,7 @@ std::string L2L_rot1(int P) {
 }
 
 std::string L2L_rot2(int P) {
-	int flops = 0;
-	auto fname = func_header("L2L", P, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_reals("A", 2 * P + 1);
 	tprint("T rx[%i];\n", P);
 	tprint("T ry[%i];\n", P);
@@ -3216,10 +3148,14 @@ std::string L2L_rot2(int P) {
 	init_real("cosphi0");
 	init_real("sinphi");
 	init_real("sinphi0");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("R2 = detail::fma(x, x, y * y);\n");
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
@@ -3243,11 +3179,9 @@ std::string L2L_rot2(int P) {
 	tprint("A[0] = TCAST(1);\n");
 	for (int n = 1; n <= P; n++) {
 		tprint("A[%i] = -r * A[%i];\n", n, n - 1);
-		flops += 2;
 	}
 	for (int n = 2; n <= P; n++) {
 		tprint("A[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
-		flops += 1;
 	}
 	tprint("if( calcpot ) {\n");
 	indent();
@@ -3261,10 +3195,8 @@ std::string L2L_rot2(int P) {
 					continue;
 				}
 				tprint("L[%i] = detail::fma(L[%i], A[%i], L[%i]);\n", index(n, m), index(n + k, m), k, index(n, m));
-				flops += 2 - fmaops;
 				if (m > 0) {
 					tprint("L[%i] = detail::fma(L[%i], A[%i], L[%i]);\n", index(n, -m), index(n + k, -m), k, index(n, -m));
-					flops += 2 - fmaops;
 				}
 			}
 
@@ -3276,24 +3208,21 @@ std::string L2L_rot2(int P) {
 	}
 	if (P > 1 && periodic) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * r, L_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
-		flops += 3 - fmaops;
 		if (!nophi) {
 			tprint("if( calcpot ) {\n");
 			indent();
 			tprint("L[%i] = detail::fma(r * r, L_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 			deindent();
 			tprint("}/*calcpot*/\n");
-			flops += 3 - fmaops;
 		}
 	}
-	flops += xz_swap(P, "L", true, false, false, false);
+	xz_swap(P, "L", true, false, false, false);
 	tprint("sinphi = -sinphi;\n");
-	flops += z_rot(P, "L", false, false, false);
-	flops += xz_swap(P, "L", true, false, false, false);
+	z_rot(P, "L", false, false, false);
+	xz_swap(P, "L", true, false, false, false);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
-	flops += 1;
-	flops += z_rot(P, "L", false, false, false);
+	z_rot(P, "L", false, false, false);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -3303,9 +3232,8 @@ std::string L2L_rot2(int P) {
 }
 
 std::string L2P(int P) {
-	int flops = 0;
 	const char* fstr[4] = { "f.potential", "f.force[2]", "f.force[0]", "f.force[1]" };
-	auto fname = func_header("L2P", P, true, true, true, "", "f0", FORCE, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2P", P, true, true, true, true, "", "f0", FORCE, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_real("rinv");
 	init_real("r2inv");
 	init_real("tmp1");
@@ -3316,19 +3244,22 @@ std::string L2P(int P) {
 	tprint("f.force[0] = TCAST(0);\n");
 	tprint("f.force[1] = TCAST(0);\n");
 	tprint("f.force[2] = TCAST(0);\n");
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 //tprint("expansion_type<T,1> L1;\n");
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z, flags);\n");
-	flops += 3;
 	int sw = 0;
 	tprint(sw, "if( calcpot ) {\n");
 	indent();
 	for (int n = 0; n <= 1; n++) {
 		for (int m = 0; m <= n; m++) {
-			if( n > 0 ) {
+			if (n > 0) {
 				sw = sw == 0 ? 1 : 0;
 			}
 			std::vector<std::pair<std::string, std::string>> pos_real;
@@ -3431,37 +3362,29 @@ std::string L2P(int P) {
 				tprint(sw, "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n, m)]);
-					flops++;
 				}
 				tprint(sw, "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
 					tprint(sw, "%s -= %s * %s;\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
 				tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n, m)]);
-				flops += 2 - fmaops;
 			}
 			if (fmaops && neg_imag.size() >= 2) {
 				tprint(sw, "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n, -m)]);
-					flops++;
 				}
 				tprint(sw, "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
-				flops += 2;
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
 					tprint(sw, "%s -= %s * %s;\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					flops += 2;
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
 				tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n, -m)]);
-				flops += 2 - fmaops;
 			}
 		}
 		if (n == 0) {
@@ -3475,7 +3398,6 @@ std::string L2P(int P) {
 		tprint("%s = detail::fma(TCAST(2) * x, L_st.trace2(), %s);\n", fstr[index(1, 1)], fstr[index(1, 1)]);
 		tprint("%s = detail::fma(TCAST(2) * y, L_st.trace2(), %s);\n", fstr[index(1, -1)], fstr[index(1, -1)]);
 		tprint("%s = detail::fma(TCAST(2) * z, L_st.trace2(), %s);\n", fstr[index(1, 0)], fstr[index(1, 0)]);
-		flops += 9;
 		if (!nophi) {
 			tprint("if( calcpot ) {\n");
 			indent();
@@ -3484,15 +3406,22 @@ std::string L2P(int P) {
 			tprint("%s = detail::fma(z * z, L_st.trace2(), %s);\n", fstr[index(0, 0)], fstr[index(0, 0)]);
 			deindent();
 			tprint("}/*calcpot*/\n");
-			flops += 9;
 		}
 	}
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("rinv = TCAST(1) / L_st.scale();\n");
 	tprint("r2inv = rinv * rinv;\n");
-	tprint("f0.potential += f.potential * rinv;\n");
-	tprint("f0.force[0] += f.force[0] * r2inv;\n");
-	tprint("f0.force[1] += f.force[1] * r2inv;\n");
-	tprint("f0.force[2] += f.force[2] * r2inv;\n");
+	tprint("f.potential *= rinv;\n");
+	tprint("f.force[0] *= r2inv;\n");
+	tprint("f.force[1] *= r2inv;\n");
+	tprint("f.force[2] *= r2inv;\n");
+	deindent();
+	tprint("}\n");
+	tprint("f0.potential += f.potential;\n");
+	tprint("f0.force[0] += f.force[0];\n");
+	tprint("f0.force[1] += f.force[1];\n");
+	tprint("f0.force[2] += f.force[2];\n");
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -3506,9 +3435,8 @@ void scaling(int P) {
 }
 
 std::string P2M(int P) {
-	int flops = 0;
 	tprint("\n");
-	auto fname = func_header("P2M", P + 1, true, false, true, "", "M", MUL, "m", LIT, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("P2M", P + 1, true, false, true, true, "", "M", MUL, "m", LIT, "x", LIT, "y", LIT, "z", LIT);
 	init_real("ax");
 	init_real("ay");
 	init_real("r2");
@@ -3516,17 +3444,18 @@ std::string P2M(int P) {
 	tprint("x = -x;");
 	tprint("y = -y;");
 	tprint("z = -z;");
-	flops += 3;
+	tprint("if( scaling ) {\n");
+	indent();
 	tprint("tmp1 = TCAST(1) / M_st.scale();\n");
 	tprint("x *= tmp1;\n");
 	tprint("y *= tmp1;\n");
 	tprint("z *= tmp1;\n");
+	deindent();
+	tprint("}\n");
 	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
-	flops += 5 - 2 * fmaops;
 	tprint("M[0] = m;\n");
 	if (!nophi && periodic) {
 		tprint("M_st.trace2() = m * r2;\n");
-		flops++;
 	}
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
@@ -3536,35 +3465,27 @@ std::string P2M(int P) {
 				tprint("ay = M[%i] * TCAST(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
 				tprint("M[%i] = x * ax - y * ay;\n", index(m, m));
 				tprint("M[%i] = detail::fma(y, ax, x * ay);\n", index(m, -m));
-				flops += 6 - fmaops;
 			} else {
 				tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("M[%i] = x * ax;\n", index(m, m));
 				tprint("M[%i] = y * ax;\n", index(m, -m));
-				flops += 3;
 			}
 		}
 		if (m + 1 <= P) {
-//			M[index(m + 1, m)] = z * M[index(m, m)];
 			if (m == 0) {
 				tprint("M[%i] = z * M[%i];\n", index(m + 1, m), index(m, m));
-				flops += 1;
 			} else {
 				tprint("M[%i] = z * M[%i];\n", index(m + 1, m), index(m, m));
 				tprint("M[%i] = z * M[%i];\n", index(m + 1, -m), index(m, -m));
-				flops += 2;
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-//			M[index(n, m)] = inv * (TCAST(2 * n - 1) * z * M[index(n - 1, m)] - r2 * M[index(n - 2, m)]);
 			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
 			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
 			tprint("M[%i] = detail::fma(ax, M[%i], ay * M[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
-			flops += 5 - fmaops;
 			if (m != 0) {
 				tprint("M[%i] = detail::fma(ax, M[%i], ay * M[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
-				flops += 3 - fmaops;
 			}
 		}
 	}
@@ -3585,13 +3506,7 @@ void math_functions() {
 
 	tprint("#ifndef __CUDACC__\n");
 #if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
-	tprint("%s\n", vec_header.c_str());
-#endif
-#ifdef VEC_DOUBLE
-	tprint("create_vec_types(double, int64_t, uint64_t, %i);\n", VEC_DOUBLE_SIZE);
-#endif
-#ifdef VEC_FLOAT
-	tprint("create_vec_types(float, int32_t, uint32_t, %i);\n", VEC_FLOAT_SIZE);
+	tprint("%s\n", vec_header().c_str());
 #endif
 	tprint("\n#endif");
 	tprint("\n");
@@ -3765,15 +3680,15 @@ void math_functions() {
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
-	tprint("inline vec_float fma(vec_float a, vec_float b, vec_float c) {\n");
+	tprint("inline vec_float%i fma(vec_float%i a, vec_float%i b, vec_float%i c) {\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	indent();
 	tprint("return a * b + c;\n");
 	deindent();
 	tprint("}\n");
-	tprint("vec_float rsqrt(vec_float);\n");
-	tprint("vec_float sqrt(vec_float);\n");
-	tprint("void sincos(vec_float, vec_float*, vec_float*);\n");
-	tprint("void erfcexp(vec_float, vec_float*, vec_float*);\n");
+	tprint("vec_float%i rsqrt(vec_float%i);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("vec_float%i sqrt(vec_float%i);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("void sincos(vec_float%i, vec_float%i*, vec_float%i*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("void erfcexp(vec_float%i, vec_float%i*, vec_float%i*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	tprint("}\n");
 	tprint("#endif\n");
 	fclose(fp);
@@ -3784,7 +3699,7 @@ void math_functions() {
 	}
 	tprint("\n");
 	tprint("#include \"spherical_fmm.hpp\"\n");
-	tprint("#include \"typecast_vec_float.hpp\"\n");
+	tprint("#include \"typecast_vec_float%i.hpp\"\n", VEC_FLOAT_SIZE);
 	tprint("\n");
 	tprint("namespace fmm {\n");
 	tprint("namespace detail {\n");
@@ -3806,7 +3721,7 @@ void math_functions() {
 	deindent();
 	tprint("}\n");
 	tprint("\n");
-	tprint("T sqrt(vec_float x) {\n");
+	tprint("T sqrt(T x) {\n");
 	indent();
 	tprint("return TCAST(1) / rsqrt(x);\n");
 	deindent();
@@ -4101,15 +4016,15 @@ void math_functions() {
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
-	tprint("inline vec_double fma(vec_double a, vec_double b, vec_double c) {\n");
+	tprint("inline vec_double%i fma(vec_double%i a, vec_double%i b, vec_double%i c) {\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	indent();
 	tprint("return a * b + c;\n");
 	deindent();
 	tprint("}\n");
-	tprint("vec_double rsqrt(vec_double);\n");
-	tprint("vec_double sqrt(vec_double);\n");
-	tprint("void sincos(vec_double, vec_double*, vec_double*);\n");
-	tprint("void erfcexp(vec_double, vec_double*, vec_double*);\n");
+	tprint("vec_double%i rsqrt(vec_double%i);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("vec_double%i sqrt(vec_double%i);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("void sincos(vec_double%i, vec_double%i*, vec_double%i*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("void erfcexp(vec_double%i, vec_double%i*, vec_double%i*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	tprint("}\n");
 	tprint("#endif\n");
 	fclose(fp);
@@ -4120,7 +4035,7 @@ void math_functions() {
 	}
 	tprint("\n");
 	tprint("#include \"spherical_fmm.hpp\"\n");
-	tprint("#include \"typecast_vec_double.hpp\"\n");
+	tprint("#include \"typecast_vec_double%i.hpp\"\n", VEC_DOUBLE_SIZE);
 	tprint("\n");
 	tprint("namespace fmm {\n");
 	tprint("namespace detail {\n");
@@ -4295,21 +4210,21 @@ void typecast_functions() {
 	fclose(fp);
 #endif
 #ifdef VEC_FLOAT
-	fp = fopen("./generated_code/include/typecast_vec_float.hpp", "at");
+	fp = fopen((std::string("./generated_code/include/typecast_vec_float") + std::to_string(VEC_FLOAT_SIZE) + ".hpp").c_str(), "at");
 	tprint("#ifndef SPHERICAL_FMM_TYPECAST_VEC_FLOAT\n");
 	tprint("#define SPHERICAL_FMM_TYPECAST_VEC_FLOAT\n");
 	tprint("\n");
-	tprint("#define TCAST(a) (vec_float(float(a)))\n");
-	tprint("#define UCAST(a) (vec_uint32_t(unsigned(a)))\n");
-	tprint("#define VCAST(a) (vec_int32_t(int(a)))\n");
+	tprint("#define TCAST(a) (vec_float%i(float(a)))\n", VEC_FLOAT_SIZE);
+	tprint("#define UCAST(a) (vec_uint32_t%i(unsigned(a)))\n", VEC_FLOAT_SIZE);
+	tprint("#define VCAST(a) (vec_int32_t%i(int(a)))\n", VEC_FLOAT_SIZE);
 	tprint("#define TCONVERT(a) T(a)\n");
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("typedef vec_float T;\n");
-	tprint("typedef vec_uint32_t U;\n");
-	tprint("typedef vec_int32_t V;\n");
+	tprint("typedef vec_float%i T;\n", VEC_FLOAT_SIZE);
+	tprint("typedef vec_uint32_t%i U;\n", VEC_FLOAT_SIZE);
+	tprint("typedef vec_int32_t%i V;\n", VEC_FLOAT_SIZE);
 	tprint("}\n");
 	tprint("\n");
 	tprint("#endif\n");
@@ -4337,21 +4252,21 @@ void typecast_functions() {
 	fclose(fp);
 #endif
 #ifdef VEC_DOUBLE
-	fp = fopen("./generated_code/include/typecast_vec_double.hpp", "at");
+	fp = fopen((std::string("./generated_code/include/typecast_vec_double") + std::to_string(VEC_DOUBLE_SIZE) + ".hpp").c_str(), "at");
 	tprint("#ifndef SPHERICAL_FMM_TYPECAST_VEC_DOUBLE\n");
 	tprint("#define SPHERICAL_FMM_TYPECAST_VEC_DOUBLE\n");
 	tprint("\n");
-	tprint("#define TCAST(a) (vec_double(double(a)))\n");
-	tprint("#define UCAST(a) (vec_uint64_t(uint64_t(a)))\n");
-	tprint("#define VCAST(a) (vec_int64_t(int64_t(a)))\n");
+	tprint("#define TCAST(a) (vec_double%i(double(a)))\n", VEC_DOUBLE_SIZE);
+	tprint("#define UCAST(a) (vec_uint64_t%i(uint64_t(a)))\n", VEC_DOUBLE_SIZE);
+	tprint("#define VCAST(a) (vec_int64_t%i(int64_t(a)))\n", VEC_DOUBLE_SIZE);
 	tprint("#define TCONVERT(a) T(a)\n");
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
 	tprint("namespace fmm {\n");
-	tprint("typedef vec_double T;\n");
-	tprint("typedef vec_uint64_t U;\n");
-	tprint("typedef vec_int64_t V;\n");
+	tprint("typedef vec_double%i T;\n", VEC_DOUBLE_SIZE);
+	tprint("typedef vec_uint64_t%i U;\n", VEC_DOUBLE_SIZE);
+	tprint("typedef vec_int64_t%i V;\n", VEC_DOUBLE_SIZE);
 	tprint("}\n");
 	tprint("\n");
 	tprint("#endif\n");
@@ -4380,6 +4295,7 @@ int main() {
 	tprint("#include <cstdint>\n");
 	tprint("\n");
 	tprint("#define FMM_NOCALC_POT (0x1)\n");
+	tprint("#define FMM_IGNORE_SCALING (0x2)\n");
 	tprint("\n");
 	tprint("namespace fmm {\n");
 	tprint("\n");
@@ -4669,24 +4585,6 @@ int main() {
 	tprint("\n");
 	typecast_functions();
 
-	static int rsqrt_float_flops = 15 - 3 * fmaops;
-	static int rsqrt_double_flops = 15 - 3 * fmaops;
-	static int sqrt_float_flops = 15 - 3 * fmaops + divops;
-	static int sqrt_double_flops = 15 - 3 * fmaops + divops;
-	static int sincos_float_flops = 31 - fmaops * 10;
-	static int sincos_double_flops = 41 - fmaops * 20;
-	static int exp_double_flops = 4 + divops + 17 * (2 - fmaops);
-	static int exp_float_flops = 4 + divops + 7 * (2 - fmaops);
-	static int erfcexp_float_flops = exp_float_flops + 56 - 24 * fmaops;
-	static int erfcexp_double_flops = exp_double_flops + 72 - 35 * fmaops + divops;
-
-	const int rsqrt_flops_array[] = { rsqrt_float_flops, rsqrt_double_flops, rsqrt_float_flops, rsqrt_double_flops, rsqrt_float_flops, rsqrt_double_flops };
-	const int sqrt_flops_array[] = { sqrt_float_flops, sqrt_double_flops, sqrt_float_flops, sqrt_float_flops, sqrt_double_flops, sqrt_float_flops,
-			sqrt_double_flops };
-	const int sincos_flops_array[] =
-			{ sincos_float_flops, sincos_double_flops, sincos_float_flops, sincos_double_flops, sincos_float_flops, sincos_double_flops };
-	const int erfcexp_flops_array[] = { erfcexp_float_flops, erfcexp_double_flops, erfcexp_float_flops, erfcexp_double_flops, erfcexp_float_flops,
-			erfcexp_double_flops };
 	int ntypenames = 0;
 	std::vector<std::string> rtypenames;
 	std::vector<std::string> sitypenames;
@@ -4721,17 +4619,17 @@ int main() {
 	ntypenames++;
 #endif
 #ifdef VEC_FLOAT
-	rtypenames.push_back("vec_float");
-	sitypenames.push_back("vec_int32_t");
-	uitypenames.push_back("vec_uint32_t");
+	rtypenames.push_back(std::string("vec_float") + std::to_string(VEC_FLOAT_SIZE));
+	sitypenames.push_back(std::string("vec_int32_t") + std::to_string(VEC_FLOAT_SIZE));
+	uitypenames.push_back(std::string("vec_uint32_t") + std::to_string(VEC_FLOAT_SIZE));
 	ucuda.push_back(false);
 	ntypenames++;
 #endif
 
 #ifdef VEC_DOUBLE
-	rtypenames.push_back("vec_double");
-	sitypenames.push_back("vec_int64_t");
-	uitypenames.push_back("vec_uint64_t");
+	rtypenames.push_back(std::string("vec_double") + std::to_string(VEC_DOUBLE_SIZE));
+	sitypenames.push_back(std::string("vec_int64_t") + std::to_string(VEC_DOUBLE_SIZE));
+	uitypenames.push_back(std::string("vec_uint64_t") + std::to_string(VEC_DOUBLE_SIZE));
 	ucuda.push_back(false);
 	ntypenames++;
 #endif
@@ -4958,6 +4856,7 @@ int main() {
 			fclose(fp);
 			fp = nullptr;
 			flops0 = count_flops(fname);
+			flops0 += accumulate_flops(P);
 			flops_map[P]["P2L"] = flops0;
 
 			fname = L2P(P);
