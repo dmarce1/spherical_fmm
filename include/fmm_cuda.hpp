@@ -1,6 +1,6 @@
 #pragma once
 
-#include "spherical_fmm.hpp"
+#include "sfmm.hpp"
 
 namespace fmm {
 namespace detail {

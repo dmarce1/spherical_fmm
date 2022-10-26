@@ -7,7 +7,7 @@
 #include <math.h>
 #include <climits>
 #include <functional>
-#include "spherical_fmm.hpp"
+#include "sfmm.hpp"
 #include "timer.hpp"
 
 template<class T>
@@ -15,13 +15,13 @@ using complex = std::complex<T>;
 
 #ifdef TEST_TYPE_VEC_DOUBLE
 #define VECTOR
-using vec_real = fmm::vec_double2;
+using vec_real = sfmm::vec_double2;
 using real = double;
 #define FLAG
 #endif
 #ifdef TEST_TYPE_VEC_FLOAT
 #define VECTOR
-using vec_real = fmm::vec_float8;
+using vec_real = sfmm::vec_float8;
 using real = float;
 #define FLAG
 #endif
@@ -702,7 +702,7 @@ template<int P>
 real test_M2L(test_type type, real theta = 0.5) {
 
 	real err = 0.0;
-	using namespace fmm;
+	using namespace sfmm;
 	int N = 4000;
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_INVALID);
@@ -711,8 +711,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 	real norm = 0.0;
 	long double phi, fx, fy, fz;
 	int flags = 0;
-//	fmm_set_scale_factor_float(1000);
-//	fmm_set_scale_factor_double(1000);
+//	sfmm_set_scale_factor_float(1000);
+//	sfmm_set_scale_factor_double(1000);
 	for (int i = 0; i < N; i++) {
 		if (type == EWALD) {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
@@ -1035,50 +1035,50 @@ int main() {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-/*
-	typedef fmm::vec_float T;
-	typedef fmm::vec_int32_t V ;
-	typedef fmm::vec_uint32_t U ;
+	/*
+	 typedef sfmm::vec_float T;
+	 typedef sfmm::vec_int32_t V ;
+	 typedef sfmm::vec_uint32_t U ;
 
-	T a = float(1);
-	T b = float(0);
-*/
+	 T a = float(1);
+	 T b = float(0);
+	 */
 
-	auto res = test_unary<double>(static_cast<double (*)(double)>(&std::sqrt), static_cast<double(*)(double)>(&fmm::detail::sqrt), 0.0, 10.0);
-	printf("sqrt(double)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	/*	auto res = test_unary<double>(static_cast<double (*)(double)>(&std::sqrt), static_cast<double(*)(double)>(&sfmm::detail::sqrt), 0.0, 10.0);
+	 printf("sqrt(double)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_unary<double>([](double x) {return 1.0/sqrt(x);}, static_cast<double (*)(double)>(&fmm::detail::rsqrt), 0.0, 10.0);
-	printf("rsqrt(double)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_unary<double>([](double x) {return 1.0/sqrt(x);}, static_cast<double (*)(double)>(&sfmm::detail::rsqrt), 0.0, 10.0);
+	 printf("rsqrt(double)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>(&sincos), static_cast<void(*)(double,double*,double*)>(&fmm::detail::sincos), 0.001, 10.0);
-	printf("sincos(double)   %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<double>(static_cast<void (*)(double, double*, double*)>(&sincos), static_cast<void(*)(double,double*,double*)>(&sfmm::detail::sincos), 0.001, 10.0);
+	 printf("sincos(double)   %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>([](double x, double* e1, double* e2) {
-				*e1 = erfc(x);
-				*e2 = exp(-x*x);
-			}), static_cast<void(*)(double,double*,double*)>(&fmm::detail::erfcexp), 0.01, 5.0);
-	printf("erfcexp(double)  %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<double>(static_cast<void (*)(double, double*, double*)>([](double x, double* e1, double* e2) {
+	 *e1 = erfc(x);
+	 *e2 = exp(-x*x);
+	 }), static_cast<void(*)(double,double*,double*)>(&sfmm::detail::erfcexp), 0.01, 5.0);
+	 printf("erfcexp(double)  %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	printf("\n");
-	res = test_unary<float>(static_cast<float (*)(float)>(&std::sqrt), static_cast<float(*)(float)>(&fmm::detail::sqrt), 0.0, 10.0);
-	printf("sqrt(float)       %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 printf("\n");
+	 res = test_unary<float>(static_cast<float (*)(float)>(&std::sqrt), static_cast<float(*)(float)>(&sfmm::detail::sqrt), 0.0, 10.0);
+	 printf("sqrt(float)       %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_unary<float>([](float x) {return 1.0f/sqrtf(x);}, static_cast<float (*)(float)>(&fmm::detail::rsqrt), 0.0, 10.0);
-	printf("rsqrt(float)      %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_unary<float>([](float x) {return 1.0f/sqrtf(x);}, static_cast<float (*)(float)>(&sfmm::detail::rsqrt), 0.0, 10.0);
+	 printf("rsqrt(float)      %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>(&sincosf), static_cast<void(*)(float,float*,float*)>(&fmm::detail::sincos), 0.001, 10.0);
-	printf("sincos(float)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<float>(static_cast<void (*)(float, float*, float*)>(&sincosf), static_cast<void(*)(float,float*,float*)>(&sfmm::detail::sincos), 0.001, 10.0);
+	 printf("sincos(float)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>([](float x, float* e1, float* e2) {
-				*e1 = erfcf(x);
-				*e2 = expf(-x*x);
-			}), static_cast<void(*)(float,float*,float*)>(&fmm::detail::erfcexp), 0.01, 5.0);
-	printf("erfcexp(float)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<float>(static_cast<void (*)(float, float*, float*)>([](float x, float* e1, float* e2) {
+	 *e1 = erfcf(x);
+	 *e2 = expf(-x*x);
+	 }), static_cast<void(*)(float,float*,float*)>(&sfmm::detail::erfcexp), 0.01, 5.0);
+	 printf("erfcexp(float)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	printf("\n");
-
-	run_tests<FMM_PMAX+1, FMM_PMIN> run;
-	real theta = 0.5;
+	 printf("\n");
+	 */
+	run_tests<SFMM_PMAX + 1, SFMM_PMIN> run;
+	real theta = 0.25;
 	printf("M2L\n");
 	run(CC, theta);
 	printf("M2P\n");

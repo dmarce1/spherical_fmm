@@ -81,8 +81,8 @@ static int tprint_on = true;
 static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
-static int pmin = FMM_PMIN;
-static int pmax = FMM_PMAX;
+static int pmin = SFMM_PMIN;
+static int pmax = SFMM_PMAX;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -907,7 +907,7 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		func_name += ")";
 		func_name2 += ")";
 	}
-	set_file("./generated_code/include/spherical_fmm.hpp");
+	set_file("./generated_code/include/sfmm.hpp");
 	static std::set<std::string> already_printed;
 	if (already_printed.find(func_name) == already_printed.end()) {
 		already_printed.insert(func_name);
@@ -944,10 +944,10 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 //		printf("%s ", file_name.c_str());
 	set_file(file_name);
 	tprint("#include <stdio.h>\n");
-	tprint("#include \"spherical_fmm.hpp\"\n");
+	tprint("#include \"sfmm.hpp\"\n");
 	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	if (!pub) {
 		tprint("namespace detail {\n");
 	}
@@ -959,10 +959,10 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 	tprint("%s {\n", func_name2.c_str());
 	indent();
 	if (flags && calcpot) {
-		tprint("const bool calcpot = !(flags & FMM_NOCALC_POT);\n");
+		tprint("const bool calcpot = !(flags & SFMM_NOCALC_POT);\n");
 	}
 	if (flags && scale) {
-		tprint("const bool scaling = !(flags & FMM_IGNORE_SCALING);\n");
+		tprint("const bool scaling = !(flags & SFMM_IGNORE_SCALING);\n");
 	}
 	func_args_cover(P, std::forward<Args>(args)..., 0);
 	return file_name;
@@ -3501,7 +3501,7 @@ void math_functions() {
 	if (fp) {
 		fclose(fp);
 	}
-	fp = fopen("./generated_code/include/spherical_fmm.hpp", "at");
+	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 
 	tprint("#ifndef __CUDACC__\n");
@@ -3514,7 +3514,7 @@ void math_functions() {
 	const char* sout = "*s";
 	const char* cout = "*c";
 #ifdef FLOAT
-	fp = fopen("./generated_code/include/spherical_fmm.hpp", "at");
+	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 	tprint("namespace detail {\n");
 	tprint("CUDA_EXPORT inline float fma(float a, float b, float c) {\n");
@@ -3538,7 +3538,7 @@ void math_functions() {
 		tprint("#include \"typecast_float.hpp\"\n");
 		tprint("#include <math.h>\n");
 		tprint("\n");
-		tprint("namespace fmm {\n");
+		tprint("namespace sfmm {\n");
 		tprint("namespace detail {\n");
 		tprint("\n");
 		if (cuda) {
@@ -3676,7 +3676,7 @@ void math_functions() {
 #endif
 
 #ifdef VEC_FLOAT
-	fp = fopen("./generated_code/include/spherical_fmm.hpp", "at");
+	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
@@ -3698,10 +3698,10 @@ void math_functions() {
 		fp = fopen("./generated_code/src/math/math_vec_float.cpp", "at");
 	}
 	tprint("\n");
-	tprint("#include \"spherical_fmm.hpp\"\n");
+	tprint("#include \"sfmm.hpp\"\n");
 	tprint("#include \"typecast_vec_float%i.hpp\"\n", VEC_FLOAT_SIZE);
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("namespace detail {\n");
 	tprint("\n");
 	tprint("T rsqrt(T x) {\n");
@@ -3822,7 +3822,7 @@ void math_functions() {
 #endif
 
 #ifdef DOUBLE
-	fp = fopen("./generated_code/include/spherical_fmm.hpp", "at");
+	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 	tprint("namespace detail {\n");
 	tprint("CUDA_EXPORT inline double fma(double a, double b, double c) {\n");
@@ -3848,7 +3848,7 @@ void math_functions() {
 		tprint("#include <math.h>\n");
 		tprint("#include \"typecast_double.hpp\"\n");
 		tprint("\n");
-		tprint("namespace fmm {\n");
+		tprint("namespace sfmm {\n");
 		tprint("namespace detail {\n");
 		tprint("\n");
 		if (cuda) {
@@ -4012,7 +4012,7 @@ void math_functions() {
 	}
 #endif
 #ifdef VEC_DOUBLE
-	fp = fopen("./generated_code/include/spherical_fmm.hpp", "at");
+	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
@@ -4034,10 +4034,10 @@ void math_functions() {
 		fp = fopen("./generated_code/src/math/math_vec_double.cpp", "at");
 	}
 	tprint("\n");
-	tprint("#include \"spherical_fmm.hpp\"\n");
+	tprint("#include \"sfmm.hpp\"\n");
 	tprint("#include \"typecast_vec_double%i.hpp\"\n", VEC_DOUBLE_SIZE);
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("namespace detail {\n");
 	tprint("\n");
 	tprint("T rsqrt(T x) {\n");
@@ -4190,8 +4190,7 @@ void typecast_functions() {
 	}
 #ifdef FLOAT
 	fp = fopen("./generated_code/include/typecast_float.hpp", "at");
-	tprint("#ifndef SPHERICAL_FMM_TYPECAST_FLOAT\n");
-	tprint("#define SPHERICAL_FMM_TYPECAST_FLOAT\n");
+	tprint("#pragma once\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((float)(a))\n");
 	tprint("#define UCAST(a) ((unsigned)(a))\n");
@@ -4200,19 +4199,17 @@ void typecast_functions() {
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("typedef float T;\n");
 	tprint("typedef unsigned U;\n");
 	tprint("typedef int V;\n");
 	tprint("}\n");
 	tprint("\n");
-	tprint("#endif\n");
 	fclose(fp);
 #endif
 #ifdef VEC_FLOAT
 	fp = fopen((std::string("./generated_code/include/typecast_vec_float") + std::to_string(VEC_FLOAT_SIZE) + ".hpp").c_str(), "at");
-	tprint("#ifndef SPHERICAL_FMM_TYPECAST_VEC_FLOAT\n");
-	tprint("#define SPHERICAL_FMM_TYPECAST_VEC_FLOAT\n");
+	tprint("#pragma once\n");
 	tprint("\n");
 	tprint("#define TCAST(a) (vec_float%i(float(a)))\n", VEC_FLOAT_SIZE);
 	tprint("#define UCAST(a) (vec_uint32_t%i(unsigned(a)))\n", VEC_FLOAT_SIZE);
@@ -4221,19 +4218,17 @@ void typecast_functions() {
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("typedef vec_float%i T;\n", VEC_FLOAT_SIZE);
 	tprint("typedef vec_uint32_t%i U;\n", VEC_FLOAT_SIZE);
 	tprint("typedef vec_int32_t%i V;\n", VEC_FLOAT_SIZE);
 	tprint("}\n");
 	tprint("\n");
-	tprint("#endif\n");
 	fclose(fp);
 #endif
 #ifdef DOUBLE
 	fp = fopen("./generated_code/include/typecast_double.hpp", "at");
-	tprint("#ifndef SPHERICAL_FMM_TYPECAST_DOUBLE\n");
-	tprint("#define SPHERICAL_FMM_TYPECAST_DOUBLE\n");
+	tprint("#pragma once\n");
 	tprint("\n");
 	tprint("#define TCAST(a) ((double)(a))\n");
 	tprint("#define UCAST(a) ((unsigned long long)(a))\n");
@@ -4242,19 +4237,17 @@ void typecast_functions() {
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("typedef double T;\n");
 	tprint("typedef unsigned long long U;\n");
 	tprint("typedef long long V;\n");
 	tprint("}\n");
 	tprint("\n");
-	tprint("#endif\n");
 	fclose(fp);
 #endif
 #ifdef VEC_DOUBLE
 	fp = fopen((std::string("./generated_code/include/typecast_vec_double") + std::to_string(VEC_DOUBLE_SIZE) + ".hpp").c_str(), "at");
-	tprint("#ifndef SPHERICAL_FMM_TYPECAST_VEC_DOUBLE\n");
-	tprint("#define SPHERICAL_FMM_TYPECAST_VEC_DOUBLE\n");
+	tprint("#pragma once\n");
 	tprint("\n");
 	tprint("#define TCAST(a) (vec_double%i(double(a)))\n", VEC_DOUBLE_SIZE);
 	tprint("#define UCAST(a) (vec_uint64_t%i(uint64_t(a)))\n", VEC_DOUBLE_SIZE);
@@ -4263,13 +4256,12 @@ void typecast_functions() {
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("typedef vec_double%i T;\n", VEC_DOUBLE_SIZE);
 	tprint("typedef vec_uint64_t%i U;\n", VEC_DOUBLE_SIZE);
 	tprint("typedef vec_int64_t%i V;\n", VEC_DOUBLE_SIZE);
 	tprint("}\n");
 	tprint("\n");
-	tprint("#endif\n");
 	fclose(fp);
 #endif
 	fp = nullptr;
@@ -4281,7 +4273,7 @@ int main() {
 	SYSTEM("mkdir ./generated_code/src\n");
 	SYSTEM("mkdir ./generated_code/src/math\n");
 	tprint("\n");
-	set_file("./generated_code/include/spherical_fmm.hpp");
+	set_file("./generated_code/include/sfmm.hpp");
 	tprint("#pragma once\n");
 	tprint("\n");
 	tprint("#ifdef __CUDA_ARCH__\n");
@@ -4294,10 +4286,10 @@ int main() {
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("\n");
-	tprint("#define FMM_NOCALC_POT (0x1)\n");
-	tprint("#define FMM_IGNORE_SCALING (0x2)\n");
+	tprint("#define SFMM_NOCALC_POT (0x1)\n");
+	tprint("#define SFMM_IGNORE_SCALING (0x2)\n");
 	tprint("\n");
-	tprint("namespace fmm {\n");
+	tprint("namespace sfmm {\n");
 	tprint("\n");
 	tprint("template<class T>\n");
 	tprint("struct force_type {\n");
@@ -4581,7 +4573,7 @@ int main() {
 	}
 	tprint("\n");
 	math_functions();
-	set_file("./generated_code/include/spherical_fmm.hpp");
+	set_file("./generated_code/include/sfmm.hpp");
 	tprint("\n");
 	typecast_functions();
 
@@ -4642,7 +4634,7 @@ int main() {
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
 		if (is_vec(type)) {
-			set_file("./generated_code/include/spherical_fmm.hpp");
+			set_file("./generated_code/include/sfmm.hpp");
 			tprint("#ifndef __CUDACC__\n");
 		}
 		std::vector<std::unordered_map<std::string, flops_t>> flops_map(pmax + 1);
@@ -4910,14 +4902,14 @@ int main() {
 		}
 
 		if (is_vec(type)) {
-			set_file("./generated_code/include/spherical_fmm.hpp");
+			set_file("./generated_code/include/sfmm.hpp");
 			tprint("#endif\n");
 		}
 
 	}
-//	printf("./generated_code/include/spherical_fmm.h");
+//	printf("./generated_code/include/sfmm.h");
 	fflush(stdout);
-	set_file("./generated_code/include/spherical_fmm.hpp");
+	set_file("./generated_code/include/sfmm.hpp");
 	tprint("namespace detail {\n");
 	tprint("%s", detail_header.c_str());
 	tprint("#ifndef __CUDACC__\n");
