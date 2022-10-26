@@ -70,6 +70,8 @@ static int tprint_on = true;
 
 #define FLOAT
 #define DOUBLE
+#define CUDA_FLOAT
+#define CUDA_DOUBLE
 #define VEC_DOUBLE
 #define VEC_FLOAT
 #define VEC_DOUBLE_SIZE 2
@@ -91,183 +93,188 @@ static const char* prefix = "";
 static std::string detail_header;
 static std::string detail_header_vec;
 static std::vector<std::string> lines[2];
+static std::string vf = std::string( "v") + std::to_string(VEC_FLOAT_SIZE) + "sf";
+static std::string vd = std::string( "v") + std::to_string(VEC_DOUBLE_SIZE) + "df";
+static std::string vsi32 = std::string( "v") + std::to_string(VEC_FLOAT_SIZE) + "si32";
+static std::string vsi64 = std::string( "v") + std::to_string(VEC_DOUBLE_SIZE) + "si64";
+static std::string vui32 = std::string( "v") + std::to_string(VEC_FLOAT_SIZE) + "ui32";
+static std::string vui64 = std::string( "v") + std::to_string(VEC_DOUBLE_SIZE) + "ui64";
 
 static std::string vec_header() {
-	std::string str = ""
-			"\n"
-			"#define create_binary_op(type, op) \\\n"
-			"		inline type operator op (const type& u ) const { \\\n"
-			"			type w; \\\n"
-			"			w.v = v op u.v; \\\n"
-			"			return w; \\\n"
-			"		} \\\n"
-			"		inline type& operator op##= (const type& u ) { \\\n"
-			"			*this = *this op u; \\\n"
-			"			return *this; \\\n"
-			"		}\n"
-			"\n"
-			"#define create_unary_op(type, op) \\\n"
-			"		inline type operator op () const { \\\n"
-			"			type w; \\\n"
-			"			w.v = op v; \\\n"
-			"			return w; \\\n"
-			"		}\n"
-			"\n"
-			"#define create_convert_op_prot(type,otype,size) \\\n"
-			"		inline vec_##type##size(const vec_##otype##size&); \\\n"
-			"		inline vec_##type##size& operator=(const vec_##otype##size&); \\\n"
-			"		inline vec_##type##size& operator=(const otype&)\n"
-			"\n"
-			"#define create_convert_op_def(type,otype,size) \\\n"
-			"	inline vec_##type##size::vec_##type##size(const vec_##otype##size& other) { \\\n"
-			"		v = __builtin_convertvector(other.v, vtype); \\\n"
-			"	} \\\n"
-			"	inline vec_##type##size& vec_##type##size::operator=(const vec_##otype##size& other) { \\\n"
-			"		v = __builtin_convertvector(other.v, vtype); \\\n"
-			"		return *this; \\\n"
-			"	}\n"
-			"\n"
-			"#define create_broadcast_op(type,size) \\\n"
-			"	inline vec_##type##size(const type& other) { \\\n"
-			"		v = other - vtype{}; \\\n"
-			"	} \\\n"
-			"	inline vec_##type##size& operator=(const type& other) { \\\n"
-			"		v = other - vtype{}; \\\n"
-			"		return *this; \\\n"
-			"	}\n"
-			"\n"
-			"#define create_compare_op_prot(type,sitype,  op,size) \\\n"
-			"	inline vec_##sitype##size operator op (const vec_##type##size&) const\n"
-			"\n"
-			"#define create_compare_op_def(type,sitype,  op,size) \\\n"
-			"	inline vec_##sitype##size vec_##type##size::operator op (const vec_##type##size& other) const { \\\n"
-			"		vec_##sitype##size w; \\\n"
-			"		w.v = (-(v op other.v)); \\\n"
-			"		return w; \\\n"
-			"	}\n"
-			"\n"
-			"#define create_vec_types_fwd(type,size)              \\\n"
-			"	class vec_##type##size\n"
-			"\n"
-			"#define create_rvec_types(type, sitype, uitype, size)              \\\n"
-			"	class vec_##type##size {                                           \\\n"
-			"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
-			"		vtype v;  \\\n"
-			"	public: \\\n"
-			"	inline constexpr vec_##type##size() : v() {} \\\n"
-			"	inline type operator[](int i) const {  \\\n"
-			"		return v[i]; \\\n"
-			"	}\\\n"
-			"	inline type& operator[](int i) {  \\\n"
-			"		return v[i]; \\\n"
-			"	}\\\n"
-			"	create_binary_op(vec_##type##size, +); \\\n"
-			"	create_binary_op(vec_##type##size, -); \\\n"
-			"	create_binary_op(vec_##type##size, *); \\\n"
-			"	create_binary_op(vec_##type##size, /); \\\n"
-			"	create_unary_op(vec_##type##size, +); \\\n"
-			"	create_unary_op(vec_##type##size, -); \\\n"
-			"	create_convert_op_prot(type, sitype, size); \\\n"
-			"	create_convert_op_prot(type, uitype, size); \\\n"
-			"	create_broadcast_op(type, size); \\\n"
-			"	create_compare_op_prot(type, sitype, <, size); \\\n"
-			"	create_compare_op_prot(type, sitype, >, size); \\\n"
-			"	create_compare_op_prot(type, sitype, <=, size); \\\n"
-			"	create_compare_op_prot(type, sitype, >=, size); \\\n"
-			"	create_compare_op_prot(type, sitype, ==, size); \\\n"
-			"	create_compare_op_prot(type, sitype, !=, size); \\\n"
-			"	friend class vec_##sitype##size; \\\n"
-			"	friend class vec_##uitype##size; \\\n"
-			"}\n"
-			"\n"
-			"#define create_ivec_types(type, otype, rtype, sitype, size)              \\\n"
-			"	class vec_##type##size {                                           \\\n"
-			"		typedef type vtype __attribute__ ((vector_size(size*sizeof(type))));  \\\n"
-			"		vtype v;  \\\n"
-			"	public: \\\n"
-			"	inline constexpr vec_##type##size() : v() {} \\\n"
-			"	inline type operator[](int i) const {  \\\n"
-			"		return v[i]; \\\n"
-			"	}\\\n"
-			"	inline type& operator[](int i) {  \\\n"
-			"		return v[i]; \\\n"
-			"	}\\\n"
-			"	create_binary_op(vec_##type##size, +); \\\n"
-			"	create_binary_op(vec_##type##size, -); \\\n"
-			"	create_binary_op(vec_##type##size, *); \\\n"
-			"	create_binary_op(vec_##type##size, /); \\\n"
-			"	create_binary_op(vec_##type##size, &); \\\n"
-			"	create_binary_op(vec_##type##size, ^); \\\n"
-			"	create_binary_op(vec_##type##size, |); \\\n"
-			"	create_binary_op(vec_##type##size, >>); \\\n"
-			"	create_binary_op(vec_##type##size, <<); \\\n"
-			"	create_unary_op(vec_##type##size, +); \\\n"
-			"	create_unary_op(vec_##type##size, -); \\\n"
-			"	create_unary_op(vec_##type##size, ~); \\\n"
-			"	create_broadcast_op(type, size); \\\n"
-			"	create_convert_op_prot(type, rtype, size); \\\n"
-			"	create_convert_op_prot(type, otype, size); \\\n"
-			"	create_compare_op_prot(type,sitype,  <, size); \\\n"
-			"	create_compare_op_prot(type,sitype,  >, size); \\\n"
-			"	create_compare_op_prot(type, sitype, <=, size); \\\n"
-			"	create_compare_op_prot(type,sitype,  >=, size); \\\n"
-			"	create_compare_op_prot(type, sitype,  ==, size); \\\n"
-			"	create_compare_op_prot(type, sitype,  !=, size); \\\n"
-			"	friend class vec_##rtype##size; \\\n"
-			"	friend class vec_##otype##size; \\\n"
-			"}\n"
-			"\n"
-			"#define create_rvec_types_def(type, sitype, uitype, size)\\\n"
-			"	create_convert_op_def(type, sitype, size); \\\n"
-			"	create_convert_op_def(type, uitype, size)\n"
-			"\n"
-			"#define create_ivec_types_def(type, otype, rtype, size)              \\\n"
-			"	create_convert_op_def(type, rtype, size); \\\n"
-			"	create_convert_op_def(type, otype, size)\n"
-			"\n"
-			"#define create_vec_types(rtype, sitype, uitype, size) \\\n"
-			"	create_vec_types_fwd(rtype, size); \\\n"
-			"	create_vec_types_fwd(uitype, size); \\\n"
-			"	create_vec_types_fwd(sitype, size); \\\n"
-			"	create_rvec_types(rtype, sitype, uitype, size); \\\n"
-			"	create_ivec_types(uitype, sitype, rtype, sitype, size); \\\n"
-			"	create_ivec_types(sitype, uitype, rtype, sitype, size); \\\n"
-			"	create_rvec_types_def(rtype, sitype, uitype, size); \\\n"
-			"	create_ivec_types_def(uitype, sitype, rtype, size); \\\n"
-			"	create_ivec_types_def(sitype, uitype, rtype, size); \\\n"
-			"	create_compare_op_def(rtype, sitype, <, size); \\\n"
-			"	create_compare_op_def(rtype,sitype,  >, size); \\\n"
-			"	create_compare_op_def(rtype, sitype, <=, size); \\\n"
-			"	create_compare_op_def(rtype, sitype, >=, size); \\\n"
-			"	create_compare_op_def(rtype,sitype,  ==, size); \\\n"
-			"	create_compare_op_def(rtype, sitype, !=, size); \\\n"
-			"	create_compare_op_def(uitype,sitype,  <, size); \\\n"
-			"	create_compare_op_def(uitype, sitype, >, size); \\\n"
-			"	create_compare_op_def(uitype, sitype, <=, size); \\\n"
-			"	create_compare_op_def(uitype, sitype, >=, size); \\\n"
-			"	create_compare_op_def(uitype, sitype, ==, size); \\\n"
-			"	create_compare_op_def(uitype, sitype, !=, size); \\\n"
-			"	create_compare_op_def(sitype, sitype, <, size); \\\n"
-			"	create_compare_op_def(sitype,sitype,  >, size); \\\n"
-			"	create_compare_op_def(sitype,sitype,  <=, size); \\\n"
-			"	create_compare_op_def(sitype, sitype, >=, size); \\\n"
-			"	create_compare_op_def(sitype, sitype, ==, size); \\\n"
-			"	create_compare_op_def(sitype, sitype, !=, size) \n";
+	std::string str = "\n";
+	str += "#define create_binary_op(vtype, type, op) \\\n";
+	str += "   inline vtype operator op (const vtype& u ) const { \\\n";
+	str += "      vtype w; \\\n";
+	str += "      w.v = v op u.v; \\\n";
+	str += "		  return w; \\\n";
+	str += "   } \\\n";
+	str += "	  inline vtype& operator op##= (const vtype& u ) { \\\n";
+	str += "       *this = *this op u; \\\n";
+	str += "	      return *this; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_unary_op(vtype, type, op) \\\n";
+	str += "   inline vtype operator op () const { \\\n";
+	str += "      vtype w; \\\n";
+	str += "      w.v = op v; \\\n";
+	str += "      return w; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_convert_op_prot(vtype,type,ovtype,otype) \\\n";
+	str += "   inline vtype(const ovtype&); \\\n";
+	str += "   inline vtype& operator=(const ovtype&); \\\n";
+	str += "   inline vtype& operator=(const otype&)\n";
+	str += "\n";
+	str += "#define create_convert_op_def(vtype,type,ovtype,otype) \\\n";
+	str += "   inline vtype::vtype(const ovtype& other) { \\\n";
+	str += "	     v = __builtin_convertvector(other.v, simd_t); \\\n";
+	str += "   } \\\n";
+	str += "   inline vtype& vtype::operator=(const ovtype& other) { \\\n";
+	str += "	     v = __builtin_convertvector(other.v, simd_t); \\\n";
+	str += "	     return *this; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_broadcast_op(vtype,type) \\\n";
+	str += "   inline vtype(const type& other) { \\\n";
+	str += "	     v = other - simd_t{}; \\\n";
+	str += "   } \\\n";
+	str += "   inline vtype& operator=(const type& other) { \\\n";
+	str += "	     v = other - simd_t{}; \\\n";
+	str += "	     return *this; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_compare_op_prot(vtype,vstype,stype,op) \\\n";
+	str += "   inline vstype operator op (const vtype&) const\n";
+	str += "\n";
+	str += "#define create_compare_op_def(vtype,vstype,sitype,op) \\\n";
+	str += "   inline vstype vtype::operator op (const vtype& other) const { \\\n";
+	str += "	     vstype w; \\\n";
+	str += "      w.v = (-(v op other.v)); \\\n";
+	str += "      return w; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_vec_types_fwd(vtype)              \\\n";
+	str += "class vtype\n";
+	str += "\n";
+	str += "#define create_rvec_types(vtype, type, vstype, stype, vutype, utype, size)              \\\n";
+	str += "   class vtype {                                           \\\n";
+	str += "      typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \\\n";
+	str += "      simd_t v;  \\\n";
+	str += "   public: \\\n";
+	str += "      inline constexpr vtype() : v() {} \\\n";
+	str += "      inline type operator[](int i) const {  \\\n";
+	str += "         return v[i]; \\\n";
+	str += "      }\\\n";
+	str += "	     inline type& operator[](int i) {  \\\n";
+	str += "		     return v[i]; \\\n";
+	str += "	     }\\\n";
+	str += "      create_binary_op(vtype, type, +); \\\n";
+	str += "      create_binary_op(vtype, type, -); \\\n";
+	str += "      create_binary_op(vtype, type, *); \\\n";
+	str += "      create_binary_op(vtype, type, /); \\\n";
+	str += "      create_unary_op(vtype, type, +); \\\n";
+	str += "      create_unary_op(vtype, type, -); \\\n";
+	str += "      create_convert_op_prot(vtype,type,vstype,stype); \\\n";
+	str += "      create_convert_op_prot(vtype,type,vutype,utype); \\\n";
+	str += "      create_broadcast_op(vtype,type); \\\n";
+	str += "      create_compare_op_prot(vtype, vstype, stype, <); \\\n";
+	str += "      create_compare_op_prot(vtype, vstype, stype, >); \\\n";
+	str += "      create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
+	str += "      create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
+	str += "      create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
+	str += "      create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
+	str += "      friend class vstype; \\\n";
+	str += "      friend class vutype; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_ivec_types(vtype, type, votype, otype, vrtype, rtype, vstype, stype, size)              \\\n";
+	str += "   class vtype {                                           \\\n";
+	str += "      typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \\\n";
+	str += "      simd_t v;  \\\n";
+	str += "   public: \\\n";
+	str += "      inline constexpr vtype() : v() {} \\\n";
+	str += "      inline type operator[](int i) const {  \\\n";
+	str += "         return v[i]; \\\n";
+	str += "      }\\\n";
+	str += "      inline type& operator[](int i) {  \\\n";
+	str += "         return v[i]; \\\n";
+	str += "      }\\\n";
+	str += "      create_binary_op(vtype, type, +); \\\n";
+	str += "      create_binary_op(vtype, type, -); \\\n";
+	str += "      create_binary_op(vtype, type, *); \\\n";
+	str += "      create_binary_op(vtype, type, /); \\\n";
+	str += "      create_binary_op(vtype, type, &); \\\n";
+	str += "      create_binary_op(vtype, type, ^); \\\n";
+	str += "      create_binary_op(vtype, type, |); \\\n";
+	str += "      create_binary_op(vtype, type, >>); \\\n";
+	str += "      create_binary_op(vtype, type, <<); \\\n";
+	str += "      create_unary_op(vtype, type, +); \\\n";
+	str += "      create_unary_op(vtype, type, -); \\\n";
+	str += "      create_unary_op(vtype, type, ~); \\\n";
+	str += "      create_broadcast_op(vtype,type); \\\n";
+	str += "      create_convert_op_prot(vtype,type,vrtype,rtype); \\\n";
+	str += "      create_convert_op_prot(vtype,type,votype,otype); \\\n";
+	str += "      create_compare_op_prot(vtype,vstype,stype,<); \\\n";
+	str += "      create_compare_op_prot(vtype,vstype,stype,>); \\\n";
+	str += "      create_compare_op_prot(vtype,vstype,stype,<=); \\\n";
+	str += "      create_compare_op_prot(vtype,vstype,stype,>=); \\\n";
+	str += "      create_compare_op_prot(vtype,vstype,stype,==); \\\n";
+	str += "      create_compare_op_prot(vtype,vstype,stype,!=); \\\n";
+	str += "      friend class vrtype; \\\n";
+	str += "      friend class votype; \\\n";
+	str += "   }\n";
+	str += "\n";
+	str += "#define create_rvec_types_def(vtype, type, vstype, stype, vutype, utype, size)\\\n";
+	str += "   create_convert_op_def(vtype, type, vstype, stype); \\\n";
+	str += "   create_convert_op_def(vtype, type, vutype, utype)\n";
+	str += "\n";
+	str += "#define create_ivec_types_def(vtype, type, votype, otype, vrtype, rtype, size)              \\\n";
+	str += "   create_convert_op_def(vtype,type,vrtype,rtype); \\\n";
+	str += "   create_convert_op_def(vtype,type,votype,otype)\n";
+	str += "\n";
+	str += "#define create_vec_types(vrtype,rtype,vstype,stype,vutype,utype,size) \\\n";
+	str += "   create_vec_types_fwd(vrtype); \\\n";
+	str += "   create_vec_types_fwd(vutype); \\\n";
+	str += "   create_vec_types_fwd(vstype); \\\n";
+	str += "   create_rvec_types(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
+	str += "   create_ivec_types(vutype,utype,vstype,stype,vrtype,rtype,vstype,stype,size); \\\n";
+	str += "   create_ivec_types(vstype,stype,vutype,utype,vrtype,rtype,vstype,stype,size); \\\n";
+	str += "   create_rvec_types_def(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
+	str += "   create_ivec_types_def(vutype,utype,vstype,stype,vrtype,rtype, size); \\\n";
+	str += "   create_ivec_types_def(vstype,stype,vutype,utype,vrtype,rtype, size); \\\n";
+	str += "   create_compare_op_def(vrtype,vstype,stype,<); \\\n";
+	str += "   create_compare_op_def(vrtype,vstype,stype,>); \\\n";
+	str += "   create_compare_op_def(vrtype,vstype,stype,<=); \\\n";
+	str += "   create_compare_op_def(vrtype,vstype,stype,>=); \\\n";
+	str += "   create_compare_op_def(vrtype,vstype,stype,==); \\\n";
+	str += "   create_compare_op_def(vrtype,vstype,stype,!=); \\\n";
+	str += "   create_compare_op_def(vutype,vstype,stype,<); \\\n";
+	str += "   create_compare_op_def(vutype,vstype,stype,>); \\\n";
+	str += "   create_compare_op_def(vutype,vstype,stype,<=); \\\n";
+	str += "   create_compare_op_def(vutype,vstype,stype,>=); \\\n";
+	str += "   create_compare_op_def(vutype,vstype,stype,==); \\\n";
+	str += "   create_compare_op_def(vutype,vstype,stype,!=); \\\n";
+	str += "   create_compare_op_def(vstype,vstype,stype,<); \\\n";
+	str += "   create_compare_op_def(vstype,vstype,stype,>); \\\n";
+	str += "   create_compare_op_def(vstype,vstype,stype,<=); \\\n";
+	str += "   create_compare_op_def(vstype,vstype,stype,>=); \\\n";
+	str += "   create_compare_op_def(vstype,vstype,stype,==); \\\n";
+	str += "   create_compare_op_def(vstype,vstype,stype,!=)\n";
 	str += "\n";
 	char* b;
 #ifdef VEC_DOUBLE
-	ASPRINTF(&b, "create_vec_types(double, int64_t, uint64_t, %i);\n", VEC_DOUBLE_SIZE);
+	ASPRINTF(&b, "create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
 #endif
 #ifdef VEC_FLOAT
-	ASPRINTF(&b,"create_vec_types(float, int32_t, uint32_t, %i);\n", VEC_FLOAT_SIZE);
+	ASPRINTF(&b, "create_vec_types(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
 #endif
 	str += "\n";
 #ifdef VEC_FLOAT
-	ASPRINTF(&b, "inline float sum(vec_float%i v) {\n", VEC_FLOAT_SIZE);
+	ASPRINTF(&b, "inline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
 	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
@@ -279,10 +286,10 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	for (int sz = VEC_FLOAT_SIZE / 2; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2*sz);
+		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
 		str += b;
 		free(b);
-		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2*sz);
+		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
 		str += b;
 		free(b);
 		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
@@ -297,7 +304,7 @@ static std::string vec_header() {
 
 #ifdef VEC_DOUBLE
 	str += "\n";
-	ASPRINTF(&b, "inline double sum(vec_double%i v) {\n", VEC_DOUBLE_SIZE);
+	ASPRINTF(&b, "inline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
 	for (int sz = VEC_DOUBLE_SIZE; sz > 1; sz /= 2) {
@@ -309,10 +316,10 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	for (int sz = VEC_DOUBLE_SIZE / 2; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2*sz);
+		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
 		str += b;
 		free(b);
-		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2*sz);
+		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
 		str += b;
 		free(b);
 		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
@@ -331,15 +338,15 @@ static std::string vec_header() {
 static int cuda = 0;
 
 static bool is_float(std::string str) {
-	return str == "float" || str == (std::string("vec_float") + std::to_string(VEC_FLOAT_SIZE));
+	return str == "float" || str == vf;
 }
 
 static bool is_double(std::string str) {
-	return str == "double" || str == (std::string("vec_double") + std::to_string(VEC_DOUBLE_SIZE));
+	return str == "double" || str == vd;
 }
 
 static bool is_vec(std::string str) {
-	return str == (std::string("vec_float") + std::to_string(VEC_FLOAT_SIZE)) || str == (std::string("vec_double") + std::to_string(VEC_DOUBLE_SIZE));
+	return str == vf || str == vd;
 }
 
 const double ewald_r2 = (2.6 + 0.5 * sqrt(3));
@@ -3513,7 +3520,7 @@ void math_functions() {
 	fclose(fp);
 	const char* sout = "*s";
 	const char* cout = "*c";
-#ifdef FLOAT
+#if defined(FLOAT) || defined(CUDA_FLOAT)
 	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 	tprint("namespace detail {\n");
@@ -3680,15 +3687,15 @@ void math_functions() {
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
-	tprint("inline vec_float%i fma(vec_float%i a, vec_float%i b, vec_float%i c) {\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("inline v%isf fma(v%isf a, v%isf b, v%isf c) {\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	indent();
 	tprint("return a * b + c;\n");
 	deindent();
 	tprint("}\n");
-	tprint("vec_float%i rsqrt(vec_float%i);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
-	tprint("vec_float%i sqrt(vec_float%i);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
-	tprint("void sincos(vec_float%i, vec_float%i*, vec_float%i*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
-	tprint("void erfcexp(vec_float%i, vec_float%i*, vec_float%i*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("v%isf rsqrt(v%isf);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("v%isf sqrt(v%isf);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("void sincos(v%isf, v%isf*, v%isf*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	tprint("void erfcexp(v%isf, v%isf*, v%isf*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	tprint("}\n");
 	tprint("#endif\n");
 	fclose(fp);
@@ -3699,7 +3706,7 @@ void math_functions() {
 	}
 	tprint("\n");
 	tprint("#include \"sfmm.hpp\"\n");
-	tprint("#include \"typecast_vec_float%i.hpp\"\n", VEC_FLOAT_SIZE);
+	tprint("#include \"typecast_v%isf.hpp\"\n", VEC_FLOAT_SIZE);
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("namespace detail {\n");
@@ -3821,7 +3828,7 @@ void math_functions() {
 	fclose(fp);
 #endif
 
-#ifdef DOUBLE
+#if defined(DOUBLE) || defined(CUDA_DOUBLE)
 	fp = fopen("./generated_code/include/sfmm.hpp", "at");
 	tprint("\n");
 	tprint("namespace detail {\n");
@@ -4016,15 +4023,15 @@ void math_functions() {
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
-	tprint("inline vec_double%i fma(vec_double%i a, vec_double%i b, vec_double%i c) {\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("inline v%idf fma(v%idf a, v%idf b, v%idf c) {\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	indent();
 	tprint("return a * b + c;\n");
 	deindent();
 	tprint("}\n");
-	tprint("vec_double%i rsqrt(vec_double%i);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
-	tprint("vec_double%i sqrt(vec_double%i);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
-	tprint("void sincos(vec_double%i, vec_double%i*, vec_double%i*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
-	tprint("void erfcexp(vec_double%i, vec_double%i*, vec_double%i*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("v%idf rsqrt(v%idf);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("v%idf sqrt(v%idf);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("void sincos(v%idf, v%idf*, v%idf*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	tprint("void erfcexp(v%idf, v%idf*, v%idf*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	tprint("}\n");
 	tprint("#endif\n");
 	fclose(fp);
@@ -4035,7 +4042,7 @@ void math_functions() {
 	}
 	tprint("\n");
 	tprint("#include \"sfmm.hpp\"\n");
-	tprint("#include \"typecast_vec_double%i.hpp\"\n", VEC_DOUBLE_SIZE);
+	tprint("#include \"typecast_v%idf.hpp\"\n", VEC_DOUBLE_SIZE);
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("namespace detail {\n");
@@ -4188,7 +4195,7 @@ void typecast_functions() {
 	if (fp) {
 		fclose(fp);
 	}
-#ifdef FLOAT
+#if defined(FLOAT) || defined(CUDA_FLOAT)
 	fp = fopen("./generated_code/include/typecast_float.hpp", "at");
 	tprint("#pragma once\n");
 	tprint("\n");
@@ -4208,25 +4215,25 @@ void typecast_functions() {
 	fclose(fp);
 #endif
 #ifdef VEC_FLOAT
-	fp = fopen((std::string("./generated_code/include/typecast_vec_float") + std::to_string(VEC_FLOAT_SIZE) + ".hpp").c_str(), "at");
+	fp = fopen((std::string("./generated_code/include/typecast_") + vf + ".hpp").c_str(), "at");
 	tprint("#pragma once\n");
 	tprint("\n");
-	tprint("#define TCAST(a) (vec_float%i(float(a)))\n", VEC_FLOAT_SIZE);
-	tprint("#define UCAST(a) (vec_uint32_t%i(unsigned(a)))\n", VEC_FLOAT_SIZE);
-	tprint("#define VCAST(a) (vec_int32_t%i(int(a)))\n", VEC_FLOAT_SIZE);
+	tprint("#define TCAST(a) (v%isf(float(a)))\n", VEC_FLOAT_SIZE);
+	tprint("#define UCAST(a) (v%iui32(unsigned(a)))\n", VEC_FLOAT_SIZE);
+	tprint("#define VCAST(a) (v%isi32(int(a)))\n", VEC_FLOAT_SIZE);
 	tprint("#define TCONVERT(a) T(a)\n");
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
-	tprint("typedef vec_float%i T;\n", VEC_FLOAT_SIZE);
-	tprint("typedef vec_uint32_t%i U;\n", VEC_FLOAT_SIZE);
-	tprint("typedef vec_int32_t%i V;\n", VEC_FLOAT_SIZE);
+	tprint("typedef v%isf T;\n", VEC_FLOAT_SIZE);
+	tprint("typedef v%iui32 U;\n", VEC_FLOAT_SIZE);
+	tprint("typedef v%isi32 V;\n", VEC_FLOAT_SIZE);
 	tprint("}\n");
 	tprint("\n");
 	fclose(fp);
 #endif
-#ifdef DOUBLE
+#if defined(DOUBLE) || defined(CUDA_DOUBLE)
 	fp = fopen("./generated_code/include/typecast_double.hpp", "at");
 	tprint("#pragma once\n");
 	tprint("\n");
@@ -4246,20 +4253,20 @@ void typecast_functions() {
 	fclose(fp);
 #endif
 #ifdef VEC_DOUBLE
-	fp = fopen((std::string("./generated_code/include/typecast_vec_double") + std::to_string(VEC_DOUBLE_SIZE) + ".hpp").c_str(), "at");
+	fp = fopen((std::string("./generated_code/include/typecast_") + vd + ".hpp").c_str(), "at");
 	tprint("#pragma once\n");
 	tprint("\n");
-	tprint("#define TCAST(a) (vec_double%i(double(a)))\n", VEC_DOUBLE_SIZE);
-	tprint("#define UCAST(a) (vec_uint64_t%i(uint64_t(a)))\n", VEC_DOUBLE_SIZE);
-	tprint("#define VCAST(a) (vec_int64_t%i(int64_t(a)))\n", VEC_DOUBLE_SIZE);
+	tprint("#define TCAST(a) (v%idf(double(a)))\n", VEC_DOUBLE_SIZE);
+	tprint("#define UCAST(a) (v%iui64(uint64_t(a)))\n", VEC_DOUBLE_SIZE);
+	tprint("#define VCAST(a) (v%isi64(int64_t(a)))\n", VEC_DOUBLE_SIZE);
 	tprint("#define TCONVERT(a) T(a)\n");
 	tprint("#define UCONVERT(a) U(a)\n");
 	tprint("#define VCONVERT(a) V(a)\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
-	tprint("typedef vec_double%i T;\n", VEC_DOUBLE_SIZE);
-	tprint("typedef vec_uint64_t%i U;\n", VEC_DOUBLE_SIZE);
-	tprint("typedef vec_int64_t%i V;\n", VEC_DOUBLE_SIZE);
+	tprint("typedef v%idf T;\n", VEC_DOUBLE_SIZE);
+	tprint("typedef v%iui64 U;\n", VEC_DOUBLE_SIZE);
+	tprint("typedef v%isi64 V;\n", VEC_DOUBLE_SIZE);
 	tprint("}\n");
 	tprint("\n");
 	fclose(fp);
@@ -4582,28 +4589,28 @@ int main() {
 	std::vector<std::string> sitypenames;
 	std::vector<std::string> uitypenames;
 	std::vector<int> ucuda;
-#ifdef FLOAT
+#if defined(FLOAT) || defined(CUDA_FLOAT)
 	rtypenames.push_back("float");
 	sitypenames.push_back("int32_t");
 	uitypenames.push_back("uint32_t");
 	ucuda.push_back(true);
 	ntypenames++;
 #endif
-#ifdef DOUBLE
+#if defined(DOUBLE) || defined(CUDA_DOUBLE)
 	rtypenames.push_back("double");
 	sitypenames.push_back("int64_t");
 	uitypenames.push_back("uint64_t");
 	ucuda.push_back(true);
 	ntypenames++;
 #endif
-#ifdef FLOAT
+#if defined(FLOAT) || defined(CUDA_FLOAT)
 	rtypenames.push_back("float");
 	sitypenames.push_back("int32_t");
 	uitypenames.push_back("uint32_t");
 	ucuda.push_back(false);
 	ntypenames++;
 #endif
-#ifdef DOUBLE
+#if defined(DOUBLE) || defined(CUDA_DOUBLE)
 	rtypenames.push_back("double");
 	sitypenames.push_back("int64_t");
 	uitypenames.push_back("uint64_t");
@@ -4611,17 +4618,17 @@ int main() {
 	ntypenames++;
 #endif
 #ifdef VEC_FLOAT
-	rtypenames.push_back(std::string("vec_float") + std::to_string(VEC_FLOAT_SIZE));
-	sitypenames.push_back(std::string("vec_int32_t") + std::to_string(VEC_FLOAT_SIZE));
-	uitypenames.push_back(std::string("vec_uint32_t") + std::to_string(VEC_FLOAT_SIZE));
+	rtypenames.push_back(vf);
+	sitypenames.push_back(vui32);
+	uitypenames.push_back(vsi32);
 	ucuda.push_back(false);
 	ntypenames++;
 #endif
 
 #ifdef VEC_DOUBLE
-	rtypenames.push_back(std::string("vec_double") + std::to_string(VEC_DOUBLE_SIZE));
-	sitypenames.push_back(std::string("vec_int64_t") + std::to_string(VEC_DOUBLE_SIZE));
-	uitypenames.push_back(std::string("vec_uint64_t") + std::to_string(VEC_DOUBLE_SIZE));
+	rtypenames.push_back(vd);
+	sitypenames.push_back(vui64);
+	uitypenames.push_back(vsi64);
 	ucuda.push_back(false);
 	ntypenames++;
 #endif

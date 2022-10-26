@@ -15,13 +15,13 @@ using complex = std::complex<T>;
 
 #ifdef TEST_TYPE_VEC_DOUBLE
 #define VECTOR
-using vec_real = sfmm::vec_double2;
+using vec_real = sfmm::v2df;
 using real = double;
 #define FLAG
 #endif
 #ifdef TEST_TYPE_VEC_FLOAT
 #define VECTOR
-using vec_real = sfmm::vec_float8;
+using vec_real = sfmm::v8sf;
 using real = float;
 #define FLAG
 #endif
