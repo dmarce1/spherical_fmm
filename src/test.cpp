@@ -7,7 +7,13 @@
 #include <math.h>
 #include <climits>
 #include <functional>
-#include "sfmm.hpp"
+#include "sfmmf.hpp"
+#include "sfmmd.hpp"
+#include "sfmmvf.hpp"
+#include "sfmmvd.hpp"
+#include "cusfmmf.hpp"
+#include "cusfmmd.hpp"
+
 #include "timer.hpp"
 
 template<class T>
@@ -1077,7 +1083,7 @@ int main() {
 
 	 printf("\n");
 	 */
-	run_tests<SFMM_PMAX + 1, SFMM_PMIN> run;
+	run_tests<PMAX + 1, PMIN> run;
 	real theta = 0.25;
 	printf("M2L\n");
 	run(CC, theta);

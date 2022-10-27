@@ -68,12 +68,12 @@ using complex = std::complex<double>;
 static int ntab = 0;
 static int tprint_on = true;
 
-#define FLOAT
-#define DOUBLE
-#define CUDA_FLOAT
-#define CUDA_DOUBLE
-#define VEC_DOUBLE
-#define VEC_FLOAT
+//#define FLOAT
+//#define DOUBLE
+//#define CUDA_FLOAT
+//#define CUDA_DOUBLE
+//#define VEC_DOUBLE
+//#define VEC_FLOAT
 #define VEC_DOUBLE_SIZE 2
 #define VEC_FLOAT_SIZE 8
 
@@ -83,8 +83,8 @@ static int tprint_on = true;
 static bool nophi = false;
 static bool fmaops = true;
 static bool periodic = true;
-static int pmin = SFMM_PMIN;
-static int pmax = SFMM_PMAX;
+static int pmin = PMIN;
+static int pmax = PMAX;
 static std::string type = "float";
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
@@ -93,15 +93,36 @@ static const char* prefix = "";
 static std::string detail_header;
 static std::string detail_header_vec;
 static std::vector<std::string> lines[2];
-static std::string vf = std::string( "v") + std::to_string(VEC_FLOAT_SIZE) + "sf";
-static std::string vd = std::string( "v") + std::to_string(VEC_DOUBLE_SIZE) + "df";
-static std::string vsi32 = std::string( "v") + std::to_string(VEC_FLOAT_SIZE) + "si32";
-static std::string vsi64 = std::string( "v") + std::to_string(VEC_DOUBLE_SIZE) + "si64";
-static std::string vui32 = std::string( "v") + std::to_string(VEC_FLOAT_SIZE) + "ui32";
-static std::string vui64 = std::string( "v") + std::to_string(VEC_DOUBLE_SIZE) + "ui64";
+static std::string vf = std::string("v") + std::to_string(VEC_FLOAT_SIZE) + "sf";
+static std::string vd = std::string("v") + std::to_string(VEC_DOUBLE_SIZE) + "df";
+static std::string vsi32 = std::string("v") + std::to_string(VEC_FLOAT_SIZE) + "si32";
+static std::string vsi64 = std::string("v") + std::to_string(VEC_DOUBLE_SIZE) + "si64";
+static std::string vui32 = std::string("v") + std::to_string(VEC_FLOAT_SIZE) + "ui32";
+static std::string vui64 = std::string("v") + std::to_string(VEC_DOUBLE_SIZE) + "ui64";
+#ifdef FLOAT
+static std::string header = "sfmmf.hpp";
+#endif
+#ifdef CUDA_DOUBLE
+static std::string header = "cusfmmd.hpp";
+#endif
+#ifdef CUDA_FLOAT
+static std::string header = "cusfmmf.hpp";
+#endif
+#ifdef DOUBLE
+static std::string header = "sfmmd.hpp";
+#endif
+#ifdef VEC_FLOAT
+static std::string header = "sfmmvf.hpp";
+#endif
+#ifdef VEC_DOUBLE
+static std::string header = "sfmmvd.hpp";
+#endif
+static std::string full_header = std::string("./generated_code/include/") + header;
 
 static std::string vec_header() {
 	std::string str = "\n";
+	str += "#ifndef SFMM_VEC_HEADER42\n";
+	str += "#define SFMM_VEC_HEADER42\n";
 	str += "#define create_binary_op(vtype, type, op) \\\n";
 	str += "   inline vtype operator op (const vtype& u ) const { \\\n";
 	str += "      vtype w; \\\n";
@@ -260,20 +281,14 @@ static std::string vec_header() {
 	str += "   create_compare_op_def(vstype,vstype,stype,>=); \\\n";
 	str += "   create_compare_op_def(vstype,vstype,stype,==); \\\n";
 	str += "   create_compare_op_def(vstype,vstype,stype,!=)\n";
-	str += "\n";
+	str += "#endif\n";
 	char* b;
-#ifdef VEC_DOUBLE
-	ASPRINTF(&b, "create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
-	str += b;
-	free(b);
-#endif
 #ifdef VEC_FLOAT
+	str += "#ifndef SFMM_VEC_FLOAT42\n";
+	str += "#define SFMM_VEC_FLOAT42\n";
 	ASPRINTF(&b, "create_vec_types(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
-#endif
-	str += "\n";
-#ifdef VEC_FLOAT
 	ASPRINTF(&b, "inline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
@@ -300,10 +315,42 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	str += "}\n";
+	ASPRINTF(&b, "inline int64_t sum(v%isi32 v) {\n", VEC_FLOAT_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(int32_t))));\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	str += "\n";
+	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_FLOAT_SIZE / 2; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
+	str += b;
+	free(b);
+	str += "}\n";
+	str += "#endif\n";
 #endif
 
 #ifdef VEC_DOUBLE
-	str += "\n";
+	str += "#ifndef SFMM_VEC_DOUBLE42\n";
+	str += "#define SFMM_VEC_DOUBLE42\n";
+	ASPRINTF(&b, "create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
+	str += b;
+	free(b);
 	ASPRINTF(&b, "inline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
@@ -330,6 +377,34 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	str += "}\n";
+	str += "\n";
+	ASPRINTF(&b, "inline double sum(v%isi64 v) {\n", VEC_DOUBLE_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_DOUBLE_SIZE; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(int64_t))));\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	str += b;
+	free(b);
+	for (int sz = VEC_DOUBLE_SIZE / 2; sz > 1; sz /= 2) {
+		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
+		str += b;
+		free(b);
+		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
+		str += b;
+		free(b);
+	}
+	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
+	str += b;
+	free(b);
+	str += "}\n";
+	str += "#endif\n";
 #endif
 
 	return str;
@@ -914,7 +989,7 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		func_name += ")";
 		func_name2 += ")";
 	}
-	set_file("./generated_code/include/sfmm.hpp");
+	set_file(full_header.c_str());
 	static std::set<std::string> already_printed;
 	if (already_printed.find(func_name) == already_printed.end()) {
 		already_printed.insert(func_name);
@@ -951,7 +1026,7 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 //		printf("%s ", file_name.c_str());
 	set_file(file_name);
 	tprint("#include <stdio.h>\n");
-	tprint("#include \"sfmm.hpp\"\n");
+	tprint("#include \"%s\"\n", header.c_str());
 	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
 	tprint("namespace sfmm {\n");
@@ -3504,24 +3579,13 @@ std::string P2M(int P) {
 	return fname;
 }
 
-void math_functions() {
+void math_float() {
 	if (fp) {
 		fclose(fp);
 	}
-	fp = fopen("./generated_code/include/sfmm.hpp", "at");
-	tprint("\n");
-
-	tprint("#ifndef __CUDACC__\n");
-#if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
-	tprint("%s\n", vec_header().c_str());
-#endif
-	tprint("\n#endif");
-	tprint("\n");
-	fclose(fp);
 	const char* sout = "*s";
 	const char* cout = "*c";
-#if defined(FLOAT) || defined(CUDA_FLOAT)
-	fp = fopen("./generated_code/include/sfmm.hpp", "at");
+	fp = fopen(full_header.c_str(), "at");
 	tprint("\n");
 	tprint("namespace detail {\n");
 	tprint("CUDA_EXPORT inline float fma(float a, float b, float c) {\n");
@@ -3537,9 +3601,9 @@ void math_functions() {
 	fclose(fp);
 	for (int cuda = 0; cuda < 2; cuda++) {
 		if (cuda) {
-			fp = fopen("./generated_code/src/math/math_float.cu", "at");
+			fp = fopen("./generated_code/src/math/math_float.cu", "wt");
 		} else {
-			fp = fopen("./generated_code/src/math/math_float.cpp", "at");
+			fp = fopen("./generated_code/src/math/math_float.cpp", "wt");
 		}
 		tprint("\n");
 		tprint("#include \"typecast_float.hpp\"\n");
@@ -3680,10 +3744,18 @@ void math_functions() {
 		tprint("\n");
 		fclose(fp);
 	}
-#endif
 
-#ifdef VEC_FLOAT
-	fp = fopen("./generated_code/include/sfmm.hpp", "at");
+	fp = nullptr;
+}
+
+void math_vec_float() {
+	if (fp) {
+		fclose(fp);
+	}
+	const char* sout = "*s";
+	const char* cout = "*c";
+
+	fp = fopen(full_header.c_str(), "at");
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
@@ -3700,12 +3772,12 @@ void math_functions() {
 	tprint("#endif\n");
 	fclose(fp);
 	if (cuda) {
-		fp = fopen("./generated_code/src/math/math_vec_float.cu", "at");
+		fp = fopen("./generated_code/src/math/math_vec_float.cu", "wt");
 	} else {
-		fp = fopen("./generated_code/src/math/math_vec_float.cpp", "at");
+		fp = fopen("./generated_code/src/math/math_vec_float.cpp", "wt");
 	}
 	tprint("\n");
-	tprint("#include \"sfmm.hpp\"\n");
+	tprint("#include \"%s\"\n", header.c_str());
 	tprint("#include \"typecast_v%isf.hpp\"\n", VEC_FLOAT_SIZE);
 	tprint("\n");
 	tprint("namespace sfmm {\n");
@@ -3826,10 +3898,20 @@ void math_functions() {
 	tprint("}\n");
 	tprint("\n");
 	fclose(fp);
-#endif
 
-#if defined(DOUBLE) || defined(CUDA_DOUBLE)
-	fp = fopen("./generated_code/include/sfmm.hpp", "at");
+	fp = nullptr;
+}
+
+void math_double() {
+	if (fp) {
+		fclose(fp);
+	}
+	const char* sout = "*s";
+	const char* cout = "*c";
+	constexpr double x0 = 1.0;
+	constexpr double x1 = 4.7;
+
+	fp = fopen(full_header.c_str(), "at");
 	tprint("\n");
 	tprint("namespace detail {\n");
 	tprint("CUDA_EXPORT inline double fma(double a, double b, double c) {\n");
@@ -3843,13 +3925,11 @@ void math_functions() {
 	tprint("CUDA_EXPORT void erfcexp(double, double*, double*);\n");
 	tprint("}\n");
 	fclose(fp);
-	constexpr double x0 = 1.0;
-	constexpr double x1 = 4.7;
 	for (int cuda = 0; cuda < 2; cuda++) {
 		if (cuda) {
-			fp = fopen("./generated_code/src/math/math_double.cu", "at");
+			fp = fopen("./generated_code/src/math/math_double.cu", "wt");
 		} else {
-			fp = fopen("./generated_code/src/math/math_double.cpp", "at");
+			fp = fopen("./generated_code/src/math/math_double.cpp", "wt");
 		}
 		tprint("\n");
 		tprint("#include <math.h>\n");
@@ -4017,9 +4097,20 @@ void math_functions() {
 		tprint("\n");
 		fclose(fp);
 	}
-#endif
-#ifdef VEC_DOUBLE
-	fp = fopen("./generated_code/include/sfmm.hpp", "at");
+
+	fp = nullptr;
+}
+
+void math_vec_double() {
+	if (fp) {
+		fclose(fp);
+	}
+	const char* sout = "*s";
+	const char* cout = "*c";
+	constexpr double x0 = 1.0;
+	constexpr double x1 = 4.7;
+
+	fp = fopen("./generated_code/include/sfmmvd.hpp", "at");
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("namespace detail {\n");
@@ -4036,12 +4127,12 @@ void math_functions() {
 	tprint("#endif\n");
 	fclose(fp);
 	if (cuda) {
-		fp = fopen("./generated_code/src/math/math_vec_double.cu", "at");
+		fp = fopen("./generated_code/src/math/math_vec_double.cu", "wt");
 	} else {
-		fp = fopen("./generated_code/src/math/math_vec_double.cpp", "at");
+		fp = fopen("./generated_code/src/math/math_vec_double.cpp", "wt");
 	}
 	tprint("\n");
-	tprint("#include \"sfmm.hpp\"\n");
+	tprint("#include \"%s\"\n", header.c_str());
 	tprint("#include \"typecast_v%idf.hpp\"\n", VEC_DOUBLE_SIZE);
 	tprint("\n");
 	tprint("namespace sfmm {\n");
@@ -4187,7 +4278,6 @@ void math_functions() {
 	tprint("}\n");
 	tprint("\n");
 	fclose(fp);
-#endif
 	fp = nullptr;
 }
 
@@ -4273,16 +4363,18 @@ void typecast_functions() {
 #endif
 	fp = nullptr;
 }
+
 int main() {
-	SYSTEM("[ -e ./generated_code ] && rm -rf  ./generated_code\n");
-	SYSTEM("mkdir generated_code\n");
-	SYSTEM("mkdir ./generated_code/include\n");
-	SYSTEM("mkdir ./generated_code/src\n");
-	SYSTEM("mkdir ./generated_code/src/math\n");
+	SYSTEM("mkdir -p generated_code\n");
+	SYSTEM("mkdir -p ./generated_code/include\n");
+	SYSTEM("mkdir -p ./generated_code/src\n");
+	SYSTEM("mkdir -p ./generated_code/src/math\n");
 	tprint("\n");
-	set_file("./generated_code/include/sfmm.hpp");
+	set_file(full_header.c_str());
 	tprint("#pragma once\n");
 	tprint("\n");
+	tprint("#ifndef SFMM_FULL_HEADER42\n");
+	tprint("#define SFMM_FULL_HEADER42\n");
 	tprint("#ifdef __CUDA_ARCH__\n");
 	tprint("#define CUDA_EXPORT __device__\n");
 	tprint("#else\n");
@@ -4579,9 +4671,10 @@ int main() {
 		}
 	}
 	tprint("\n");
-	math_functions();
-	set_file("./generated_code/include/sfmm.hpp");
-	tprint("\n");
+	set_file(full_header.c_str());
+	tprint("#else\n");
+	tprint("namespace sfmm {\n");
+	tprint("#endif\n");
 	typecast_functions();
 
 	int ntypenames = 0;
@@ -4589,33 +4682,38 @@ int main() {
 	std::vector<std::string> sitypenames;
 	std::vector<std::string> uitypenames;
 	std::vector<int> ucuda;
-#if defined(FLOAT) || defined(CUDA_FLOAT)
+	int funcnum;
+#if defined(CUDA_FLOAT)
 	rtypenames.push_back("float");
 	sitypenames.push_back("int32_t");
 	uitypenames.push_back("uint32_t");
 	ucuda.push_back(true);
 	ntypenames++;
+	funcnum = 0;
 #endif
-#if defined(DOUBLE) || defined(CUDA_DOUBLE)
+#if defined(CUDA_DOUBLE)
 	rtypenames.push_back("double");
 	sitypenames.push_back("int64_t");
 	uitypenames.push_back("uint64_t");
 	ucuda.push_back(true);
 	ntypenames++;
+	funcnum = 1;
 #endif
-#if defined(FLOAT) || defined(CUDA_FLOAT)
+#if defined(FLOAT)
 	rtypenames.push_back("float");
 	sitypenames.push_back("int32_t");
 	uitypenames.push_back("uint32_t");
 	ucuda.push_back(false);
 	ntypenames++;
+	funcnum = 0;
 #endif
-#if defined(DOUBLE) || defined(CUDA_DOUBLE)
+#if defined(DOUBLE)
 	rtypenames.push_back("double");
 	sitypenames.push_back("int64_t");
 	uitypenames.push_back("uint64_t");
 	ucuda.push_back(false);
 	ntypenames++;
+	funcnum = 1;
 #endif
 #ifdef VEC_FLOAT
 	rtypenames.push_back(vf);
@@ -4623,6 +4721,7 @@ int main() {
 	uitypenames.push_back(vsi32);
 	ucuda.push_back(false);
 	ntypenames++;
+	funcnum = 2;
 #endif
 
 #ifdef VEC_DOUBLE
@@ -4631,6 +4730,15 @@ int main() {
 	uitypenames.push_back(vsi64);
 	ucuda.push_back(false);
 	ntypenames++;
+	funcnum = 3;
+#endif
+	set_file(full_header.c_str());
+
+#if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
+	tprint("#ifndef __CUDACC__\n");
+	tprint("%s\n", vec_header().c_str());
+	tprint("\n#endif");
+	tprint("\n");
 #endif
 
 	for (int ti = 0; ti < ntypenames; ti++) {
@@ -4640,8 +4748,25 @@ int main() {
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
+		tprint("\n#ifndef SFMM_FUNCS%i42\n", funcnum);
+		tprint("#define SFMM_FUNCS%i42\n", funcnum);
+#if defined(FLOAT) || defined(CUDA_FLOAT)
+		math_float();
+#endif
+
+#if defined(DOUBLE) || defined(CUDA_DOUBLE)
+		math_double();
+#endif
+
+#if defined(VEC_FLOAT)
+		math_vec_float();
+#endif
+
+#if defined(VEC_DOUBLE)
+		math_vec_double();
+#endif
 		if (is_vec(type)) {
-			set_file("./generated_code/include/sfmm.hpp");
+			set_file(full_header.c_str());
 			tprint("#ifndef __CUDACC__\n");
 		}
 		std::vector<std::unordered_map<std::string, flops_t>> flops_map(pmax + 1);
@@ -4909,21 +5034,25 @@ int main() {
 		}
 
 		if (is_vec(type)) {
-			set_file("./generated_code/include/sfmm.hpp");
+			set_file(full_header.c_str());
 			tprint("#endif\n");
 		}
 
 	}
 //	printf("./generated_code/include/sfmm.h");
 	fflush(stdout);
-	set_file("./generated_code/include/sfmm.hpp");
+	set_file(full_header.c_str());
 	tprint("namespace detail {\n");
 	tprint("%s", detail_header.c_str());
 	tprint("#ifndef __CUDACC__\n");
 	tprint("%s", detail_header_vec.c_str());
 	tprint("#endif\n");
 	tprint("\n");
-
+	tprint("#else\n", funcnum);
+	tprint("namespace detail {\n");
+	tprint("#endif\n", funcnum);
+	tprint("#ifndef SFMM_GREEN_EWALD_REAL42\n");
+	tprint("#define SFMM_GREEN_EWALD_REAL42\n");
 	tprint("template<class T, int P, int ALPHA100>\n");
 	tprint("CUDA_EXPORT void greens_ewald_real(expansion_type<T, P>& G_st, T x, T y, T z, int flags) {\n");
 	indent();
@@ -4958,10 +5087,9 @@ int main() {
 	tprint("}\n");
 	deindent();
 	tprint("}\n");
-	tprint("\n");
+	tprint("#endif\n");
 	tprint("}\n");
 	tprint("}\n");
 	tprint("\n");
-
 	return 0;
 }
