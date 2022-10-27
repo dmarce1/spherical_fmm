@@ -7,12 +7,18 @@
 #include <math.h>
 #include <climits>
 #include <functional>
+#ifdef TEST_TYPE_FLOAT
 #include "sfmmf.hpp"
+#endif
+#ifdef TEST_TYPE_DOUBLE
 #include "sfmmd.hpp"
+#endif
+#ifdef TEST_TYPE_VEC_FLOAT
 #include "sfmmvf.hpp"
+#endif
+#ifdef TEST_TYPE_VEC_DOUBLE
 #include "sfmmvd.hpp"
-#include "cusfmmf.hpp"
-#include "cusfmmd.hpp"
+#endif
 
 #include "timer.hpp"
 

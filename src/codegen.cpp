@@ -756,7 +756,7 @@ void tprint_flush() {
 	int n1 = 0;
 	while (n0 < lines[0].size() || n1 < lines[1].size()) {
 		if (n0 < lines[0].size() && n1 < lines[1].size()) {
-			if ((double) n0 / lines[0].size() < (double) n1 / lines[1].size()) {
+			if ((double) n0 / (lines[0].size() + 1) < (double) n1 / (lines[1].size() + 1)) {
 				fprintf(fp, "%s", lines[0][n0].c_str());
 				n0++;
 			} else {
@@ -773,6 +773,80 @@ void tprint_flush() {
 	}
 	lines[0].resize(0);
 	lines[1].resize(0);
+}
+
+constexpr int nchains = 3;
+static int current_chain;
+static std::vector<std::vector<std::string>> inschains(nchains);
+
+void tprint_new_chain() {
+	int best = -1, smallest = 1000000000;
+	for (int i = 0; i < inschains.size(); i++) {
+		if (inschains[i].size() < smallest) {
+			smallest = inschains[i].size();
+			best = i;
+		}
+	}
+	current_chain = best;
+}
+
+template<class ...Args>
+void tprint_chain(const char* fstr, Args&&...args) {
+	std::string str;
+	for (int i = 0; i < ntab; i++) {
+		str += "\t";
+	}
+	char* buf;
+	ASPRINTF(&buf, fstr, std::forward<Args>(args)...)
+	str += buf;
+	free(buf);
+//	printf( "%i\n", current_chain);
+	inschains[current_chain].push_back(str);
+}
+
+void tprint_chain(const char* fstr) {
+	std::string str;
+	for (int i = 0; i < ntab; i++) {
+		str += "\t";
+	}
+	str += fstr;
+	inschains[current_chain].push_back(str);
+}
+
+void tprint_flush_chains() {
+	int n[nchains];
+	for (int i = 0; i < nchains; i++) {
+		n[i] = 0;
+	}
+	const auto done = [&n]() {
+		for( int i = 0; i < nchains; i++) {
+			if( n[i] < inschains[i].size()) {
+				return false;
+			}
+		}
+		return true;
+	};
+	while (!done()) {
+		int best = -1;
+		double largest = 0;
+		for (int i = 0; i < inschains.size(); i++) {
+			if (n[i] < inschains[i].size()) {
+				double value = (double) (inschains[i].size() - n[i]) / (inschains[i].size() + 1);
+				if (value >= largest) {
+					largest = value;
+					best = i;
+				}
+			}
+		}
+		if (best == -1) {
+			abort();
+		}
+		if (fp) {
+			fprintf(fp, "%s", inschains[best][n[best]].c_str());
+		}
+		n[best]++;
+	}
+	inschains = decltype(inschains)(nchains);
 }
 
 double factorial(int n) {
@@ -883,6 +957,11 @@ enum arg_type {
 
 void init_real(std::string var) {
 	tprint("T %s;\n", var.c_str());
+	if( var == "tmp1" ) {
+		for( int i = 2; i < nchains; i++) {
+			init_real( std::string("tmp") + std::to_string(i));
+		}
+	}
 }
 
 void init_reals(std::string var, int cnt) {
@@ -1122,9 +1201,9 @@ void z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) 
 	}
 	int mmin = 1;
 	bool initR = true;
-	int sw = 1;
+
 	for (int m = 1; m <= P; m++) {
-		sw = sw == 0 ? 1 : 0;
+		tprint_new_chain();
 		for (int l = m; l <= P; l++) {
 			if (noevenhi && l == P) {
 				if ((((P + l) / 2) % 2 == 1) ? m % 2 == 0 : m % 2 == 1) {
@@ -1132,25 +1211,25 @@ void z_rot(int P, const char* name, bool noevenhi, bool exclude, bool noimaghi) 
 				}
 			}
 			if (exclude && l == P && m % 2 == 1) {
-				tprint(sw, "%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
-				tprint(sw, "%s[%i] *= rx[%i];\n", name, index(l, -m), m);
+				tprint_chain( "%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
+				tprint_chain( "%s[%i] *= rx[%i];\n", name, index(l, -m), m);
 			} else if ((exclude && l == P && m % 2 == 0) || (noimaghi && l == P)) {
-				tprint(sw, "%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
-				tprint(sw, "%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+				tprint_chain( "%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
+				tprint_chain( "%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
 			} else {
 				if (noevenhi && ((l >= P - 1 && m % 2 == P % 2))) {
-					tprint(sw, "%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
-					tprint(sw, "%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+					tprint_chain( "%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
+					tprint_chain( "%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
 				} else {
-					tprint(sw, "tmp%i = %s[%i];\n", sw, name, index(l, m));
-					tprint(sw, "%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
-					tprint(sw, "%s[%i] = detail::fma(tmp%i, ry[%i], %s[%i] * rx[%i]);\n", name, index(l, -m), sw, m - 1, name, index(l, -m), m - 1);
+					tprint_chain( "tmp%i = %s[%i];\n", current_chain, name, index(l, m));
+					tprint_chain( "%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
+					tprint_chain( "%s[%i] = detail::fma(tmp%i, ry[%i], %s[%i] * rx[%i]);\n", name, index(l, -m), current_chain, m - 1, name, index(l, -m), m - 1);
 				}
 			}
 
 		}
 	}
-	tprint_flush();
+	tprint_flush_chains();
 }
 
 void m2l(int P, int Q, const char* mname, const char* lname) {
@@ -1161,10 +1240,9 @@ void m2l(int P, int Q, const char* mname, const char* lname) {
 	for (int n = 2; n <= P; n++) {
 		tprint("A[%i] *= TCAST(%.20e);\n", n, factorial(n));
 	}
-	int sw = 0;
 	for (int n = nopot; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			bool pfirst = true;
 			bool nfirst = true;
 			const int maxk = std::min(P - n, P - 1);
@@ -1173,30 +1251,30 @@ void m2l(int P, int Q, const char* mname, const char* lname) {
 				looped = true;
 				if (pfirst) {
 					pfirst = false;
-					tprint(sw, "%s[%i] = %s[%i] * A[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
+					tprint_chain("%s[%i] = %s[%i] * A[%i];\n", lname, index(n, m), mname, index(k, m), n + k);
 				} else {
-					tprint(sw, "%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
+					tprint_chain("%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, m), mname, index(k, m), n + k, lname, index(n, m));
 				}
 				if (m != 0) {
 					if (nfirst) {
 						nfirst = false;
-						tprint(sw, "%s[%i] = %s[%i] * A[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
+						tprint_chain("%s[%i] = %s[%i] * A[%i];\n", lname, index(n, -m), mname, index(k, -m), n + k);
 					} else {
-						tprint(sw, "%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
+						tprint_chain("%s[%i] = detail::fma(%s[%i], A[%i], %s[%i]);\n", lname, index(n, -m), mname, index(k, -m), n + k, lname, index(n, -m));
 					}
 				}
 			}
 			if (m % 2 != 0) {
 				if (!pfirst) {
-					tprint(sw, "%s[%i] = -%s[%i];\n", lname, index(n, m), lname, index(n, m));
+					tprint_chain("%s[%i] = -%s[%i];\n", lname, index(n, m), lname, index(n, m));
 				}
 				if (!nfirst) {
-					tprint(sw, "%s[%i] = -%s[%i];\n", lname, index(n, -m), lname, index(n, -m));
+					tprint_chain("%s[%i] = -%s[%i];\n", lname, index(n, -m), lname, index(n, -m));
 				}
 			}
 		}
 	}
-	tprint_flush();
+	tprint_flush_chains();
 
 }
 
@@ -1246,9 +1324,9 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 				return a.first < b.first;
 			});
 		}
-		int sw = 0;
+
 		for (int m = 0; m < 2 * n + 1; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			for (int l = 0; l < ops[m].size(); l++) {
 				int len = 1;
 				while (len + l < ops[m].size()) {
@@ -1260,30 +1338,30 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 				}
 				if (len == 1) {
 					if (close21(ops[m][l].first)) {
-						tprint(sw, "%s[%i] %s= A[%i];\n", name, index(n, m - n), l == 0 ? "" : "+", ops[m][l].second);
+						tprint_chain("%s[%i] %s= A[%i];\n", name, index(n, m - n), l == 0 ? "" : "+", ops[m][l].second);
 					} else {
 						if (l == 0) {
-							tprint(sw, "%s[%i] = TCAST(%.20e) * A[%i];\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second);
+							tprint_chain("%s[%i] = TCAST(%.20e) * A[%i];\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second);
 						} else {
-							tprint(sw, "%s[%i] = detail::fma(TCAST(%.20e), A[%i], %s[%i]);\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second, name,
+							tprint_chain("%s[%i] = detail::fma(TCAST(%.20e), A[%i], %s[%i]);\n", name, index(n, m - n), ops[m][l].first, ops[m][l].second, name,
 									index(n, m - n));
 						}
 					}
 				} else {
-					tprint(sw, "tmp%i = A[%i];\n", sw, ops[m][l].second);
+					tprint_chain("tmp%i = A[%i];\n", current_chain, ops[m][l].second);
 					for (int p = 1; p < len; p++) {
-						tprint(sw, "tmp%i += A[%i];\n", sw, ops[m][l + p].second);
+						tprint_chain("tmp%i += A[%i];\n", current_chain, ops[m][l + p].second);
 					}
 					if (l == 0) {
-						tprint(sw, "%s[%i] = TCAST(%.20e) * tmp%i;\n", name, index(n, m - n), ops[m][l].first, sw);
+						tprint_chain("%s[%i] = TCAST(%.20e) * tmp%i;\n", name, index(n, m - n), ops[m][l].first, current_chain);
 					} else {
-						tprint(sw, "%s[%i] = detail::fma(TCAST(%.20e), tmp%i, %s[%i]);\n", name, index(n, m - n), ops[m][l].first, sw, name, index(n, m - n));
+						tprint_chain("%s[%i] = detail::fma(TCAST(%.20e), tmp%i, %s[%i]);\n", name, index(n, m - n), ops[m][l].first, current_chain, name, index(n, m - n));
 					}
 				}
 				l += len - 1;
 			}
 		}
-		tprint_flush();
+		tprint_flush_chains();
 	}
 }
 
@@ -1342,10 +1420,10 @@ void greens_body(int P, const char* M = nullptr) {
 }
 
 void m2lg_body(int P, int Q) {
-	int sw = 0;
+
 	for (int n = nopot; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			const int kmax = std::min(P - n, P - 1);
 			std::vector<std::pair<std::string, std::string>> pos_real;
 			std::vector<std::pair<std::string, std::string>> neg_real;
@@ -1460,37 +1538,37 @@ void m2lg_body(int P, int Q) {
 
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint_chain("L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 				}
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint_chain("L[%i] = -L[%i];\n", index(n, m), index(n, m));
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint_chain("L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain("L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 				}
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain("L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint_chain("L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 			}
 
 		}
 	}
-	tprint_flush();
+	tprint_flush_chains();
 }
 
 std::vector<complex> spherical_singular_harmonic(int P, double x, double y, double z) {
@@ -1956,32 +2034,29 @@ std::string greens_ewald(int P, double alpha) {
 		}
 		ops[ii] = std::move(next_ops);
 	}
-	int sw = 0;
 	for (int ii = nopot; ii < exp_sz(P); ii++) {
 		std::vector<std::pair<double, std::vector<std::pair<int, std::string> > > > sorted_ops(ops[ii].begin(), ops[ii].end());
 		std::sort(sorted_ops.begin(), sorted_ops.end(),
 				[](const std::pair<double,std::vector<std::pair<int, std::string> > >& a, const std::pair<double,std::vector<std::pair<int, std::string> > > & b ) {
 					return fabs(a.first) * sqrt(a.second.size()) < fabs(b.first) * sqrt(b.second.size());
 				});
-		if (ii > 0) {
-			sw = sw == 0 ? 1 : 0;
-		}
+		tprint_new_chain();
 		for (auto j = sorted_ops.begin(); j != sorted_ops.end(); j++) {
 			auto op = j->second;
 			if (op.size()) {
 				int sgn = op[0].first > 0 ? 1 : -1;
 				for (int k = 0; k < op.size(); k++) {
-					tprint(sw, "tmp%i %c= %s;\n", sw, k == 0 ? ' ' : (sgn * op[k].first > 0 ? '+' : '-'), op[k].second.c_str());
+					tprint_chain("tmp%i %c= %s;\n", current_chain, k == 0 ? ' ' : (sgn * op[k].first > 0 ? '+' : '-'), op[k].second.c_str());
 				}
 				if (sgn > 0) {
-					tprint(sw, "G[%i] = detail::fma(TCAST(+%.20e), tmp%i, G[%i]);\n", ii, sgn * j->first, sw, ii);
+					tprint_chain("G[%i] = detail::fma(TCAST(+%.20e), tmp%i, G[%i]);\n", ii, sgn * j->first, current_chain, ii);
 				} else {
-					tprint(sw, "G[%i] = detail::fma(TCAST(%.20e), tmp%i, G[%i]);\n ", ii, sgn * j->first, sw, ii);
+					tprint_chain("G[%i] = detail::fma(TCAST(%.20e), tmp%i, G[%i]);\n ", ii, sgn * j->first, current_chain, ii);
 				}
 			}
 		}
 	}
-	tprint_flush();
+	tprint_flush_chains();
 	tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
 	if (!nopot) {
 		tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
@@ -2111,10 +2186,9 @@ std::string M2L_rot1(int P, int Q) {
 	const auto oindex = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
-	int sw = 0;
 	for (int n = nopot; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			bool nfirst = true;
 			bool pfirst = true;
 			const int kmax = std::min(P - n, P - 1);
@@ -2163,29 +2237,29 @@ std::string M2L_rot1(int P, int Q) {
 						if (!mreal) {
 							if (mxsgn * gxsgn == sgn) {
 								if (pfirst) {
-									tprint(sw, "L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
+									tprint_chain("L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
 									pfirst = false;
 								} else {
-									tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
+									tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
 								}
 							}
 							if (mysgn * gxsgn == sgn) {
 								if (m > 0) {
 									if (nfirst) {
-										tprint(sw, "L[%i] = %s * %s;\n", index(n, -m), mystr, gxstr);
+										tprint_chain("L[%i] = %s * %s;\n", index(n, -m), mystr, gxstr);
 										nfirst = false;
 									} else {
-										tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), mystr, gxstr, index(n, -m));
+										tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), mystr, gxstr, index(n, -m));
 									}
 								}
 							}
 						} else {
 							if (mxsgn * gxsgn == sgn) {
 								if (pfirst) {
-									tprint(sw, "L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
+									tprint_chain("L[%i] = %s * %s;\n", index(n, m), mxstr, gxstr);
 									pfirst = false;
 								} else {
-									tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
+									tprint_chain("L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), mxstr, gxstr, index(n, m));
 								}
 							}
 						}
@@ -2201,16 +2275,16 @@ std::string M2L_rot1(int P, int Q) {
 					}
 				}
 				if (!pfirst && sgn == -1) {
-					tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+					tprint_chain("L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				}
 				if (!nfirst && sgn == -1) {
-					tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+					tprint_chain("L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				}
 
 			}
 		}
 	}
-	tprint_flush();
+	tprint_flush_chains();
 	tprint("sinphi = -sinphi;\n");
 	z_rot(Q, "L", false, false, Q == P);
 	if (Q > 1) {
@@ -2445,9 +2519,9 @@ std::string M2M_norot(int P) {
 		tprint("M_st.trace2() = detail::fma(z * z, M[%i], M_st.trace2());\n", index(0, 0));
 	}
 	for (int n = P; n >= 0; n--) {
-		int sw = 0;
+
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			std::vector<std::pair<std::string, std::string>> pos_real;
 			std::vector<std::pair<std::string, std::string>> neg_real;
 			std::vector<std::pair<std::string, std::string>> pos_imag;
@@ -2544,35 +2618,35 @@ std::string M2M_norot(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw, "M[%i] = -M[%i];\n", index(n, m), index(n, m));
+				tprint_chain( "M[%i] = -M[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint_chain( "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 				}
-				tprint(sw, "M[%i] = -M[%i];\n", index(n, m), index(n, m));
+				tprint_chain( "M[%i] = -M[%i];\n", index(n, m), index(n, m));
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "M[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint_chain( "M[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint_chain( "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw, "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain( "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint_chain( "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 				}
-				tprint(sw, "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain( "M[%i] = -M[%i];\n", index(n, -m), index(n, -m));
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "M[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint_chain( "M[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw, "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint_chain( "M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 			}
 		}
-		tprint_flush();
+		tprint_flush_chains();
 	}
 	deindent();
 	tprint("}\n");
@@ -2842,12 +2916,10 @@ std::string L2L_norot(int P) {
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z, flags);\n");
-	int sw = 0;
+
 	for (int n = nopot; n <= P; n++) {
 		for (int m = 0; m <= n; m++) {
-			if (n > 0) {
-				sw = sw == 0 ? 1 : 0;
-			}
+			tprint_new_chain();
 			std::vector<std::pair<std::string, std::string>> pos_real;
 			std::vector<std::pair<std::string, std::string>> neg_real;
 			std::vector<std::pair<std::string, std::string>> pos_imag;
@@ -2943,35 +3015,35 @@ std::string L2L_norot(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 				}
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint_chain( "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 				}
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint_chain( "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 			}
 		}
-		tprint_flush();
+		tprint_flush_chains();
 	}
 	if (P > 1 && periodic) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * x, L_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
@@ -3029,10 +3101,10 @@ std::string L2L_rot1(int P) {
 	tprint("expansion_type<%s, %i> Y_st;\n", type.c_str(), P);
 	tprint("T* Y = Y_st.data();\n", type.c_str(), P);
 	tprint("detail::regular_harmonic_xz(Y_st, -R, -z, flags);\n");
+	int sw = 1;
 	for (int n = nopot; n <= P; n++) {
-		int sw = 1;
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			std::vector<std::pair<std::string, std::string>> pos_real;
 			std::vector<std::pair<std::string, std::string>> neg_real;
 			std::vector<std::pair<std::string, std::string>> pos_imag;
@@ -3104,35 +3176,35 @@ std::string L2L_rot1(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
+					tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), index(n, m));
 				}
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, m), index(n, m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, m), index(n, m));
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint_chain( "L[%i] -= %s * %s;\n", index(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
+				tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), index(n, m));
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
+					tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), index(n, -m));
 				}
-				tprint(sw, "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
+				tprint_chain( "L[%i] = -L[%i];\n", index(n, -m), index(n, -m));
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint_chain( "L[%i] -= %s * %s;\n", index(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw, "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
+				tprint_chain( "L[%i] = detail::fma(%s, %s, L[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 			}
 		}
-		tprint_flush();
+		tprint_flush_chains();
 	}
 	tprint("sinphi = -sinphi;\n");
 	if (P > 1 && periodic) {
@@ -3206,10 +3278,10 @@ std::string L2L_rot2(int P) {
 	for (int n = 2; n <= P; n++) {
 		tprint("A[%i] *= TCAST(%.20e);\n", n, 1.0 / factorial(n));
 	}
+	int sw = 1;
 	for (int n = nopot; n <= P; n++) {
-		int sw = 1;
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			for (int k = 1; k <= P - n; k++) {
 				if (abs(m) > n + k) {
 					continue;
@@ -3217,13 +3289,13 @@ std::string L2L_rot2(int P) {
 				if (-abs(m) < -(k + n)) {
 					continue;
 				}
-				tprint(sw, "L[%i] = detail::fma(L[%i], A[%i], L[%i]);\n", index(n, m), index(n + k, m), k, index(n, m));
+				tprint_chain( "L[%i] = detail::fma(L[%i], A[%i], L[%i]);\n", index(n, m), index(n + k, m), k, index(n, m));
 				if (m > 0) {
-					tprint(sw, "L[%i] = detail::fma(L[%i], A[%i], L[%i]);\n", index(n, -m), index(n + k, -m), k, index(n, -m));
+					tprint_chain( "L[%i] = detail::fma(L[%i], A[%i], L[%i]);\n", index(n, -m), index(n + k, -m), k, index(n, -m));
 				}
 			}
 		}
-		tprint_flush();
+		tprint_flush_chains();
 	}
 	if (P > 1 && periodic) {
 		tprint("L[%i] = detail::fma(TCAST(-2) * r, L_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
@@ -3269,10 +3341,10 @@ std::string L2P(int P) {
 	tprint("}\n");
 //tprint("expansion_type<T,1> L1;\n");
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z, flags);\n");
-	int sw = 0;
+
 	for (int n = nopot; n <= 1; n++) {
 		for (int m = 0; m <= n; m++) {
-			sw = sw == 0 ? 1 : 0;
+			tprint_new_chain();
 			std::vector<std::pair<std::string, std::string>> pos_real;
 			std::vector<std::pair<std::string, std::string>> neg_real;
 			std::vector<std::pair<std::string, std::string>> pos_imag;
@@ -3370,36 +3442,36 @@ std::string L2P(int P) {
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint(sw, "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
+				tprint_chain( "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n, m)]);
+					tprint_chain( "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str(), fstr[index(n, m)]);
 				}
-				tprint(sw, "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
+				tprint_chain( "%s = -%s;\n", fstr[index(n, m)], fstr[index(n, m)]);
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint(sw, "%s -= %s * %s;\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					tprint_chain( "%s -= %s * %s;\n", fstr[index(n, m)], neg_real[i].first.c_str(), neg_real[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n, m)]);
+				tprint_chain( "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, m)], pos_real[i].first.c_str(), pos_real[i].second.c_str(), fstr[index(n, m)]);
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint(sw, "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
+				tprint_chain( "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n, -m)]);
+					tprint_chain( "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), fstr[index(n, -m)]);
 				}
-				tprint(sw, "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
+				tprint_chain( "%s = -%s;\n", fstr[index(n, -m)], fstr[index(n, -m)]);
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint(sw, "%s -= %s * %s;\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					tprint_chain( "%s -= %s * %s;\n", fstr[index(n, -m)], neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint(sw, "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n, -m)]);
+				tprint_chain( "%s = detail::fma(%s, %s, %s);\n", fstr[index(n, -m)], pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), fstr[index(n, -m)]);
 			}
 		}
 	}
-	tprint_flush();
+	tprint_flush_chains();
 	if (P >= 1 && periodic) {
 		tprint("%s = detail::fma(TCAST(2) * x, L_st.trace2(), %s);\n", fstr[index(1, 1)], fstr[index(1, 1)]);
 		tprint("%s = detail::fma(TCAST(2) * y, L_st.trace2(), %s);\n", fstr[index(1, -1)], fstr[index(1, -1)]);
