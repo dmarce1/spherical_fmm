@@ -750,8 +750,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g1 = rand1();
 			double g2 = rand1();
 #ifdef VECTOR
-			multipole_type<vec_real, P> M;
-			expansion_type<vec_real, P> L;
+			multipole_periodic<vec_real, P> M;
+			expansion_periodic<vec_real, P> L;
 			force_type<vec_real> f;
 			M.init(real(.1));
 			L.init(real(.01));
@@ -776,8 +776,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			err += fabs(phi - f.potential[0]);
 			norm += fabs(phi);
 #else
-			multipole_type<real, P> M;
-			expansion_type<real, P> L;
+			multipole_periodic<real, P> M;
+			expansion_periodic<real, P> L;
 			force_type<real> f;
 			M.init(0.1);
 			L.init(0.01);
@@ -837,8 +837,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g1 = rand1();
 			double g2 = rand1();
 #ifdef VECTOR
-			multipole_type<vec_real, P> M;
-			expansion_type<vec_real, P> L;
+			multipole_periodic<vec_real, P> M;
+			expansion_periodic<vec_real, P> L;
 			force_type<vec_real> f;
 			M.init(real(.1));
 			L.init(real(.01));
@@ -870,8 +870,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			err += fabs(phi - f.potential[0]);
 			norm += fabs(phi);
 #else
-			multipole_type<real, P> M;
-			expansion_type<real, P> L;
+			multipole_nonperiodic<real, P> M;
+			expansion_nonperiodic<real, P> L;
 			force_type<real> f;
 			M.init(.1);
 			L.init(.01);
