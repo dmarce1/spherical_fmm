@@ -137,6 +137,192 @@ static const char* period_name() {
 static const char* scaled_name() {
 	return scaled ? "_scaled" : "";
 }
+static std::string complex_header = "\n"
+		"#ifndef SFMM_COMPLEX_DECL_HPP_42\n"
+		"#define SFMM_COMPLEX_DECL_HPP_42\n"
+		"\n"
+		"template<class T>\n"
+		"class complex {\n"
+		"\tT x, y;\n"
+		"public:\n"
+		"\tSFMM_PREFIX complex() = default;\n"
+		"\tSFMM_PREFIX complex(T a);\n"
+		"\tSFMM_PREFIX complex(T a, T b);\n"
+		"\tSFMM_PREFIX complex& operator+=(complex other);\n"
+		"\tSFMM_PREFIX complex& operator-=(complex other);\n"
+		"\tSFMM_PREFIX complex operator*(complex other) const;\n"
+		"\tSFMM_PREFIX complex operator/(complex other) const;\n"
+		"\tSFMM_PREFIX complex operator/=(complex other);\n"
+		"\tSFMM_PREFIX complex operator/(T other) const;\n"
+		"\tSFMM_PREFIX complex operator*(T other) const;\n"
+		"\tSFMM_PREFIX complex& operator*=(T other);\n"
+		"\tSFMM_PREFIX complex& operator*=(complex other);\n"
+		"\tSFMM_PREFIX complex operator+(complex other) const;\n"
+		"\tSFMM_PREFIX complex operator-(complex other) const;\n"
+		"\tSFMM_PREFIX complex conj() const;\n"
+		"\tSFMM_PREFIX T real() const;\n"
+		"\tSFMM_PREFIX T imag() const;\n"
+		"\tSFMM_PREFIX T& real();\n"
+		"\tSFMM_PREFIX T& imag();\n"
+		"\tSFMM_PREFIX T norm() const;\n"
+		"\tSFMM_PREFIX T abs() const;\n"
+		"\tSFMM_PREFIX complex operator-() const;\n"
+		"};\n"
+		"\n"
+		"#endif\n"
+		"";
+
+static std::string complex_defs = "\n"
+		"#ifndef SFMM_COMPLEX_DEF_HPP_42\n"
+		"#define SFMM_COMPLEX_DEF_HPP_42\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T>::complex(T a) :\n"
+		"\t\tx(a), y(0.0) {\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T>::complex(T a, T b) :\n"
+		"\t\tx(a), y(b) {\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T>& complex<T>::operator+=(complex<T> other) {\n"
+		"\tx += other.x;\n"
+		"\ty += other.y;\n"
+		"\treturn *this;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T>& complex<T>::operator-=(complex<T> other) {\n"
+		"\tx -= other.x;\n"
+		"\ty -= other.y;\n"
+		"\treturn *this;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator*(complex<T> other) const {\n"
+		"\tcomplex<T> a;\n"
+		"\ta.x = x * other.x - y * other.y;\n"
+		"\ta.y = detail::fma(x, other.y, y * other.x);\n"
+		"\treturn a;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator/(complex<T> other) const {\n"
+		"\treturn *this * other.conj() / other.norm();\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator/=(complex<T> other) {\n"
+		"\t*this = *this * other.conj() / other.norm();\n"
+		"\treturn *this;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator/(T other) const {\n"
+		"\tcomplex<T> b;\n"
+		"\tb.x = x / other;\n"
+		"\tb.y = y / other;\n"
+		"\treturn b;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator*(T other) const {\n"
+		"\tcomplex<T> b;\n"
+		"\tb.x = x * other;\n"
+		"\tb.y = y * other;\n"
+		"\treturn b;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T>& complex<T>::operator*=(T other) {\n"
+		"\tx *= other;\n"
+		"\ty *= other;\n"
+		"\treturn *this;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T>& complex<T>::operator*=(complex<T> other) {\n"
+		"\t*this = *this * other;\n"
+		"\treturn *this;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator+(complex<T> other) const {\n"
+		"\tcomplex<T> a;\n"
+		"\ta.x = x + other.x;\n"
+		"\ta.y = y + other.y;\n"
+		"\treturn a;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator-(complex<T> other) const {\n"
+		"\tcomplex<T> a;\n"
+		"\ta.x = x - other.x;\n"
+		"\ta.y = y - other.y;\n"
+		"\treturn a;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::conj() const {\n"
+		"\tcomplex<T> a;\n"
+		"\ta.x = x;\n"
+		"\ta.y = -y;\n"
+		"\treturn a;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX T complex<T>::real() const {\n"
+		"\treturn x;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX T complex<T>::imag() const {\n"
+		"\treturn y;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX T& complex<T>::real() {\n"
+		"\treturn x;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX T& complex<T>::imag() {\n"
+		"\treturn y;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX T complex<T>::norm() const {\n"
+		"\treturn detail::fma(x,x,y*y);\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX T complex<T>::abs() const {\n"
+		"\treturn detail::sqrt(norm());\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX complex<T> complex<T>::operator-() const {\n"
+		"\tcomplex<T> a;\n"
+		"\ta.x = -x;\n"
+		"\ta.y = -y;\n"
+		"\treturn a;\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"SFMM_PREFIX inline complex<T> operator*(T a, complex<T> b) {\n"
+		"\treturn complex<T>(a*b.real(),a*b.imag());\n"
+		"}\n"
+		"\n"
+		"template<class T>\n"
+		"inline void swap(complex<T>& a, complex<T>& b) {\n"
+		"\tstd::swap(a.real(), b.real());\n"
+		"\tstd::swap(a.imag(), b.imag());\n"
+		"}\n"
+		"\n"
+		"#endif\n"
+		"";
 
 static std::string vec_header() {
 	std::string str = "\n";
@@ -1109,7 +1295,6 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 	} else {
 		set_file(file_name);
 	}
-	tprint("#include <stdio.h>\n");
 	tprint("#include \"%s\"\n", header.c_str());
 	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
@@ -1375,10 +1560,6 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 }
 
 void greens_body(int P, const char* M = nullptr) {
-	init_real("r2");
-	init_real("r2inv");
-	init_real("ax");
-	init_real("ay");
 	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
 	if (M) {
 		tprint("r2inv = %s / r2;\n", M);
@@ -1388,9 +1569,6 @@ void greens_body(int P, const char* M = nullptr) {
 	tprint("O[0] = detail::rsqrt(r2);\n");
 	if (M) {
 		tprint("O[0] *= %s;\n", M);
-	}
-	if (periodic) {
-		tprint("O_st.trace2() = TCAST(0);\n");
 	}
 	tprint("x *= r2inv;\n");
 	tprint("y *= r2inv;\n");
@@ -1609,46 +1787,22 @@ bool close2zero(double a) {
 }
 
 std::string P2L(int P) {
-	auto fname = func_header("P2L", P, true, false, true, true, "", "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
-	if (scaled) {
-		tprint("expansion%s%s<%s,%i> O_st(L_st.scale());\n", period_name(), scaled_name(), type.c_str(), P);
-	} else {
-		tprint("expansion%s%s<%s,%i> O_st;\n", period_name(), scaled_name(), type.c_str(), P);
-	}
-	tprint("T* O(O_st.data());\n");
+	auto fname = func_header("P2L", P, true, true, true, true, "", "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
+	tprint("T O[%i];\n", exp_sz(P));
 	init_real("tmp1");
+	init_real("r2");
+	init_real("r2inv");
+	init_real("ax");
+	init_real("ay");
 	if (scaled) {
-		init_real("a");
-		init_real("b");
 		tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 		tprint("x *= tmp1;\n");
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
 	greens_body(P, "M");
-	if (scaled) {
-		tprint("a = L_st.scale();\n");
-		tprint("b = a;\n");
-		for (int n = 0; n <= P; n++) {
-			if (!nopot || n > 0) {
-				for (int m = -n; m <= n; m++) {
-					tprint("L[%i] = detail::fma(b, O[%i], L[%i]);\n", index(n, m), index(n, m), index(n, m));
-				}
-				if (periodic && P > 1 && n == 2) {
-					tprint("L_st.trace2() = detail::fma(b, O_st.trace2(), L_st.trace2());\n");
-				}
-			}
-			if (n != P) {
-				tprint("b *= a;\n");
-			}
-		}
-	} else {
-		for (int n = nopot; n < exp_sz(P); n++) {
-			tprint("L[%i] += O[%i];\n", n, n);
-		}
-		if (periodic && P > 1) {
-			tprint("L_st.trace2() += O_st.trace2();\n");
-		}
+	for (int n = nopot; n < exp_sz(P); n++) {
+		tprint("L[%i] += O[%i];\n", n, n);
 	}
 	deindent();
 	tprint("}");
@@ -1660,6 +1814,10 @@ std::string P2L(int P) {
 
 std::string greens(int P) {
 	auto fname = func_header("greens", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
+	init_real("r2");
+	init_real("r2inv");
+	init_real("ax");
+	init_real("ay");
 	greens_body(P);
 	deindent();
 	tprint("}");
@@ -3791,8 +3949,8 @@ void math_float() {
 			fp = fopen("./generated_code/src/math/math_float.cpp", "wt");
 		}
 		tprint("\n");
+		tprint("#include \"%s\"\n", header.c_str());
 		tprint("#include \"typecast_float.hpp\"\n");
-		tprint("#include <math.h>\n");
 		tprint("\n");
 		tprint("namespace sfmm {\n");
 		tprint("namespace detail {\n");
@@ -3810,8 +3968,8 @@ void math_float() {
 		tprint("i >>= VCAST(1);\n");
 		tprint("i = VCAST(0x5F3759DF) - i;\n");
 		tprint("y = *((T*) &i);\n");
-		tprint("y *= fmaf(x, y * y, TCAST(-1.5));\n");
-		tprint("y *= fmaf(x, y * y, TCAST(-1.5));\n");
+		tprint("y *= detail::fma(x, y * y, TCAST(-1.5));\n");
+		tprint("y *= detail::fma(x, y * y, TCAST(-1.5));\n");
 		tprint("y *= TCAST(1.5) - x * y * y;\n");
 		tprint("return y;\n");
 		deindent();
@@ -3845,8 +4003,8 @@ void math_float() {
 			tprint("%s = TCAST(%.20e);\n", cout, nonepow(N / 2) / factorial(N));
 			tprint("%s = TCAST(%.20e);\n", sout, cout, nonepow((N - 1) / 2) / factorial(N - 1));
 			for (int n = N - 2; n >= 0; n -= 2) {
-				tprint("%s = fmaf(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
-				tprint("%s = fmaf(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
+				tprint("%s = detail::fma(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
+				tprint("%s = detail::fma(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
 			}
 		}
 		tprint("%s *= x;\n", cout);
@@ -3871,7 +4029,7 @@ void math_float() {
 			tprint("xxx = x - T(k) * TCAST(0.6931471805599453094172);\n");
 			tprint("y = TCAST(%.20e);\n", 1.0 / factorial(N));
 			for (int i = N - 1; i >= 0; i--) {
-				tprint("y = fmaf(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
+				tprint("y = detail::fma(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
 			}
 			tprint("k = (k + VCAST(127)) << VCAST(23);\n");
 			tprint("y *= *((T*) (&k));\n"); //1
@@ -3899,7 +4057,7 @@ void math_float() {
 				tprint("q = TCAST(2) * x * x;\n");
 				tprint("*erfc0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
 				for (int n = N - 1; n >= 0; n--) {
-					tprint("*erfc0 = fmaf(*erfc0, q, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
+					tprint("*erfc0 = detail::fma(*erfc0, q, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
 				}
 				tprint("*erfc0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
 				tprint("*erfc0 = TCAST(1) - *erfc0;\n");
@@ -3912,9 +4070,9 @@ void math_float() {
 				tprint("q = TCAST(1) / (TCAST(2) * x * x);\n");
 				tprint("*erfc0 = TCAST(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
 				for (int i = N - 1; i >= 1; i--) {
-					tprint("*erfc0 = fmaf(*erfc0, q, TCAST(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
+					tprint("*erfc0 = detail::fma(*erfc0, q, TCAST(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
 				}
-				tprint("*erfc0 = fmaf(*erfc0, q, TCAST(1));\n");
+				tprint("*erfc0 = detail::fma(*erfc0, q, TCAST(1));\n");
 				tprint("*erfc0 *= *exp0 * TCAST(%.20e) / x;\n", 1.0 / sqrt(M_PI));
 				deindent();
 			}
@@ -4117,7 +4275,7 @@ void math_double() {
 			fp = fopen("./generated_code/src/math/math_double.cpp", "wt");
 		}
 		tprint("\n");
-		tprint("#include <math.h>\n");
+		tprint("#include \"%s\"\n", header.c_str());
 		tprint("#include \"typecast_double.hpp\"\n");
 		tprint("\n");
 		tprint("namespace sfmm {\n");
@@ -4223,7 +4381,7 @@ void math_double() {
 			tprint("q = TCAST(2) * x * x;\n");
 			tprint("*erfc0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N + 1));
 			for (int n = N - 1; n >= 0; n--) {
-				tprint("*erfc0 = fma(*erfc0, q, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
+				tprint("*erfc0 = detail::fma(*erfc0, q, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n + 1));
 			}
 			tprint("*erfc0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
 			tprint("*erfc0 = TCAST(1) - *erfc0;\n");
@@ -4253,7 +4411,7 @@ void math_double() {
 			tprint("x -= TCAST(%.20e);\n", a);
 			tprint("*erfc0 = TCAST(%.20e);\n", c0[N]);
 			for (int n = N - 1; n >= 0; n--) {
-				tprint("*erfc0 = fma(*erfc0, x, TCAST(%.20e));\n", c0[n]);
+				tprint("*erfc0 = detail::fma(*erfc0, x, TCAST(%.20e));\n", c0[n]);
 			}
 			tprint("*erfc0 *= *exp0 / x0;\n");
 			deindent();
@@ -4265,9 +4423,9 @@ void math_double() {
 			tprint("q = TCAST(1) / (TCAST(2) * x * x);\n");
 			tprint("*erfc0 = TCAST(%.20e);\n", dfactorial(2 * N - 1) * nonepow(N));
 			for (int i = N - 1; i >= 1; i--) {
-				tprint("*erfc0 = fma(*erfc0, q, TCAST(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
+				tprint("*erfc0 = detail::fma(*erfc0, q, TCAST(%.20e));\n", dfactorial(2 * i - 1) * nonepow(i));
 			}
-			tprint("*erfc0 = fma(*erfc0, q, TCAST(1));\n");
+			tprint("*erfc0 = detail::fma(*erfc0, q, TCAST(1));\n");
 			tprint("*erfc0 *= *exp0 * TCAST(%.20e) / x;\n", 1.0 / sqrt(M_PI));
 			deindent();
 		}
@@ -4566,9 +4724,9 @@ int main() {
 	tprint("#define SFMM_PREFIX\n");
 	tprint("#endif\n");
 	tprint("\n");
-	tprint("#include <math.h>\n");
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
+	tprint("#include <utility>\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("\n");
@@ -4588,6 +4746,8 @@ int main() {
 	tprint("#else\n");
 	tprint("namespace sfmm {\n");
 	tprint("#endif\n");
+	tprint("\n");
+	fprintf(fp, "%s\n", complex_header.c_str());
 	nopot = 1;
 	int ntypenames = 0;
 	std::vector<std::string> rtypenames;
@@ -4650,6 +4810,83 @@ int main() {
 	tprint("\n#endif");
 	tprint("\n");
 #endif
+	tprint("#ifndef SFMM_EXPANSION_MEMBERS42\n");
+	tprint("#define SFMM_EXPANSION_MEMBERS42\n");
+	std::string str1 = "\n#define SFMM_EXPANSION_MEMBERS(classname, type, ppp) \\\n"
+			"\tclass reference { \\\n"
+			"\t\tT* ax; \\\n"
+			"\t\tT* ay; \\\n"
+			"\t\tT rsgn; \\\n"
+			"\t\tT isgn; \\\n"
+			"\tpublic: \\\n"
+			"\t\toperator complex<T>() const { \\\n"
+			"\t\t\tif(ax != ay) { \\\n"
+			"\t\t\t\treturn complex<T>(rsgn * *ax, isgn * *ay); \\\n"
+			"\t\t\t} else { \\\n"
+			"\t\t\t\treturn complex<T>(rsgn * *ax, T(0)); \\\n"
+			"\t\t\t} \\\n"
+			"\t\t} \\\n"
+			"\t\treference& operator=(complex<T> other) { \\\n"
+			"\t\t\t*ax = other.real() * rsgn; \\\n"
+			"\t\t\tif(ax != ay) { \\\n"
+			"\t\t\t\t*ay = other.imag() * isgn; \\\n"
+			"\t\t\t} else { \\\n"
+			"\t\t\t\t*ay = T(0); \\\n"
+			"\t\t\t} \\\n"
+			"\t\t\treturn *this; \\\n"
+			"\t\t} \\\n"
+			"\t\tfriend classname<type,ppp>; \\\n"
+			"\t}; \\\n"
+			"\tSFMM_PREFIX complex<T> operator()(int n, int m) const { \\\n"
+			"\t\tcomplex<T> c; \\\n"
+			"\t\tconst int n2n = n * n + n; \\\n"
+			"\t\tconst int m0 = abs(m); \\\n"
+			"\t\tconst int ip = n2n + m0; \\\n"
+			"\t\tconst int im = n2n - m0; \\\n"
+			"\t\tc.real() = o[ip]; \\\n"
+			"\t\tc.imag() = o[im]; \\\n"
+			"\t\tif( m < 0 ) { \\\n"
+			"\t\t\tif( m % 2 == 0 ) { \\\n"
+			"\t\t\t\tc.imag() = -c.imag(); \\\n"
+			"\t\t\t} else { \\\n"
+			"\t\t\t\tc.real() = -c.real(); \\\n"
+			"\t\t\t} \\\n"
+			"\t\t} else if( m == 0 ) { \\\n"
+			"\t\t\tc.imag() = T(0); \\\n"
+			"\t\t} \\\n"
+			"\t\treturn c; \\\n"
+			"\t} \\\n"
+			"\tSFMM_PREFIX reference operator()(int n, int m) { \\\n"
+			"\t\treference ref; \\\n"
+			"\t\tconst int n2n = n * n + n; \\\n"
+			"\t\tconst int m0 = abs(m); \\\n"
+			"\t\tconst int ip = n2n + m0; \\\n"
+			"\t\tconst int im = n2n - m0; \\\n"
+			"\t\tref.ax = o + ip; \\\n"
+			"\t\tref.ay = o + im; \\\n"
+			"\t\tref.rsgn = ref.isgn = T(1); \\\n"
+			"\t\tif( m < 0 ) { \\\n"
+			"\t\t\tif( m % 2 == 0 ) { \\\n"
+			"\t\t\t\tref.isgn = -ref.isgn; \\\n"
+			"\t\t\t} else { \\\n"
+			"\t\t\t\tref.rsgn = -ref.rsgn; \\\n"
+			"\t\t\t} \\\n"
+			"\t\t} \\\n"
+			"\t\treturn ref; \\\n"
+			"\t} \\\n"
+			"\tSFMM_PREFIX classname(const classname& other) { \\\n"
+			"\t\t*this = other; \\\n"
+			"\t} \\\n"
+			"\tSFMM_PREFIX T* data() { \\\n"
+			"\t\treturn o; \\\n"
+			"\t} \\\n"
+			"\tSFMM_PREFIX const T* data() const { \\\n"
+			"\t\treturn o; \\\n"
+			"\t} \\\n"
+			"\n"
+			"";
+	fprintf(fp, "%s", str1.c_str());
+	tprint("#endif\n\n");
 	type = rtypenames.back();
 	for (scaled = 0; scaled <= enable_scaled; scaled++) {
 		for (periodic = 0; periodic <= 1; periodic++) {
@@ -4685,15 +4922,11 @@ int main() {
 				if (scaled) {
 					tprint("T r;\n");
 				}
+
 				deindent();
 				tprint("public:\n");
 				indent();
-				tprint("SFMM_PREFIX expansion%s%s(const expansion%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
-				indent();
-				tprint("*this = other;\n");
-				deindent();
-				tprint("}\n");
-
+				tprint("SFMM_EXPANSION_MEMBERS(expansion%s%s, %s, %i);\n", period_name(), scaled_name(), type.c_str(), P);
 				tprint("SFMM_PREFIX expansion%s%s& operator=(const expansion%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
 				indent();
 				tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
@@ -4797,16 +5030,6 @@ int main() {
 					tprint("}\n");
 
 				}
-				tprint("SFMM_PREFIX T* data() {\n");
-				indent();
-				tprint("return o;\n");
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX const T* data() const {\n");
-				indent();
-				tprint("return o;\n");
-				deindent();
-				tprint("}\n");
 				if (periodic && P > 1) {
 					tprint("SFMM_PREFIX T& trace2() {\n");
 					indent();
@@ -4849,12 +5072,7 @@ int main() {
 					deindent();
 					tprint("public:\n");
 					indent();
-					tprint("SFMM_PREFIX multipole%s%s(const multipole%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
-					indent();
-					tprint("*this = other;\n");
-					deindent();
-					tprint("}\n");
-
+					tprint("SFMM_EXPANSION_MEMBERS(multipole%s%s, %s, %i);\n", period_name(), scaled_name(), type.c_str(), P);
 					tprint("SFMM_PREFIX multipole%s%s& operator=(const multipole%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
 					indent();
 					tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
@@ -4958,16 +5176,6 @@ int main() {
 						tprint("}\n");
 
 					}
-					tprint("SFMM_PREFIX T* data() {\n");
-					indent();
-					tprint("return o;\n");
-					deindent();
-					tprint("}\n");
-					tprint("SFMM_PREFIX const T* data() const {\n");
-					indent();
-					tprint("return o;\n");
-					deindent();
-					tprint("}\n");
 					if (periodic && P >= 2 && P > 1) {
 						tprint("SFMM_PREFIX T& trace2() {\n");
 						indent();
@@ -5365,7 +5573,7 @@ int main() {
 	tprint("\n");
 	tprint("#else\n", funcnum);
 	tprint("namespace detail {\n");
-	tprint("#endif\n", funcnum);
+	tprint("#endif\n\n", funcnum);
 	tprint("#ifndef SFMM_GREEN_EWALD_REAL42\n");
 	tprint("#define SFMM_GREEN_EWALD_REAL42\n");
 	for (scaled = 0; scaled <= enable_scaled; scaled++) {
@@ -5408,6 +5616,7 @@ int main() {
 	tprint("\n");
 	tprint("#endif\n");
 	tprint("}\n");
+	fprintf(fp, "%s\n", complex_defs.c_str());
 	tprint("}\n");
 	return 0;
 }
