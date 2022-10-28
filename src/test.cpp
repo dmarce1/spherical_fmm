@@ -9,15 +9,21 @@
 #include <functional>
 #ifdef TEST_TYPE_FLOAT
 #include "sfmmf.hpp"
+bool scaled = true;
+#define SCALED
 #endif
 #ifdef TEST_TYPE_DOUBLE
 #include "sfmmd.hpp"
+bool scaled = false;
 #endif
 #ifdef TEST_TYPE_VEC_FLOAT
 #include "sfmmvf.hpp"
+bool scaled = true;
+#define SCALED
 #endif
 #ifdef TEST_TYPE_VEC_DOUBLE
 #include "sfmmvd.hpp"
+bool scaled = false;
 #endif
 
 #include "timer.hpp"
@@ -750,17 +756,24 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g1 = rand1();
 			double g2 = rand1();
 #ifdef VECTOR
+#ifdef SCALED
+			multipole_periodic_scaled<vec_real, P> M;
+			expansion_periodic_scaled<vec_real, P> L;
+			M.init(0.1);
+			L.init(0.01);
+#else
 			multipole_periodic<vec_real, P> M;
 			expansion_periodic<vec_real, P> L;
+			M.init();
+			L.init();
+#endif
 			force_type<vec_real> f;
-			M.init(real(.1));
-			L.init(real(.01));
 			f.init();
-			P2M(M, vec_real(real(0.5)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)), flags);
-			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))), flags);
-			M2L_ewald(L, M, vec_real(x1), vec_real(y1), vec_real(z1), flags);
-			L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2), flags);
-			L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)), flags);
+			P2M(M, vec_real(real(0.5)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)));
+			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))));
+			M2L_ewald(L, M, vec_real(x1), vec_real(y1), vec_real(z1));
+			L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2));
+			L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)));
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			fx *= 0.5;
 			fy *= 0.5;
@@ -776,17 +789,24 @@ real test_M2L(test_type type, real theta = 0.5) {
 			err += fabs(phi - f.potential[0]);
 			norm += fabs(phi);
 #else
-			multipole_periodic<real, P> M;
-			expansion_periodic<real, P> L;
-			force_type<real> f;
+#ifdef SCALED
+			multipole_periodic_scaled<real, P> M;
+			expansion_periodic_scaled<real, P> L;
 			M.init(0.1);
 			L.init(0.01);
+#else
+			multipole_periodic<vec_real, P> M;
+			expansion_periodic<vec_real, P> L;
+			M.init();
+			L.init();
+#endif
+			force_type<real> f;
 			f.init();
-			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2, flags);
-			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
-			M2L_ewald(L, M, x1, y1, z1, flags);
-			L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-			L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2);
+			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2));
+			M2L_ewald(L, M, x1, y1, z1);
+			L2L(L, x2 * g0, y2 * g1, z2 * g2);
+			L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2));
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			fx *= 0.5;
 			fy *= 0.5;
@@ -839,22 +859,27 @@ real test_M2L(test_type type, real theta = 0.5) {
 #ifdef VECTOR
 			multipole_periodic<vec_real, P> M;
 			expansion_periodic<vec_real, P> L;
+#ifdef SCALED
+			multipole_periodic_scaled<vec_real, P> M;
+			expansion_periodic_scaled<vec_real, P> L;
+			M.init(0.1);
+			L.init(0.01);
+#else
+#endif
 			force_type<vec_real> f;
-			M.init(real(.1));
-			L.init(real(.01));
 			f.init();
-			P2M(M, vec_real(real(1.0)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)), flags);
-			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))), flags);
+			P2M(M, vec_real(real(1.0)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)));
+			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))));
 			if (type == CC) {
-				M2L(L, M, vec_real(x1), vec_real(y1), vec_real(z1), flags);
-				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2), flags);
-				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)), flags);
+				M2L(L, M, vec_real(x1), vec_real(y1), vec_real(z1));
+				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2));
+				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)));
 			} else if (type == PC) {
-				M2P(f, M, vec_real(x1), vec_real(y1), vec_real(z1), flags);
+				M2P(f, M, vec_real(x1), vec_real(y1), vec_real(z1));
 			} else if (type == CP) {
-				P2L(L, vec_real(real(1.0)), vec_real(x1), vec_real(y1), vec_real(z1), flags);
-				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2), flags);
-				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)), flags);
+				P2L(L, vec_real(real(1.0)), vec_real(x1), vec_real(y1), vec_real(z1));
+				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2));
+				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)));
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -870,24 +895,31 @@ real test_M2L(test_type type, real theta = 0.5) {
 			err += fabs(phi - f.potential[0]);
 			norm += fabs(phi);
 #else
-			multipole_nonperiodic<real, P> M;
-			expansion_nonperiodic<real, P> L;
-			force_type<real> f;
-			M.init(.1);
-			L.init(.01);
+			force_type < real > f;
+#ifdef SCALED
+			multipole_periodic_scaled<real, P> M;
+			expansion_periodic_scaled<real, P> L;
+			M.init(0.1);
+			L.init(0.01);
+#else
+			multipole_periodic<vec_real, P> M;
+			expansion_periodic<vec_real, P> L;
+			M.init();
+			L.init();
+#endif
 			f.init();
-			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
-			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
+			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2);
+			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2));
 			if (type == CC) {
-				M2L(L, M, x1, y1, z1, flags);
-				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+				M2L(L, M, x1, y1, z1);
+				L2L(L, x2 * g0, y2 * g1, z2 * g2);
+				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2));
 			} else if (type == PC) {
-				M2P(f, M, x1, y1, z1, flags);
+				M2P(f, M, x1, y1, z1);
 			} else if (type == CP) {
-				P2L(L, 1.0, x1, y1, z1, flags);
-				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+				P2L(L, 1.0, x1, y1, z1);
+				L2L(L, x2 * g0, y2 * g1, z2 * g2);
+				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2));
 			}
 			const real dx = (x2 + x1) - x0;
 			const real dy = (y2 + y1) - y0;
@@ -1090,7 +1122,7 @@ int main() {
 	 printf("\n");
 	 */
 	run_tests<PMAX + 1, PMIN> run;
-	real theta = 0.25;
+	real theta = 0.5;
 	printf("M2L\n");
 	run(CC, theta);
 	printf("M2P\n");
