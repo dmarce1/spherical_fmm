@@ -795,12 +795,12 @@ real test_M2L(test_type type, real theta = 0.5) {
 			M.init(0.1);
 			L.init(0.01);
 #else
-			multipole_periodic<vec_real, P> M;
-			expansion_periodic<vec_real, P> L;
+			multipole_periodic < vec_real, P > M;
+			expansion_periodic < vec_real, P > L;
 			M.init();
 			L.init();
 #endif
-			force_type<real> f;
+			force_type < real > f;
 			f.init();
 			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2);
 			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2));
@@ -853,6 +853,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 			xb = -xa;
 			yb = -ya;
 			zb = -za;
+			eps = 0.0;
 			double f0 = rand1();
 			double f1 = rand1();
 			double f2 = rand1();
@@ -865,26 +866,32 @@ real test_M2L(test_type type, real theta = 0.5) {
 #else
 			using T = real;
 #endif
-			force_type < T > f;
+			force_type<T> f;
 #ifdef SCALED
-			multipole_periodic_scaled<T, P> M1(0.1);
-			multipole_periodic_scaled<T, P> M;
+			multipole_periodic_scaled_wo_dipole<T, P> M1(0.1);
+			multipole_periodic_scaled_wo_dipole<T, P> M;
 			expansion_periodic_scaled<T, P> L;
 			M.init(0.1);
 			L.init(0.01);
 #else
-			multipole_periodic<T, P> M1;
-			multipole_periodic<T, P> M;
+			multipole_periodic_wo_dipole<T, P> M1;
+			multipole_periodic_wo_dipole<T, P> M;
 			expansion_periodic<T, P> L;
 			M.init();
 			L.init();
 #endif
 			f.init();
-			P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
+			/*P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
 			M += M1;
 			P2M(M1, T(1.0), -T(xb), -T(yb), -T(zb));
 			M += M1;
-//			M2M(M, -T(real(xa) * (1 - f0)), -T(real(ya) * (1 - f1)), -T(real(za) * (1 - f2)));
+			M2M(M, -T(0), -T(0), -T(0));*/
+			P2M(M1, T(1.0), -T(0), -T(0), -T(0));
+			M2M(M1, -T(xa), -T(ya), -T(za));
+			M += M1;
+			P2M(M1, T(1.0), -T(0), -T(0), -T(0));
+			M2M(M1, -T(xb), -T(yb), -T(zb));
+			M += M1;
 			if (type == CC) {
 				M2L(L, M, T(x1), T(y1), T(z1));
 				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
@@ -894,7 +901,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 			} else if (type == CP) {
 				P2L(L, T(2.0), T(x1), T(y1), T(z1));
 				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
-				L2P(f, L, T(x2 * (1 - g0)),T(y2 * (1 - g1)), T(z2 * (1 - g2)));
+				L2P(f, L, T(x2 * (1 - g0)), T(y2 * (1 - g1)), T(z2 * (1 - g2)));
 			}
 			real dx = (x2 + x1) - xa;
 			real dy = (y2 + y1) - ya;

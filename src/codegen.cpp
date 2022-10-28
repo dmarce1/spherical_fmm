@@ -80,6 +80,8 @@ static int tprint_on = true;
 #define ASPRINTF(...) if( asprintf(__VA_ARGS__) == 0 ) {printf( "ASPRINTF error %s %i\n", __FILE__, __LINE__); abort(); }
 #define SYSTEM(...) if( system(__VA_ARGS__) != 0 ) {printf( "SYSTEM error %s %i\n", __FILE__, __LINE__); abort(); }
 
+#define DEBUGNAN
+
 static int nopot = false;
 static int nodip = false;
 static bool fmaops = true;
@@ -655,9 +657,9 @@ static flops_t greens_ewald_real_flops;
 
 double tiny() {
 	if (is_float(type)) {
-		return 2.0 / std::numeric_limits<float>::max();
+		return 10.0 * std::numeric_limits<float>::min();
 	} else {
-		return 2.0 / std::numeric_limits<double>::max();
+		return 10.0 * std::numeric_limits<double>::min();
 	}
 }
 
@@ -1167,7 +1169,11 @@ enum arg_type {
 };
 
 void init_real(std::string var) {
+#ifdef DEBUGNAN
+	tprint("T %s = std::numeric_limits<%s>::signaling_NaN();\n", var.c_str(), type.c_str());
+#else
 	tprint("T %s;\n", var.c_str());
+#endif
 	if (var == "tmp1") {
 		for (int i = 2; i < nchains; i++) {
 			init_real(std::string("tmp") + std::to_string(i));
@@ -1177,7 +1183,18 @@ void init_real(std::string var) {
 
 void init_reals(std::string var, int cnt) {
 	std::string str;
+#ifdef DEBUGNAN
+	str = "T " + var + "[" + std::to_string(cnt) + "] = {";
+	for (int n = 0; n < cnt; n++) {
+		str += "std::numeric_limits<" + type + ">::signaling_NaN()";
+		if (n != cnt - 1) {
+			str += ",";
+		}
+	}
+	str += "};\n";
+#else
 	str = "T " + var + "[" + std::to_string(cnt) + "];";
+#endif
 //			" = {";
 	/*	for (int n = 0; n < cnt - 1; n++) {
 	 str += "std::numeric_limits<T>::signaling_NaN(), ";
@@ -1450,6 +1467,14 @@ void m2l(int P, int Q, const char* mname, const char* lname) {
 			const int maxk = std::min(P - n, P - 1);
 			for (int k = m; k <= maxk; k++) {
 				if (nodip && k == 1) {
+					if (pfirst) {
+						tprint_chain("L[%i] = TCAST(0);\n", index(n, m));
+						pfirst = false;
+					}
+					if (nfirst && m > 0) {
+						tprint_chain("L[%i] = TCAST(0);\n", index(n, -m));
+						nfirst = false;
+					}
 					continue;
 				}
 				if (pfirst) {
@@ -2255,6 +2280,7 @@ std::string M2L_norot(int P, int Q) {
 	} else {
 		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
+	tprint("/* algorithm = no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (Q == 1) {
 		init_real("rinv");
@@ -2281,13 +2307,13 @@ std::string M2L_norot(int P, int Q) {
 			tprint("M_st.r = L_st.r;\n");
 			tprint("M_st.o[0] = M0_st.o[0];\n");
 			for (int n = 1; n < P; n++) {
-				if (!(nopot && n == 1)) {
+				if (!(nodip && n == 1)) {
 					for (int m = -n; m <= n; m++) {
 						tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", index(n, m), index(n, m));
 					}
-					if (periodic && P >= 2 && n == 2) {
-						tprint("M_st.t = M0_st.t * b;\n");
-					}
+				}
+				if (periodic && P > 2 && n == 2) {
+					tprint("M_st.t = M0_st.t * b;\n");
 				}
 				if (n != P - 1) {
 					tprint("b *= a;\n");
@@ -2346,6 +2372,7 @@ std::string M2L_rot1(int P, int Q) {
 	} else {
 		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
+	tprint("/* algorithm = z rotation only, half l^4 */\n");
 	init_real("R2");
 	init_real("Rzero");
 	init_real("r2");
@@ -2382,9 +2409,9 @@ std::string M2L_rot1(int P, int Q) {
 					for (int m = -n; m <= n; m++) {
 						tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", index(n, m), index(n, m));
 					}
-					if (periodic && P >= 2 && n == 2) {
-						tprint("M_st.t = M0_st.t * b;\n");
-					}
+				}
+				if (periodic && P > 2 && n == 2) {
+					tprint("M_st.t = M0_st.t * b;\n");
 				}
 				if (n != P - 1) {
 					tprint("b *= a;\n");
@@ -2406,7 +2433,7 @@ std::string M2L_rot1(int P, int Q) {
 		for (int n = 0; n < mul_sz(P); n++) {
 			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
 		}
-		if (periodic && P >= 2) {
+		if (periodic && P > 2) {
 			tprint("M_st.t = M0_st.t;\n");
 		}
 		if (scaled) {
@@ -2420,7 +2447,7 @@ std::string M2L_rot1(int P, int Q) {
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
-	tprint("R = TCAST(1) / Rinv;\n");
+	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 	tprint("r2inv = TCAST(1) / (r2 + rzero);\n");
 	tprint("cosphi = detail::fma(x, Rinv, Rzero);\n");
 	tprint("sinphi = -y * Rinv;\n");
@@ -2437,7 +2464,15 @@ std::string M2L_rot1(int P, int Q) {
 			const int kmax = std::min(P - n, P - 1);
 			for (int sgn = -1; sgn <= 1; sgn += 2) {
 				for (int k = 0; k <= kmax; k++) {
-					if (nopot && k == 1) {
+					if (nodip && k == 1) {
+						if (pfirst) {
+							tprint_chain("L[%i] = TCAST(0);\n", index(n, m));
+							pfirst = false;
+						}
+						if (nfirst && m > 0) {
+							tprint_chain("L[%i] = TCAST(0);\n", index(n, -m));
+							nfirst = false;
+						}
 						continue;
 					}
 					const int lmin = std::max(-k, -n - k - m);
@@ -2572,6 +2607,7 @@ std::string M2L_rot2(int P, int Q) {
 	} else {
 		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	}
+	tprint("/* algorithm = z rotation + x/z swap, l^3 */\n");
 	tprint("multipole%s%s%s<%s, %i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
 	tprint("T* M(M_st.data());\n");
 	init_reals("L", exp_sz(Q));
@@ -2610,9 +2646,9 @@ std::string M2L_rot2(int P, int Q) {
 					for (int m = -n; m <= n; m++) {
 						tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", index(n, m), index(n, m));
 					}
-					if (periodic && P >= 2 && n == 2) {
-						tprint("M_st.t = M0_st.t * b;\n");
-					}
+				}
+				if (periodic && P > 2 && n == 2) {
+					tprint("M_st.t = M0_st.t * b;\n");
 				}
 				if (n != P - 1) {
 					tprint("b *= a;\n");
@@ -2634,7 +2670,7 @@ std::string M2L_rot2(int P, int Q) {
 		for (int n = 0; n < mul_sz(P); n++) {
 			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
 		}
-		if (periodic && P >= 2) {
+		if (periodic && P > 2) {
 			tprint("M_st.t = M0_st.t;\n");
 		}
 		if (scaled) {
@@ -2646,7 +2682,7 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
-	tprint("R = TCAST(1) / Rinv;\n");
+	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 	tprint("r2 = (detail::fma(z, z, R2));\n");
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
 	tprint("r2przero = (r2 + rzero);\n");
@@ -2731,9 +2767,9 @@ std::string M2L_ewald(int P) {
 				for (int m = -n; m <= n; m++) {
 					tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", index(n, m), index(n, m));
 				}
-				if (periodic && P >= 2 && n == 2) {
-					tprint("M_st.t = M0_st.t * b;\n");
-				}
+			}
+			if (periodic && P > 2 && n == 2) {
+				tprint("M_st.t = M0_st.t * b;\n");
 			}
 			if (n != P - 1) {
 				tprint("b *= a;\n");
@@ -2744,7 +2780,9 @@ std::string M2L_ewald(int P) {
 		for (int n = 0; n < mul_sz(P); n++) {
 			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
 		}
-		tprint("M_st.t = M0_st.t;\n");
+		if (P > 2) {
+			tprint("M_st.t = M0_st.t;\n");
+		}
 		if (scaled) {
 			tprint("M_st.r = M0_st.r;\n");
 		}
@@ -2932,7 +2970,7 @@ std::string M2M_norot(int P) {
 				}
 			};
 			for (int k = 1; k <= n; k++) {
-				if (nodip && k == 1) {
+				if (nodip && n - k == 1) {
 					continue;
 				}
 				const int lmin = std::max(-k, m - n + k);
@@ -3074,7 +3112,7 @@ std::string M2M_rot1(int P) {
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
-	tprint("R = TCAST(1) / Rinv;\n");
+	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 	tprint("cosphi = detail::fma(x, Rinv, Rzero);\n");
 	tprint("sinphi = -y * Rinv;\n");
 	z_rot(P, "M", false, false, false);
@@ -3114,7 +3152,7 @@ std::string M2M_rot1(int P) {
 				}
 			};
 			for (int k = 1; k <= n; k++) {
-				if (nodip && k == 1) {
+				if (nodip && n - k == 1) {
 					continue;
 				}
 				const int lmin = std::max(-k, m - n + k);
@@ -3242,8 +3280,8 @@ std::string M2M_rot2(int P) {
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = detail::rsqrt(tmp1);\n");
-	tprint("R = TCAST(1) / Rinv;\n");
-	tprint("r = TCAST(1) / rinv;\n");
+	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
+	tprint("r = (TCAST(1) - rzero) / rinv;\n");
 	tprint("cosphi = y * Rinv;\n");
 	tprint("sinphi = detail::fma(x, Rinv, Rzero);\n");
 	z_rot(P, "M", false, false, false);
@@ -3271,7 +3309,7 @@ std::string M2M_rot2(int P) {
 		}
 		for (int m = 0; m <= n; m++) {
 			for (int k = 1; k <= n; k++) {
-				if (nodip && k == 1) {
+				if (nodip && n - k == 1) {
 					continue;
 				}
 				if (abs(m) > n - k) {
@@ -3300,6 +3338,115 @@ std::string M2M_rot2(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	return fname;
+}
+
+std::string P2M(int P) {
+	tprint("\n");
+	auto fname = func_header("P2M", P + 1, true, true, true, true, "", "M", MUL, "m", LIT, "x", LIT, "y", LIT, "z", LIT);
+	bool onodip = nodip;
+	nodip = false;
+	init_real("ax");
+	init_real("ay");
+	init_real("r2");
+	init_real("tmp1");
+	if (nodip) {
+		tprint("T Mdx;\n");
+		tprint("T Mdy;\n");
+		tprint("T Mdz;\n");
+#ifdef DEBUGNAN
+		tprint("M[1] = std::numeric_limits<T>::signaling_NaN();\n");
+		tprint("M[2] = std::numeric_limits<T>::signaling_NaN();\n");
+		tprint("M[3] = std::numeric_limits<T>::signaling_NaN();\n");
+#endif
+	}
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
+	if (scaled) {
+		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
+		tprint("x *= tmp1;\n");
+		tprint("y *= tmp1;\n");
+		tprint("z *= tmp1;\n");
+	}
+	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
+	tprint("M[0] = m;\n");
+	if (!nopot && periodic & P > 1) {
+		tprint("M_st.trace2() = m * r2;\n");
+	}
+	for (int m = 0; m <= P; m++) {
+		if (m > 0) {
+			if (m - 1 > 0) {
+				if (m - 1 == 1 && nodip) {
+					tprint("ax = Mdx * TCAST(%.20e);\n", 1.0 / (2.0 * m));
+					tprint("ay = Mdy * TCAST(%.20e);\n", 1.0 / (2.0 * m));
+				} else {
+					tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+					tprint("ay = M[%i] * TCAST(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
+				}
+				tprint("M[%i] = x * ax - y * ay;\n", index(m, m));
+				tprint("M[%i] = detail::fma(y, ax, x * ay);\n", index(m, -m));
+
+			} else {
+				tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
+				if (nodip) {
+					tprint("Mdx = x * ax;\n");
+					tprint("Mdy = y * ax;\n");
+				} else {
+					tprint("M[%i] = x * ax;\n", index(m, m));
+					tprint("M[%i] = y * ax;\n", index(m, -m));
+				}
+			}
+		}
+		if (m + 1 <= P) {
+			if (m == 0) {
+				if (nodip) {
+					tprint("Mdz = z * M[0];\n");
+				} else {
+					tprint("M[%i] = z * M[%i];\n", index(1, 0), index(0, 0));
+				}
+			} else {
+				if (nodip && m == 1) {
+					tprint("M[%i] = z * Mdx;\n", index(m + 1, m));
+					tprint("M[%i] = z * Mdy;\n", index(m + 1, -m));
+				} else {
+					tprint("M[%i] = z * M[%i];\n", index(m + 1, m), index(m, m));
+					tprint("M[%i] = z * M[%i];\n", index(m + 1, -m), index(m, -m));
+				}
+			}
+		}
+		for (int n = m + 2; n <= P; n++) {
+			const double inv = double(1) / (double(n * n) - double(m * m));
+			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
+			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
+			if (nodip && n - 2 == 1) {
+				if (m == 0) {
+					tprint("M[%i] = detail::fma(ax, M[%i], ay * Mdz);\n", index(n, m), index(n - 1, m));
+				} else {
+					tprint("M[%i] = detail::fma(ax, M[%i], ay * Mdx);\n", index(n, m), index(n - 1, m));
+					tprint("M[%i] = detail::fma(ax, M[%i], ay * Mdy);\n", index(n, -m), index(n - 1, -m));
+				}
+			} else if (nodip && n - 1 == 1) {
+				if (m == 0) {
+					tprint("M[%i] = detail::fma(ax, Mdz, ay * M[%i]);\n", index(n, m), index(n - 2, m));
+				} else {
+					tprint("M[%i] = detail::fma(ax, Mdx, ay * M[%i]);\n", index(n, m), index(n - 2, m));
+					tprint("M[%i] = detail::fma(ax, Mdy, ay * M[%i]);\n", index(n, -m), index(n - 2, -m));
+				}
+			} else {
+				tprint("M[%i] = detail::fma(ax, M[%i], ay * M[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
+				if (m != 0) {
+					tprint("M[%i] = detail::fma(ax, M[%i], ay * M[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
+				}
+			}
+		}
+	}
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+	tprint("}\n");
+	tprint("\n");
+	nodip = onodip;
 	return fname;
 }
 
@@ -3488,7 +3635,7 @@ std::string L2L_rot1(int P) {
 	tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = R2 + Rzero;\n");
 	tprint("Rinv = detail::rsqrt(tmp1);\n");
-	tprint("R = TCAST(1) / Rinv;\n");
+	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 	tprint("cosphi = detail::fma(x, Rinv, Rzero);\n");
 	tprint("sinphi = -y * Rinv;\n");
 	z_rot(P, "L", false, false, false);
@@ -3653,8 +3800,8 @@ std::string L2L_rot2(int P) {
 	tprint("rzero = TCONVERT( r2 < TCAST(%.20e) );\n", tiny());
 	tprint("tmp1 = r2 + rzero;\n");
 	tprint("rinv = detail::rsqrt(tmp1);\n");
-	tprint("R = TCAST(1) / Rinv;\n");
-	tprint("r = TCAST(1) / rinv;\n");
+	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
+	tprint("r = (TCAST(1) - rzero) / rinv;\n");
 	tprint("cosphi = y * Rinv;\n");
 	tprint("sinphi = detail::fma(x, Rinv, Rzero);\n");
 	z_rot(P, "L", false, false, false);
@@ -3897,110 +4044,6 @@ std::string L2P(int P) {
 	tprint("}\n");
 	tprint("\n");
 
-	return fname;
-}
-
-std::string P2M(int P) {
-	tprint("\n");
-	auto fname = func_header("P2M", P + 1, true, true, true, true, "", "M", MUL, "m", LIT, "x", LIT, "y", LIT, "z", LIT);
-	bool onodip = nodip;
-	//nodip = false;
-	init_real("ax");
-	init_real("ay");
-	init_real("r2");
-	init_real("tmp1");
-	if (nodip) {
-		tprint("T Mdx;\n");
-		tprint("T Mdy;\n");
-		tprint("T Mdz;\n");
-	}
-	tprint("x = -x;\n");
-	tprint("y = -y;\n");
-	tprint("z = -z;\n");
-	if (scaled) {
-		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
-		tprint("x *= tmp1;\n");
-		tprint("y *= tmp1;\n");
-		tprint("z *= tmp1;\n");
-	}
-	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
-	tprint("M[0] = m;\n");
-	if (!nopot && periodic) {
-		tprint("M_st.trace2() = m * r2;\n");
-	}
-	for (int m = 0; m <= P; m++) {
-		if (m > 0) {
-			if (m - 1 > 0) {
-				if (m - 1 == 1 && nodip) {
-					tprint("ax = Mdx * TCAST(%.20e);\n", 1.0 / (2.0 * m));
-					tprint("ay = Mdy * TCAST(%.20e);\n", 1.0 / (2.0 * m));
-				} else {
-					tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
-					tprint("ay = M[%i] * TCAST(%.20e);\n", index(m - 1, -(m - 1)), 1.0 / (2.0 * m));
-				}
-				tprint("M[%i] = x * ax - y * ay;\n", index(m, m));
-				tprint("M[%i] = detail::fma(y, ax, x * ay);\n", index(m, -m));
-
-			} else {
-				tprint("ax = M[%i] * TCAST(%.20e);\n", index(m - 1, m - 1), 1.0 / (2.0 * m));
-				if (nodip) {
-					tprint("Mdx = x * ax;\n");
-					tprint("Mdy = y * ax;\n");
-				} else {
-					tprint("M[%i] = x * ax;\n", index(m, m));
-					tprint("M[%i] = y * ax;\n", index(m, -m));
-				}
-			}
-		}
-		if (m + 1 <= P) {
-			if (m == 0) {
-				if (nodip) {
-					tprint("Mdz = z * M[0];\n");
-				} else {
-					tprint("M[%i] = z * M[%i];\n", index(1, 0), index(0, 0));
-				}
-			} else {
-				if( nodip && m ==  1) {
-					tprint("M[%i] = z * Mdx;\n", index(m + 1, m));
-					tprint("M[%i] = z * Mdy;\n", index(m + 1, -m));
-				} else {
-					tprint("M[%i] = z * M[%i];\n", index(m + 1, m), index(m, m));
-					tprint("M[%i] = z * M[%i];\n", index(m + 1, -m), index(m, -m));
-				}
-			}
-		}
-		for (int n = m + 2; n <= P; n++) {
-			const double inv = double(1) / (double(n * n) - double(m * m));
-			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
-			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
-			if (nodip && n - 2 == 1) {
-				if (m == 0) {
-					tprint("M[%i] = detail::fma(ax, M[%i], ay * Mdz);\n", index(n, m), index(n - 1, m));
-				} else {
-					tprint("M[%i] = detail::fma(ax, M[%i], ay * Mdx);\n", index(n, m), index(n - 1, m));
-					tprint("M[%i] = detail::fma(ax, M[%i], ay * Mdy);\n", index(n, -m), index(n - 1, -m));
-				}
-			} else if (nodip && n - 1 == 1) {
-				if (m == 0) {
-					tprint("M[%i] = detail::fma(ax, Mdz, ay * M[%i]);\n", index(n, m), index(n - 2, m));
-				} else {
-					tprint("M[%i] = detail::fma(ax, Mdx, ay * M[%i]);\n", index(n, m), index(n - 2, m));
-					tprint("M[%i] = detail::fma(ax, Mdy, ay * M[%i]);\n", index(n, -m), index(n - 2, -m));
-				}
-			} else {
-				tprint("M[%i] = detail::fma(ax, M[%i], ay * M[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
-				if (m != 0) {
-					tprint("M[%i] = detail::fma(ax, M[%i], ay * M[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
-				}
-			}
-		}
-	}
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("}\n");
-	tprint("\n");
-	nodip = onodip;
 	return fname;
 }
 
@@ -4808,6 +4851,7 @@ int main() {
 	tprint("\n");
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
+	tprint("#include <limits>\n");
 	tprint("#include <utility>\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
@@ -5063,6 +5107,16 @@ int main() {
 						if (scaled) {
 							tprint("SFMM_PREFIX expansion%s%s(T r0 = T(1)) {\n", period_name(), scaled_name());
 							indent();
+#ifdef DEBUGNAN
+							tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+							indent();
+							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+							deindent();
+							tprint("}\n");
+							if (periodic && P > 1) {
+								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+							}
+#endif
 							tprint("r = r0;\n");
 							deindent();
 							tprint("}\n");
@@ -5106,6 +5160,16 @@ int main() {
 						} else {
 							tprint("SFMM_PREFIX expansion%s%s() {\n", period_name(), scaled_name());
 							indent();
+#ifdef DEBUGNAN
+							tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+							indent();
+							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+							deindent();
+							tprint("}\n");
+							if (periodic && P > 1) {
+								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+							}
+#endif
 							deindent();
 							tprint("}\n");
 							tprint("SFMM_PREFIX void init() {\n");
@@ -5164,7 +5228,7 @@ int main() {
 						indent();
 						tprint("typedef %s T;\n", type.c_str());
 						tprint("T o[%i];\n", mul_sz(P));
-						if (periodic && P >= 2) {
+						if (periodic && P > 2) {
 							tprint("T t;\n");
 						}
 						if (scaled) {
@@ -5182,7 +5246,7 @@ int main() {
 						tprint("o[n] = other.o[n];\n");
 						deindent();
 						tprint("}\n");
-						if (periodic && P >= 2) {
+						if (periodic && P > 2) {
 							tprint("t = other.t;\n");
 						}
 						if (scaled) {
@@ -5207,7 +5271,7 @@ int main() {
 						tprint("o[n] += other.o[n];\n");
 						deindent();
 						tprint("}\n");
-						if (periodic && P >= 2) {
+						if (periodic && P > 2) {
 							tprint("t += other.t;\n");
 						}
 						if (scaled) {
@@ -5219,6 +5283,16 @@ int main() {
 						if (scaled) {
 							tprint("SFMM_PREFIX multipole%s%s%s(T r0 = T(1)) {\n", period_name(), scaled_name(), dip_name());
 							indent();
+#ifdef DEBUGNAN
+							tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+							indent();
+							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+							deindent();
+							tprint("}\n");
+							if (periodic && P > 2) {
+								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+							}
+#endif
 							tprint("r = r0;\n");
 							deindent();
 							tprint("}\n");
@@ -5229,7 +5303,7 @@ int main() {
 							tprint("o[n] = T(0);\n");
 							deindent();
 							tprint("}\n");
-							if (periodic && P >= 2) {
+							if (periodic && P > 2) {
 								tprint("t = T(0);\n");
 							}
 							if (scaled) {
@@ -5247,7 +5321,7 @@ int main() {
 									for (int m = -n; m <= n; m++) {
 										tprint("o[%i] *= b;\n", index(n, m));
 									}
-									if (periodic && P >= 2 && n == 2) {
+									if (periodic && P > 2 && n == 2) {
 										tprint("t *= b;\n");
 									}
 								}
@@ -5265,6 +5339,16 @@ int main() {
 						} else {
 							tprint("SFMM_PREFIX multipole%s%s%s() {\n", period_name(), scaled_name(), dip_name());
 							indent();
+#ifdef DEBUGNAN
+							tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+							indent();
+							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+							deindent();
+							tprint("}\n");
+							if (periodic && P > 2) {
+								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+							}
+#endif
 							deindent();
 							tprint("}\n");
 							tprint("SFMM_PREFIX void init() {\n");
@@ -5274,14 +5358,14 @@ int main() {
 							tprint("o[n] = T(0);\n");
 							deindent();
 							tprint("}\n");
-							if (periodic && P >= 2) {
+							if (periodic && P > 2) {
 								tprint("t = T(0);\n");
 							}
 							deindent();
 							tprint("}\n");
 
 						}
-						if (periodic && P >= 2 && P > 1) {
+						if (periodic && P > 2 && P > 1) {
 							tprint("SFMM_PREFIX T& trace2() {\n");
 							indent();
 							tprint("return t;\n");
@@ -5326,6 +5410,16 @@ int main() {
 						indent();
 						tprint("SFMM_PREFIX expansion_xz%s%s() {\n", period_name(), scaled_name());
 						indent();
+#ifdef DEBUGNAN
+						tprint("for( int n = 0; n < %i; n++ ) {\n", half_exp_sz(P));
+						indent();
+						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+						}
+#endif
 						deindent();
 						tprint("}\n");
 						tprint("SFMM_PREFIX T* data() {\n");
@@ -5391,27 +5485,32 @@ int main() {
 			set_file(full_header.c_str());
 			tprint("#ifndef __CUDACC__\n");
 		}
-		for (scaled = 0; scaled <= enable_scaled; scaled++) {
-			for (periodic = 0; periodic <= 1; periodic++) {
-				for (nodip = 0; nodip <= 1; nodip++) {
-					for (nopot = 0; nopot <= 1; nopot++) {
+		for (periodic = 0; periodic <= 1; periodic++) {
+			for (scaled = 0; scaled <= enable_scaled; scaled++) {
+				flops_t regular_harmonic_xz_flops;
+				flops_t greens_xz_flops;
+				for (nopot = 0; nopot <= 1; nopot++) {
+					flops_t regular_harmonic_flops;
+					flops_t greens_flops;
+					flops_t greens_ewald_flops;
+					for (nodip = 0; nodip <= 1; nodip++) {
 						std::vector<std::unordered_map<std::string, flops_t>> flops_map(pmax + 1);
 						std::vector<std::unordered_map<std::string, int>> rot_map(pmax + 1);
 						for (int P = pmin - 1; P <= pmax; P++) {
 							std::string fname;
-							flops_t regular_harmonic_flops;
-							flops_t regular_harmonic_xz_flops;
 							flops_t fps;
-							fname = regular_harmonic(P);
-							fclose(fp);
-							fp = nullptr;
-							regular_harmonic_flops = count_flops(fname);
-
-							fname = regular_harmonic_xz(P);
-							fclose(fp);
-							fp = nullptr;
-							regular_harmonic_xz_flops = count_flops(fname);
-
+							if (!nodip) {
+								fname = regular_harmonic(P);
+								fclose(fp);
+								fp = nullptr;
+								regular_harmonic_flops = count_flops(fname);
+							}
+							if (!nodip && !scaled) {
+								fname = regular_harmonic_xz(P);
+								fclose(fp);
+								fp = nullptr;
+								regular_harmonic_xz_flops = count_flops(fname);
+							}
 							flops_t flops0, flops1, flops2;
 							if (P < pmax) {
 								fname = M2M_norot(P);
@@ -5496,25 +5595,25 @@ int main() {
 						for (int P = pmin; P <= pmax; P++) {
 							flops_t flops0, flops1, flops2;
 							std::string fname;
-							flops_t greens_flops;
-							flops_t greens_xz_flops;
 							flops_t fps;
-							fname = greens(P);
-							fclose(fp);
-							fp = nullptr;
-							greens_flops = count_flops(fname);
-
-							flops0.reset();
-							flops0 += sqrt_flops();
-							flops0 += greens_flops;
-							flops0 += erfcexp_flops();
-							greens_ewald_real_flops = flops0;
-							flops0.reset();
-
-							fname = greens_xz(P);
-							fclose(fp);
-							fp = nullptr;
-							greens_xz_flops = count_flops(fname);
+							if (!nodip) {
+								fname = greens(P);
+								fclose(fp);
+								fp = nullptr;
+								greens_flops = count_flops(fname);
+								flops0.reset();
+								flops0 += sqrt_flops();
+								flops0 += greens_flops;
+								flops0 += erfcexp_flops();
+								greens_ewald_real_flops = flops0;
+								flops0.reset();
+								if (!scaled) {
+									fname = greens_xz(P);
+									fclose(fp);
+									fp = nullptr;
+									greens_xz_flops = count_flops(fname);
+								}
+							}
 
 							fname = M2L_norot(P, P);
 							fclose(fp);
@@ -5603,7 +5702,6 @@ int main() {
 								fclose(fp);
 								fp = nullptr;
 								flops0 = count_flops(fname);
-								flops0 += accumulate_flops(P);
 								flops_map[P]["P2L"] = flops0;
 
 								fname = L2P(P);
@@ -5627,12 +5725,13 @@ int main() {
 							auto M2LG_flops = flops0;
 
 							if (periodic) {
-								fname = greens_ewald(P, alpha);
-								fclose(fp);
-								fp = nullptr;
-								flops0 = count_flops(fname);
-								auto greens_ewald_flops = flops0;
-
+								if (!nodip) {
+									fname = greens_ewald(P, alpha);
+									fclose(fp);
+									fp = nullptr;
+									flops0 = count_flops(fname);
+									greens_ewald_flops = flops0;
+								}
 								fname = M2L_ewald(P);
 								fclose(fp);
 								fp = nullptr;
@@ -5643,13 +5742,13 @@ int main() {
 							}
 						}
 
-						printf("\n%s : %s %s %s %s %s\n", type.c_str(), cuda ? "cuda" : "", periodic ? "periodic" : "", scaled ? "scaled" : "",
-								nodip ? "w/o dipole" : "", nopot ? "w/o potential" : "");
+						printf("\ntype: %s  target: %s\nperiodic [%s]  scaled [%s]  dipole [%s]  potential[%s]   \n", type.c_str(), cuda ? "GPU" : "CPU",
+								periodic ? "X" : " ", scaled ? "X" : " ", nodip ? " " : "X", nopot ? " " : "X");
 						printf("P  | M2L      | P2L   | M2P     | P2M   | M2M     | L2L     | L2P   | M2L_ewald\n");
 						for (int P = pmin; P <= pmax; P++) {
 							printf("%2i | ", P);
 							printf(" %5i %1i |", flops_map[P]["M2L"].load(), rot_map[P]["M2L"]);
-							if( !nodip ) {
+							if (!nodip) {
 								printf(" %5i |", flops_map[P]["P2L"].load());
 							} else {
 								printf("  n/a  |");
@@ -5661,6 +5760,7 @@ int main() {
 								printf(" %5i %1i |", flops_map[P]["L2L"].load(), rot_map[P]["L2L"]);
 								printf(" %5i |", flops_map[P]["L2P"].load());
 							} else {
+
 								printf("   n/a   |");
 								printf("  n/a  |");
 							}
@@ -5671,6 +5771,7 @@ int main() {
 							}
 							printf("\n");
 						}
+						fflush(stdout);
 					}
 				}
 			}
