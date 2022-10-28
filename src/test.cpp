@@ -822,12 +822,12 @@ real test_M2L(test_type type, real theta = 0.5) {
 			norm += fabs(phi);
 #endif
 		} else {
-			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
-			random_unit(x0, y0, z0);
+			real xa, x1, x2, ya, y1, y2, za, z1, z2, x3, y3, z3, xb, yb, zb;
+			random_unit(xa, ya, za);
 			random_unit(x1, y1, z1);
 			random_unit(x2, y2, z2);
 			if (type == CP) {
-				x0 = y0 = z0 = 0;
+				xa = ya = za = 0;
 			} else if (type == PC) {
 				x2 = y2 = z2 = 0;
 			}
@@ -841,100 +841,77 @@ real test_M2L(test_type type, real theta = 0.5) {
 				z1 /= theta;
 			}
 			real eps = 1;
-			x0 *= eps;
-			y0 *= eps;
-			z0 *= eps;
+			xa *= eps;
+			ya *= eps;
+			za *= eps;
 			x1 *= eps;
 			y1 *= eps;
 			z1 *= eps;
 			x2 *= eps;
 			y2 *= eps;
 			z2 *= eps;
+			xb = -xa;
+			yb = -ya;
+			zb = -za;
 			double f0 = rand1();
 			double f1 = rand1();
 			double f2 = rand1();
 			double g0 = rand1();
 			double g1 = rand1();
 			double g2 = rand1();
+
 #ifdef VECTOR
-			multipole_periodic<vec_real, P> M;
-			expansion_periodic<vec_real, P> L;
-#ifdef SCALED
-			multipole_periodic_scaled<vec_real, P> M;
-			expansion_periodic_scaled<vec_real, P> L;
-			M.init(0.1);
-			L.init(0.01);
+			using T = vec_real;
 #else
+			using T = real;
 #endif
-			force_type<vec_real> f;
-			f.init();
-			P2M(M, vec_real(real(1.0)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)));
-			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))));
-			if (type == CC) {
-				M2L(L, M, vec_real(x1), vec_real(y1), vec_real(z1));
-				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2));
-				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)));
-			} else if (type == PC) {
-				M2P(f, M, vec_real(x1), vec_real(y1), vec_real(z1));
-			} else if (type == CP) {
-				P2L(L, vec_real(real(1.0)), vec_real(x1), vec_real(y1), vec_real(z1));
-				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2));
-				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)));
-			}
-			const real dx = (x2 + x1) - x0;
-			const real dy = (y2 + y1) - y0;
-			const real dz = (z2 + z1) - z0;
-			const real r = std::sqrt(sqr(dx, dy, dz));
-			const real phi = 1.0 / r;
-			const real fx = dx / (r * r * r);
-			const real fy = dy / (r * r * r);
-			const real fz = dz / (r * r * r);
-			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
-			const double fn = std::sqrt(sqr(f.force[0][0], f.force[1][0], f.force[2][0]));
-			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(phi - f.potential[0]);
-			norm += fabs(phi);
-#else
-			force_type < real > f;
+			force_type < T > f;
 #ifdef SCALED
-			multipole_periodic_scaled<real, P> M;
-			expansion_periodic_scaled<real, P> L;
+			multipole_periodic_scaled<T, P> M1(0.1);
+			multipole_periodic_scaled<T, P> M;
+			expansion_periodic_scaled<T, P> L;
 			M.init(0.1);
 			L.init(0.01);
 #else
-			multipole_periodic<vec_real, P> M;
-			expansion_periodic<vec_real, P> L;
+			multipole_periodic<T, P> M1;
+			multipole_periodic<T, P> M;
+			expansion_periodic<T, P> L;
 			M.init();
 			L.init();
 #endif
 			f.init();
-			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2);
-			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2));
+			P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
+			M += M1;
+			P2M(M1, T(1.0), -T(xb), -T(yb), -T(zb));
+			M += M1;
+//			M2M(M, -T(real(xa) * (1 - f0)), -T(real(ya) * (1 - f1)), -T(real(za) * (1 - f2)));
 			if (type == CC) {
-				M2L(L, M, x1, y1, z1);
-				L2L(L, x2 * g0, y2 * g1, z2 * g2);
-				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2));
+				M2L(L, M, T(x1), T(y1), T(z1));
+				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
+				L2P(f, L, T(x2 * (1 - g0)), T(y2 * (1 - g1)), T(z2 * (1 - g2)));
 			} else if (type == PC) {
-				M2P(f, M, x1, y1, z1);
+				M2P(f, M, T(x1), T(y1), T(z1));
 			} else if (type == CP) {
-				P2L(L, 1.0, x1, y1, z1);
-				L2L(L, x2 * g0, y2 * g1, z2 * g2);
-				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2));
+				P2L(L, T(2.0), T(x1), T(y1), T(z1));
+				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
+				L2P(f, L, T(x2 * (1 - g0)),T(y2 * (1 - g1)), T(z2 * (1 - g2)));
 			}
-			const real dx = (x2 + x1) - x0;
-			const real dy = (y2 + y1) - y0;
-			const real dz = (z2 + z1) - z0;
-			const real r = std::sqrt(sqr(dx, dy, dz));
-			const real phi = 1.0 / r;
-			const real fx = dx / (r * r * r);
-			const real fy = dy / (r * r * r);
-			const real fz = dz / (r * r * r);
-			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
-			const double fn = std::sqrt(sqr(f.force[0], f.force[1], f.force[2]));
-			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
+			real dx = (x2 + x1) - xa;
+			real dy = (y2 + y1) - ya;
+			real dz = (z2 + z1) - za;
+			real r = std::sqrt(sqr(dx, dy, dz));
+			real phi = 1.0 / r;
+			dx = (x2 + x1) - xb;
+			dy = (y2 + y1) - yb;
+			dz = (z2 + z1) - zb;
+			r = std::sqrt(sqr(dx, dy, dz));
+			phi += 1.0 / r;
+#ifdef VECTOR
+			err += fabs(phi - f.potential[0]);
+#else
 			err += fabs(phi - f.potential);
-			norm += fabs(phi);
 #endif
+			norm += fabs(phi);
 		}
 	}
 	err /= norm;

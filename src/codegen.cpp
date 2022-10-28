@@ -1561,11 +1561,7 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 
 void greens_body(int P, const char* M = nullptr) {
 	tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
-	if (M) {
-		tprint("r2inv = %s / r2;\n", M);
-	} else {
-		tprint("r2inv = TCAST(1) / r2;\n");
-	}
+	tprint("r2inv = TCAST(1) / r2;\n");
 	tprint("O[0] = detail::rsqrt(r2);\n");
 	if (M) {
 		tprint("O[0] *= %s;\n", M);
@@ -3868,9 +3864,9 @@ std::string P2M(int P) {
 	init_real("ay");
 	init_real("r2");
 	init_real("tmp1");
-	tprint("x = -x;");
-	tprint("y = -y;");
-	tprint("z = -z;");
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
 	if (scaled) {
 		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
 		tprint("x *= tmp1;\n");
