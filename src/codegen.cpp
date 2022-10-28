@@ -2065,19 +2065,19 @@ std::string M2L_norot(int P, int Q) {
 	tprint("multipole%s%s<%s, %i> M_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("T* O = O_st.data();\n", type.c_str(), P);
 	tprint("auto* M = M_st.data();\n");
-	init_reals("L", exp_sz(Q));
 
 	bool minit = false;
 	if (Q > 1) {
-		tprint("expansion%s%s<%s, %i>& L_st = L0_st;\n", period_name(), scaled_name(), type.c_str(), P);
-		tprint("T* L = L_st.data();\n", type.c_str(), P);
 		init_real("a");
 		init_real("b");
+		tprint("expansion%s%s<%s, %i>& L_st(L0_st);\n", period_name(), scaled_name(), type.c_str(), P);
+		tprint("T* L(L_st.data());\n", type.c_str(), P);
 		if (scaled) {
 			tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 			tprint("a = M0_st.r * tmp1;\n");
 			tprint("b = a;\n");
 			tprint("M_st.r = L_st.r;\n");
+			tprint("M_st.o[0] = M0_st.o[0];\n");
 			for (int n = 1; n < P; n++) {
 				for (int m = -n; m <= n; m++) {
 					tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", index(n, m), index(n, m));
@@ -2095,6 +2095,7 @@ std::string M2L_norot(int P, int Q) {
 			tprint("z *= tmp1;\n");
 		}
 	} else {
+		init_reals("L", exp_sz(Q));
 		tprint("L[0] = TCAST(0);\n");
 		tprint("L[1] = TCAST(0);\n");
 		tprint("L[2] = TCAST(0);\n");
@@ -2202,6 +2203,12 @@ std::string M2L_rot1(int P, int Q) {
 		}
 	}
 	if (!minit) {
+		if( scaled ) {
+			tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
+			tprint("x *= tmp1;\n");
+			tprint("y *= tmp1;\n");
+			tprint("z *= tmp1;\n");
+		}
 		for (int n = 0; n < mul_sz(P); n++) {
 			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
 		}
@@ -2419,6 +2426,12 @@ std::string M2L_rot2(int P, int Q) {
 		}
 	}
 	if (!minit) {
+		if( scaled ) {
+			tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
+			tprint("x *= tmp1;\n");
+			tprint("y *= tmp1;\n");
+			tprint("z *= tmp1;\n");
+		}
 		for (int n = 0; n < mul_sz(P); n++) {
 			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
 		}
@@ -4537,8 +4550,6 @@ int main() {
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("\n");
-	tprint("#define SFMM_IGNORE_SCALING (0x2)\n");
-	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("\n");
 	tprint("template<class T>\n");
@@ -4553,9 +4564,77 @@ int main() {
 	tprint("}\n");
 	deindent();
 	tprint("};\n");
+	tprint("\n");
+	tprint("#else\n");
+	tprint("namespace sfmm {\n");
+	tprint("#endif\n");
 	nopot = 1;
+	int ntypenames = 0;
+	std::vector<std::string> rtypenames;
+	std::vector<std::string> sitypenames;
+	std::vector<std::string> uitypenames;
+	std::vector<int> ucuda;
+	int funcnum;
+#if defined(CUDA_FLOAT)
+	rtypenames.push_back("float");
+	sitypenames.push_back("int32_t");
+	uitypenames.push_back("uint32_t");
+	ucuda.push_back(true);
+	ntypenames++;
+	funcnum = 0;
+#endif
+#if defined(CUDA_DOUBLE)
+	rtypenames.push_back("double");
+	sitypenames.push_back("int64_t");
+	uitypenames.push_back("uint64_t");
+	ucuda.push_back(true);
+	ntypenames++;
+	funcnum = 1;
+#endif
+#if defined(FLOAT)
+	rtypenames.push_back("float");
+	sitypenames.push_back("int32_t");
+	uitypenames.push_back("uint32_t");
+	ucuda.push_back(false);
+	ntypenames++;
+	funcnum = 0;
+#endif
+#if defined(DOUBLE)
+	rtypenames.push_back("double");
+	sitypenames.push_back("int64_t");
+	uitypenames.push_back("uint64_t");
+	ucuda.push_back(false);
+	ntypenames++;
+	funcnum = 1;
+#endif
+#ifdef VEC_FLOAT
+	rtypenames.push_back(vf);
+	sitypenames.push_back(vui32);
+	uitypenames.push_back(vsi32);
+	ucuda.push_back(false);
+	ntypenames++;
+	funcnum = 2;
+#endif
+
+#ifdef VEC_DOUBLE
+	rtypenames.push_back(vd);
+	sitypenames.push_back(vui64);
+	uitypenames.push_back(vsi64);
+	ucuda.push_back(false);
+	ntypenames++;
+	funcnum = 3;
+#endif
+#if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
+	tprint("#ifndef __CUDACC__\n");
+	tprint("%s\n", vec_header().c_str());
+	tprint("\n#endif");
+	tprint("\n");
+#endif
+	type = rtypenames.back();
 	for (scaled = 0; scaled <= enable_scaled; scaled++) {
 		for (periodic = 0; periodic <= 1; periodic++) {
+			tprint("#ifndef SFMM_TYPES%s%s42\n", period_name(), scaled_name());
+			tprint("#define SFMM_TYPES%s%s42\n", period_name(), scaled_name());
 			tprint("\n");
 			tprint("template<class T, int P>\n");
 			tprint("class expansion%s%s {\n", period_name(), scaled_name());
@@ -4566,13 +4645,15 @@ int main() {
 			tprint("class multipole%s%s {\n", period_name(), scaled_name());
 			tprint("};\n");
 			tprint("\n");
+			tprint("#endif\n");
 
 			for (int P = pmin - 1; P <= pmax; P++) {
 
 				tprint("\n");
-				tprint("template<class T>\n");
-				tprint("class expansion%s%s<T,%i> {\n", period_name(), scaled_name(), P);
+				tprint("template<>\n");
+				tprint("class expansion%s%s<%s,%i> {\n", period_name(), scaled_name(), type.c_str(), P);
 				indent();
+				tprint("typedef %s T;\n", type.c_str());
 				tprint("T o[%i];\n", exp_sz(P));
 				if (periodic && P > 1) {
 					tprint("T t;\n");
@@ -4583,7 +4664,6 @@ int main() {
 				deindent();
 				tprint("public:\n");
 				indent();
-				tprint("typedef T type;");
 				tprint("SFMM_PREFIX expansion%s%s(const expansion%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
 				indent();
 				tprint("*this = other;\n");
@@ -4717,24 +4797,23 @@ int main() {
 				}
 
 				if (scaled && periodic && P > 1) {
-					tprint("friend void M2L_ewald(expansion_periodic_scaled<type, %i>&, const multipole_periodic_scaled<type, %i>&, type, type, type);\n", P, P);
-					tprint("friend void M2L_ewald%s(expansion_periodic_scaled<type, %i>&, const multipole_periodic_scaled<type, %i>&, type, type, type);\n",
-							pot_name(), P, P);
+					tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T);\n", P, P);
+					tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T);\n", pot_name(), P, P);
 				}
 				if (scaled && P > 1) {
-					tprint("friend void M2L(expansion%s_scaled<type, %i>&, const multipole%s_scaled<type, %i>&, type, type, type);\n", period_name(), P,
+					tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T);\n", period_name(), P, period_name(), P);
+					tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T);\n", pot_name(), period_name(), P,
 							period_name(), P);
-					tprint("friend void M2L%s(expansion%s_scaled<type, %i>&, const multipole%s_scaled<type, %i>&, type, type, type);\n", pot_name(), period_name(),
-							P, period_name(), P);
 				}
 				deindent();
 				tprint("};\n");
 				tprint("\n");
 				if (P > pmin - 1) {
 					tprint("\n");
-					tprint("template<class T>\n");
-					tprint("class multipole%s%s<T,%i> {\n", period_name(), scaled_name(), P);
+					tprint("template<>\n");
+					tprint("class multipole%s%s<%s,%i> {\n", period_name(), scaled_name(), type.c_str(), P);
 					indent();
+					tprint("typedef %s T;\n", type.c_str());
 					tprint("T o[%i];\n", mul_sz(P));
 					if (periodic && P >= 2) {
 						tprint("T t;\n");
@@ -4745,7 +4824,6 @@ int main() {
 					deindent();
 					tprint("public:\n");
 					indent();
-					tprint("typedef T type;");
 					tprint("SFMM_PREFIX multipole%s%s(const multipole%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
 					indent();
 					tprint("*this = other;\n");
@@ -4878,17 +4956,17 @@ int main() {
 						tprint("}\n");
 					}
 					if (periodic) {
-						tprint("friend void M2L_ewald(expansion_periodic%s<type, %i>&, const multipole_periodic%s<type, %i>&, type, type, type);\n", scaled_name(), P,
+						tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s<T, %i>&, T, T, T);\n", scaled_name(), P, scaled_name(),
+								P);
+						tprint("friend void M2L_ewald%s(expansion_periodic%s<T, %i>&, const multipole_periodic%s<T, %i>&, T, T, T);\n", pot_name(), scaled_name(), P,
 								scaled_name(), P);
-						tprint("friend void M2L_ewald%s(expansion_periodic%s<type, %i>&, const multipole_periodic%s<type, %i>&, type, type, type);\n", pot_name(),
-								scaled_name(), P, scaled_name(), P);
 					}
-					tprint("friend void M2L(expansion%s%s<type, %i>&, const multipole%s%s<type, %i>&, type, type, type);\n", period_name(), scaled_name(), P,
+					tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s<T, %i>&, T, T, T);\n", period_name(), scaled_name(), P, period_name(),
+							scaled_name(), P);
+					tprint("friend void M2L%s(expansion%s%s<T, %i>&, const multipole%s%s<T, %i>&, T, T, T);\n", pot_name(), period_name(), scaled_name(), P,
 							period_name(), scaled_name(), P);
-					tprint("friend void M2L%s(expansion%s%s<type, %i>&, const multipole%s%s<type, %i>&, type, type, type);\n", pot_name(), period_name(),
-							scaled_name(), P, period_name(), scaled_name(), P);
-					tprint("friend void M2P(force_type<type>&, const multipole%s%s<type, %i>&, type, type, type);\n", period_name(), scaled_name(), P);
-					tprint("friend void M2P%s(force_type<type>&, const multipole%s%s<type, %i>&, type, type, type);\n", pot_name(), period_name(), scaled_name(), P);
+					tprint("friend void M2P(force_type<T>&, const multipole%s%s<T, %i>&, T, T, T);\n", period_name(), scaled_name(), P);
+					tprint("friend void M2P%s(force_type<T>&, const multipole%s%s<T, %i>&, T, T, T);\n", pot_name(), period_name(), scaled_name(), P);
 					deindent();
 					tprint("};\n");
 					tprint("\n");
@@ -4897,76 +4975,9 @@ int main() {
 		}
 	}
 	nopot = 0;
-	tprint("\n");
-	set_file(full_header.c_str());
-	tprint("#else\n");
-	tprint("namespace sfmm {\n");
-	tprint("#endif\n");
 	typecast_functions();
 
-	int ntypenames = 0;
-	std::vector<std::string> rtypenames;
-	std::vector<std::string> sitypenames;
-	std::vector<std::string> uitypenames;
-	std::vector<int> ucuda;
-	int funcnum;
-#if defined(CUDA_FLOAT)
-	rtypenames.push_back("float");
-	sitypenames.push_back("int32_t");
-	uitypenames.push_back("uint32_t");
-	ucuda.push_back(true);
-	ntypenames++;
-	funcnum = 0;
-#endif
-#if defined(CUDA_DOUBLE)
-	rtypenames.push_back("double");
-	sitypenames.push_back("int64_t");
-	uitypenames.push_back("uint64_t");
-	ucuda.push_back(true);
-	ntypenames++;
-	funcnum = 1;
-#endif
-#if defined(FLOAT)
-	rtypenames.push_back("float");
-	sitypenames.push_back("int32_t");
-	uitypenames.push_back("uint32_t");
-	ucuda.push_back(false);
-	ntypenames++;
-	funcnum = 0;
-#endif
-#if defined(DOUBLE)
-	rtypenames.push_back("double");
-	sitypenames.push_back("int64_t");
-	uitypenames.push_back("uint64_t");
-	ucuda.push_back(false);
-	ntypenames++;
-	funcnum = 1;
-#endif
-#ifdef VEC_FLOAT
-	rtypenames.push_back(vf);
-	sitypenames.push_back(vui32);
-	uitypenames.push_back(vsi32);
-	ucuda.push_back(false);
-	ntypenames++;
-	funcnum = 2;
-#endif
-
-#ifdef VEC_DOUBLE
-	rtypenames.push_back(vd);
-	sitypenames.push_back(vui64);
-	uitypenames.push_back(vsi64);
-	ucuda.push_back(false);
-	ntypenames++;
-	funcnum = 3;
-#endif
 	set_file(full_header.c_str());
-
-#if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
-	tprint("#ifndef __CUDACC__\n");
-	tprint("%s\n", vec_header().c_str());
-	tprint("\n#endif");
-	tprint("\n");
-#endif
 
 	for (int ti = 0; ti < ntypenames; ti++) {
 		printf("%s cuda:%i\n", rtypenames[ti].c_str(), ucuda[ti]);
