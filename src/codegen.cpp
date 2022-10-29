@@ -5684,11 +5684,11 @@ int main() {
 							//		printf( "%i %i %i\n", flops0.load(), flops1.load(), flops2.load());
 							if (flops2.load() > flops0.load() || flops2.load() > flops1.load()) {
 								if (flops1.load() < flops0.load()) {
-									M2L_rot2(P, P);
+									M2L_rot1(P, P);
 									flops_map[P]["M2L"] = flops1;
 									rot_map[P]["M2L"] = 1;
 								} else {
-									M2L_rot2(P, P);
+									M2L_norot(P, P);
 									flops_map[P]["M2L"] = flops0;
 									rot_map[P]["M2L"] = 0;
 								}
