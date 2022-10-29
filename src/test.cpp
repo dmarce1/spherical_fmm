@@ -881,7 +881,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 			L.init();
 #endif
 			f.init();
-			/*P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
+/*			P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
 			M += M1;
 			P2M(M1, T(1.0), -T(xb), -T(yb), -T(zb));
 			M += M1;
