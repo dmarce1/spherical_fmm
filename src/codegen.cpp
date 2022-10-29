@@ -998,7 +998,6 @@ void tprint_flush() {
 	lines[1].resize(0);
 }
 
-
 constexpr int nchains = 3;
 static int current_chain;
 static std::vector<std::vector<std::string>> inschains(nchains);
@@ -1195,6 +1194,8 @@ void init_real(std::string var) {
 void init_reals(std::string var, int cnt) {
 	fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
 	tprint("T %s [%i]={", var.c_str(), cnt);
+	int ontab = ntab;
+	ntab = 0;
 	for (int n = 0; n < cnt; n++) {
 		tprint("std::numeric_limits<%s>::signaling_NaN()", basetype.c_str());
 		if (n != cnt - 1) {
@@ -1202,6 +1203,7 @@ void init_reals(std::string var, int cnt) {
 		}
 	}
 	tprint("};\n");
+	ntab = ontab;
 	fprintf(fp, "#else\n");
 	tprint("T %s [%i];\n");
 	fprintf(fp, "#endif\n");
@@ -1249,6 +1251,35 @@ std::string func_args(int P, const char* arg, arg_type atype, Args&& ...args) {
 }
 
 template<class ...Args>
+std::string func_args_call(int P, const char* arg, arg_type atype, int term) {
+	std::string str;
+	if (atype == EXP) {
+		str += std::string(arg) + "_st";
+	} else if (atype == HEXP) {
+		str += std::string(arg) + "_st";
+	} else if (atype == MUL) {
+		str += std::string(arg) + "_st";
+	} else if (atype == CEXP) {
+		str += std::string(arg) + "_st";
+	} else if (atype == CMUL) {
+		str += std::string(arg) + "_st";
+	} else if (atype == FORCE) {
+		str += std::string(arg);
+	} else {
+		str += std::string(arg);
+	}
+	return str;
+}
+
+template<class ...Args>
+std::string func_args_call(int P, const char* arg, arg_type atype, Args&& ...args) {
+	auto str = func_args_call(P, arg, atype, 1);
+	str += std::string(", ");
+	str += func_args_call(P, std::forward<Args>(args)...);
+	return str;
+}
+
+template<class ...Args>
 void func_args_cover(int P, const char* arg, arg_type atype, int term) {
 	std::string str;
 	if (atype == EXP) {
@@ -1281,8 +1312,14 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 	func_name = "void " + func_name;
 	func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
 	auto func_name2 = func_name;
-	func_name += ")";
-	func_name2 += ")";
+	if (calcpot && !nopot) {
+		func_name += ", int potopt = sfmmCalculateWithPotential)";
+		func_name2 += ", int potopt)";
+
+	} else {
+		func_name += ")";
+		func_name2 += ")";
+	}
 	if (nopot && !calcpot) {
 		set_file("/dev/null");
 	} else {
@@ -1341,6 +1378,17 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 	tprint("\n");
 	tprint("%s {\n", func_name2.c_str());
 	indent();
+	if (calcpot && !nopot) {
+		tprint("if( potopt == sfmmCalculateWithoutPotential ) {\n ");
+		indent();
+		std::string str = std::string(func) + std::string("_wo_potential(");
+		str += func_args_call(P, std::forward<Args>(args)..., 0);
+		str += ");\n";
+		tprint("%s", str.c_str());
+		tprint("return;\n");
+		deindent();
+		tprint("}\n");
+	}
 	func_args_cover(P, std::forward<Args>(args)..., 0);
 	return file_name;
 }
@@ -2811,7 +2859,7 @@ std::string M2L_rot2(int P, int Q) {
 }
 
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, false, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2L_ewald", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
 	tprint("expansion%s%s<%s, %i> G_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("expansion%s%s<%s,%i> L_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("multipole%s%s%s<%s,%i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
@@ -2860,8 +2908,8 @@ std::string M2L_ewald(int P) {
 			tprint("M_st.r = M0_st.r;\n");
 		}
 	}
-	tprint("greens_ewald%s(G_st, x, y, z);\n", nopot ? "_nopot" : "");
-	tprint("M2LG%s(L_st, M_st, G_st);\n", nopot ? "_nopot" : "");
+	tprint("greens_ewald%s(G_st, x, y, z);\n", nopot ? "_wo_potential" : "");
+	tprint("M2LG%s(L_st, M_st, G_st);\n", nopot ? "_wo_potential" : "");
 	if (scaled) {
 		tprint("a = L0_st.scale() / M_st.scale();\n");
 		tprint("b = a;\n");
@@ -2999,6 +3047,7 @@ std::string regular_harmonic_xz(int P) {
 
 std::string M2M_norot(int P) {
 	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	tprint("/* algorithm = no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (scaled) {
 		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
@@ -3164,6 +3213,7 @@ std::string M2M_rot1(int P) {
 	auto index = mindex;
 
 	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	tprint("/* algorithm = z rotation only, half l^4 */\n");
 	tprint("detail::expansion_xz%s<%s, %i> Y_st;\n", period_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
 	init_reals("rx\n", P);
@@ -3326,6 +3376,7 @@ std::string M2M_rot1(int P) {
 std::string M2M_rot2(int P) {
 	auto index = mindex;
 	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	tprint("/* algorithm = z rotation + x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
 	init_reals("rx\n", P);
 	init_reals("ry\n", P);
@@ -3531,6 +3582,7 @@ std::string P2M(int P) {
 std::string L2L_norot(int P) {
 	auto index = lindex;
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	tprint("/* algorithm = no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (scaled) {
 		tprint("tmp1 = TCAST(1) / L_st.scale();\n");
@@ -3693,6 +3745,7 @@ std::string L2L_rot1(int P) {
 	auto index = lindex;
 
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	tprint("/* algorithm = z rotation only, half l^4 */\n");
 	init_reals("rx", P);
 	init_reals("ry", P);
 	tprint("detail::expansion_xz%s<%s, %i> Y_st;\n", period_name(), type.c_str(), P);
@@ -3850,6 +3903,7 @@ std::string L2L_rot1(int P) {
 std::string L2L_rot2(int P) {
 	auto index = lindex;
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	tprint("/* algorithm = z rotation + x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
 	init_reals("rx", P);
 	init_reals("ry", P);
@@ -4931,14 +4985,15 @@ int main() {
 	tprint("#define SFMM_PREFIX\n");
 	tprint("#endif\n");
 	tprint("\n");
-	tprint("#include <stdio.h>\n");
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("#include <limits>\n");
 	tprint("#include <utility>\n");
 	tprint("\n");
-	tprint("namespace sfmm {\n");
+	tprint("#define sfmmCalculateWithPotential    0\n");
+	tprint("#define sfmmCalculateWithoutPotential 1\n");
 	tprint("\n");
+	tprint("namespace sfmm {\n");
 	tprint("template<class T>\n");
 	tprint("struct force_type {\n");
 	indent();
@@ -5099,7 +5154,80 @@ int main() {
 			"\t} \\\n"
 			"\n"
 			"";
+	std::string str2 = "#define SFMM_EXPANSION_MEMBERS_WO_DIPOLE(classname, type, ppp) \\\n"
+			"class reference { \\\n"
+			"\tT* ax; \\\n"
+			"\tT* ay; \\\n"
+			"\tT rsgn; \\\n"
+			"\tT isgn; \\\n"
+			"public: \\\n"
+			"\toperator complex<T>() const { \\\n"
+			"\t\tif(ax != ay) { \\\n"
+			"\t\t\treturn complex<T>(rsgn * *ax, isgn * *ay); \\\n"
+			"\t\t} else { \\\n"
+			"\t\t\treturn complex<T>(rsgn * *ax, T(0)); \\\n"
+			"\t\t} \\\n"
+			"\t} \\\n"
+			"\treference& operator=(complex<T> other) { \\\n"
+			"\t\t*ax = other.real() * rsgn; \\\n"
+			"\t\tif(ax != ay) { \\\n"
+			"\t\t\t*ay = other.imag() * isgn; \\\n"
+			"\t\t} else { \\\n"
+			"\t\t\t*ay = T(0); \\\n"
+			"\t\t} \\\n"
+			" \t\treturn *this; \\\n"
+			"\t} \\\n"
+			"\tfriend classname<type,ppp>; \\\n"
+			"}; \\\n"
+			"SFMM_PREFIX complex<T> operator()(int n, int m) const { \\\n"
+			"\tcomplex<T> c; \\\n"
+			"\tconst int n2n = n * n + n; \\\n"
+			"\tconst int m0 = abs(m); \\\n"
+			"\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
+			"\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
+			"\tc.real() = o[ip]; \\\n"
+			"\tc.imag() = o[im]; \\\n"
+			"\tif( m < 0 ) { \\\n"
+			"\t\tif( m % 2 == 0 ) { \\\n"
+			"\t\t\tc.imag() = -c.imag(); \\\n"
+			"\t\t} else { \\\n"
+			"\t\t\tc.real() = -c.real(); \\\n"
+			"\t\t} \\\n"
+			"\t} else if( m == 0 ) { \\\n"
+			"\t\tc.imag() = T(0); \\\n"
+			"\t} \\\n"
+			"\treturn c; \\\n"
+			"} \\\n"
+			"SFMM_PREFIX reference operator()(int n, int m) { \\\n"
+			"\treference ref; \\\n"
+			"\tconst int n2n = n * n + n; \\\n"
+			"\tconst int m0 = abs(m); \\\n"
+			"\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
+			"\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
+			"\tref.ax = o + ip; \\\n"
+			"\tref.ay = o + im; \\\n"
+			"\tref.rsgn = ref.isgn = T(1); \\\n"
+			"\tif( m < 0 ) { \\\n"
+			"\t\tif( m % 2 == 0 ) { \\\n"
+			"\t\t\tref.isgn = -ref.isgn; \\\n"
+			"\t\t} else { \\\n"
+			"\t\t\tref.rsgn = -ref.rsgn; \\\n"
+			"\t\t} \\\n"
+			"\t} \\\n"
+			"\treturn ref; \\\n"
+			"} \\\n"
+			"SFMM_PREFIX classname(const classname& other) { \\\n"
+			"\t*this = other; \\\n"
+			"} \\\n"
+			"SFMM_PREFIX T* data() { \\\n"
+			"\treturn o; \\\n"
+			"} \\\n"
+			"SFMM_PREFIX const T* data() const { \\\n"
+			"\treturn o; \\\n"
+			"} \n";
+
 	fprintf(fp, "%s", str1.c_str());
+	fprintf(fp, "%s", str2.c_str());
 	tprint("#endif\n\n");
 	type = rtypenames.back();
 
@@ -5288,18 +5416,19 @@ int main() {
 						}
 
 						if (scaled && periodic && P > 1) {
-							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T);\n", P, P);
+							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T, int);\n", P, P);
 							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T);\n", pot_name(), P,
 									P);
-							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, T, T, T);\n", P, P);
+							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, T, T, T, int);\n", P, P);
 							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, T, T, T);\n",
 									pot_name(), P, P);
 						}
 						if (scaled && P > 1) {
-							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T);\n", period_name(), P, period_name(), P);
+							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T, int);\n", period_name(), P, period_name(),
+									P);
 							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T);\n", pot_name(), period_name(), P,
 									period_name(), P);
-							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, T, T, T);\n", period_name(), P,
+							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, T, T, T, int);\n", period_name(), P,
 									period_name(), P);
 							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, T, T, T);\n", pot_name(), period_name(),
 									P, period_name(), P);
@@ -5325,7 +5454,11 @@ int main() {
 						deindent();
 						tprint("public:\n");
 						indent();
-						tprint("SFMM_EXPANSION_MEMBERS(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
+						if (nodip && P > 1) {
+							tprint("SFMM_EXPANSION_MEMBERS_WO_DIPOLE(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
+						} else {
+							tprint("SFMM_EXPANSION_MEMBERS(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
+						}
 						tprint("SFMM_PREFIX multipole%s%s%s& operator=(const multipole%s%s%s& other) {\n", period_name(), scaled_name(), dip_name(), period_name(),
 								scaled_name(), dip_name());
 						indent();
@@ -5466,16 +5599,16 @@ int main() {
 							tprint("}\n");
 						}
 						if (periodic) {
-							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, T, T, T);\n", scaled_name(), P,
+							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, T, T, T, int);\n", scaled_name(), P,
 									scaled_name(), dip_name(), P);
 							tprint("friend void M2L_ewald%s(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, T, T, T);\n", pot_name(),
 									scaled_name(), P, scaled_name(), dip_name(), P);
 						}
-						tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, T, T, T);\n", period_name(), scaled_name(), P, period_name(),
-								scaled_name(), dip_name(), P);
+						tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, T, T, T, int);\n", period_name(), scaled_name(), P,
+								period_name(), scaled_name(), dip_name(), P);
 						tprint("friend void M2L%s(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, T, T, T);\n", pot_name(), period_name(), scaled_name(), P,
 								period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2P(force_type<T>&, const multipole%s%s%s<T, %i>&, T, T, T);\n", period_name(), scaled_name(), dip_name(), P);
+						tprint("friend void M2P(force_type<T>&, const multipole%s%s%s<T, %i>&, T, T, T, int);\n", period_name(), scaled_name(), dip_name(), P);
 						tprint("friend void M2P%s(force_type<T>&, const multipole%s%s%s<T, %i>&, T, T, T);\n", pot_name(), period_name(), scaled_name(), dip_name(),
 								P);
 						deindent();
