@@ -3255,8 +3255,8 @@ std::string M2M_rot1(int P) {
 		if (nodip && n == 1) {
 			continue;
 		}
-		tprint_new_chain();
 		for (int m = 0; m <= n; m++) {
+			tprint_new_chain();
 			std::vector<std::pair<std::string, std::string>> pos_real;
 			std::vector<std::pair<std::string, std::string>> neg_real;
 			std::vector<std::pair<std::string, std::string>> pos_imag;
@@ -3361,8 +3361,8 @@ std::string M2M_rot1(int P) {
 				tprint_chain("M[%i] = detail::fma(%s, %s, M[%i]);\n", index(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), index(n, -m));
 			}
 		}
+		tprint_flush_chains();
 	}
-	tprint_flush_chains();
 	tprint("sinphi = -sinphi;\n");
 	z_rot(P, "M", false, false, false);
 	deindent();
@@ -3435,8 +3435,8 @@ std::string M2M_rot2(int P) {
 		if (nodip && n == 1) {
 			continue;
 		}
-		tprint_new_chain();
 		for (int m = 0; m <= n; m++) {
+			tprint_new_chain();
 			for (int k = 1; k <= n; k++) {
 				if (nodip && n - k == 1) {
 					continue;
@@ -3453,8 +3453,8 @@ std::string M2M_rot2(int P) {
 				}
 			}
 		}
+		tprint_flush_chains();
 	}
-	tprint_flush_chains();
 	xz_swap(P, "M", false, false, false, false);
 	tprint("sinphi = -sinphi;\n");
 	z_rot(P, "M", false, false, false);
