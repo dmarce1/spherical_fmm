@@ -60,6 +60,7 @@ struct flops_t {
 		return *this;
 	}
 	int load() const {
+//		return r + 2 * fma + 4 * rdiv + con + rcmp;
 		return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
 	}
 };
@@ -1747,40 +1748,45 @@ void greens_body(int P, const char* M = nullptr) {
 	tprint("x *= r2inv;\n");
 	tprint("y *= r2inv;\n");
 	tprint("z *= r2inv;\n");
+	tprint("const T& zx1 = z;\n");
+	for (int m = 1; m < P; m++) {
+		tprint("const T zx%i = TCAST(%i) * z;\n", 2 * m + 1, 2 * m + 1);
+	}
 	auto index = lindex;
+	tprint("O[%i] = x * O[0];\n", index(1, 1));
+	tprint("O[%i] = y * O[0];\n", index(1, -1));
+	for (int m = 2; m <= P; m++) {
+		tprint("ax0 = O[%i] * TCAST(%i);\n", index(m - 1, m - 1), 2 * m - 1);
+		tprint("ay0 = O[%i] * TCAST(%i);\n", index(m - 1, -(m - 1)), 2 * m - 1);
+		tprint("O[%i] = x * ax0 - y * ay0;\n", index(m, m));
+		tprint("O[%i] = detail::fma(y, ax0, x * ay0);\n", index(m, -m));
+	}
 	for (int m = 0; m <= P; m++) {
-		if (m == 1) {
-			tprint("O[%i] = x * O[0];\n", index(m, m));
-			tprint("O[%i] = y * O[0];\n", index(m, -m));
-		} else if (m > 0) {
-			tprint("ax = O[%i] * TCAST(%i);\n", index(m - 1, m - 1), 2 * m - 1);
-			tprint("ay = O[%i] * TCAST(%i);\n", index(m - 1, -(m - 1)), 2 * m - 1);
-			tprint("O[%i] = x * ax - y * ay;\n", index(m, m));
-			tprint("O[%i] = detail::fma(y, ax, x * ay);\n", index(m, -m));
-		}
+		tprint_new_chain();
+		const int c = current_chain;
 		if (m + 1 <= P) {
-			tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
+			tprint_chain("O[%i] = zx%i * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
 			if (m != 0) {
-				tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, -m), 2 * m + 1, index(m, -m));
+				tprint_chain("O[%i] = zx%i * O[%i];\n", index(m + 1, -m), 2 * m + 1, index(m, -m));
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
 			if (m != 0) {
-				tprint("ax = TCAST(%i) * z;\n", 2 * n - 1);
-				tprint("ay = TCAST(-%i) * r2inv;\n", (n - 1) * (n - 1) - m * m);
-				tprint("O[%i] = detail::fma(ax, O[%i], ay * O[%i]);\n", index(n, m), index(n - 1, m), index(n - 2, m));
-				tprint("O[%i] = detail::fma(ax, O[%i], ay * O[%i]);\n", index(n, -m), index(n - 1, -m), index(n - 2, -m));
+				tprint_chain("ay%i = TCAST(-%i) * r2inv;\n", c, (n - 1) * (n - 1) - m * m);
+				tprint_chain("O[%i] = detail::fma(zx%i, O[%i], ay%i * O[%i]);\n", index(n, m), 2*n-1, index(n - 1, m), c, index(n - 2, m));
+				tprint_chain("O[%i] = detail::fma(zx%i, O[%i], ay%i * O[%i]);\n", index(n, -m), 2*n-1, index(n - 1, -m), c, index(n - 2, -m));
 			} else {
 				if ((n - 1) * (n - 1) - m * m == 1) {
-					tprint("O[%i] = (TCAST(%i) * z * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
+					tprint_chain("O[%i] = (zx%i * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
 				} else {
-					tprint("O[%i] = (TCAST(%i) * z * O[%i] - TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
-							index(n - 2, m));
+					tprint_chain("O[%i] = detail::fma(zx%i, O[%i], TCAST(%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m),
+							-((n - 1) * (n - 1) - m * m), index(n - 2, m));
 				}
 
 			}
 		}
 	}
+	tprint_flush_chains();
 }
 
 std::string greens_safe(int P) {
@@ -2073,8 +2079,10 @@ std::string P2L(int P) {
 	init_real("tmp1");
 	init_real("r2");
 	init_real("r2inv");
-	init_real("ax");
-	init_real("ay");
+	init_real("ax0");
+	init_real("ay0");
+	init_real("ay1");
+	init_real("ay2");
 	if (scaled) {
 		tprint("tmp1 = TCAST(1) / L_st.scale();\n");
 		tprint("x *= tmp1;\n");
@@ -2097,8 +2105,10 @@ std::string greens(int P) {
 	auto fname = func_header("greens", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
 	init_real("r2");
 	init_real("r2inv");
-	init_real("ax");
-	init_real("ay");
+	init_real("ax0");
+	init_real("ay0");
+	init_real("ay1");
+	init_real("ay2");
 	greens_body(P);
 	deindent();
 	tprint("}");
