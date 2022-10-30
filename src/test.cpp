@@ -868,15 +868,15 @@ real test_M2L(test_type type, real theta = 0.5) {
 #endif
 			force_type<T> f;
 #ifdef SCALED
-			multipole_periodic_scaled_wo_dipole<T, P> M1(0.1);
-			multipole_periodic_scaled_wo_dipole<T, P> M;
-			expansion_periodic_scaled<T, P> L;
+			multipole<T, P> M1(0.1);
+			multipole<T, P> M;
+			expansionT, P> L;
 			M.init(0.1);
 			L.init(0.01);
 #else
-			multipole_periodic_wo_dipole<T, P> M1;
-			multipole_periodic_wo_dipole<T, P> M;
-			expansion_periodic<T, P> L;
+			multipole<T, P> M1;
+			multipole<T, P> M;
+			expansion<T, P> L;
 			M.init();
 			L.init();
 #endif
@@ -903,22 +903,31 @@ real test_M2L(test_type type, real theta = 0.5) {
 				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
 				L2P(f, L, T(x2 * (1 - g0)), T(y2 * (1 - g1)), T(z2 * (1 - g2)));
 			}
-			real dx = (x2 + x1) - xa;
-			real dy = (y2 + y1) - ya;
-			real dz = (z2 + z1) - za;
+			real dx = -(x2 + x1) + xa;
+			real dy = -(y2 + y1) + ya;
+			real dz = -(z2 + z1) + za;
 			real r = std::sqrt(sqr(dx, dy, dz));
+			real fax = dx / (r*r*r);
+			real fay = dy / (r*r*r);
+			real faz = dz / (r*r*r);
 			real phi = 1.0 / r;
-			dx = (x2 + x1) - xb;
-			dy = (y2 + y1) - yb;
-			dz = (z2 + z1) - zb;
+			dx = -(x2 + x1) + xb;
+			dy = -(y2 + y1) + yb;
+			dz = -(z2 + z1) + zb;
 			r = std::sqrt(sqr(dx, dy, dz));
 			phi += 1.0 / r;
+			fax += dx / (r*r*r);
+			fay += dy / (r*r*r);
+			faz += dz / (r*r*r);
 #ifdef VECTOR
 			err += fabs(phi - f.potential[0]);
 #else
-			err += fabs(phi - f.potential);
+	//		err += fabs(phi - f.potential);
+	//		printf( "%e %e %e %e %e %e \n", fax, f.force[0], fay, f.force[1], faz, f.force[2]);
+			err += fabs(fax-f.force[0]);
+			norm += fabs(fax);
 #endif
-			norm += fabs(phi);
+//			norm += fabs(phi);
 		}
 	}
 	err /= norm;

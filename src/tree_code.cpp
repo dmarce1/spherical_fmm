@@ -5,6 +5,9 @@
 #include <vector>
 #include <fenv.h>
 
+constexpr double theta_max = 0.5;
+constexpr double hsoft = 0.01;
+
 #define ORDER 10
 #define NDIM 3
 #define BUCKET_SIZE 16
@@ -79,8 +82,6 @@ inline rtype abs(vec3 vec) {
 	return sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));
 }
 
-constexpr double theta_max = 0.75;
-constexpr double hsoft = 0.01;
 
 struct particle {
 	vec3 x;
@@ -97,14 +98,14 @@ void P2P(force_type<double>& f, double m, double x, double y, double z) {
 	if (r2 > h2) {
 		double rinv3 = sqr(rinv) * rinv;
 		f.potential += m * rinv;
-		f.force[0] += m * x * rinv3;
-		f.force[1] += m * y * rinv3;
-		f.force[2] += m * z * rinv3;
+		f.force[0] -= m * x * rinv3;
+		f.force[1] -= m * y * rinv3;
+		f.force[2] -= m * z * rinv3;
 	} else if (r2 > 0.0) {
-		/*f.potential += m * (1.5 * hinv - 0.5 * r2 * hinv3);
-		 f.force[0] += m * x * hinv3;
-		 f.force[1] += m * y * hinv3;
-		 f.force[2] += m * z * hinv3;*/
+		f.potential += m * (1.5 * hinv - 0.5 * r2 * hinv3);
+		f.force[0] -= m * x * hinv3;
+		f.force[1] -= m * y * hinv3;
+		f.force[2] -= m * z * hinv3;
 	}
 }
 }
@@ -323,9 +324,10 @@ public:
 				}
 				famag = sqrt(famag);
 				fnmag = sqrt(fnmag);
-				famag = fa.potential;
-				fnmag = snk_part.f.potential;
-				printf("%e %e %e\n", famag, fnmag, (famag - fnmag)/famag);
+				//famag = fa.potential;
+				//	fnmag = snk_part.f.potential;
+			//	printf("%e %e | %e %e | %e %e\n", snk_part.f.force[0], fa.force[0], snk_part.f.force[1], fa.force[1], snk_part.f.force[2], fa.force[2]);
+				//		printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
 				norm += sqr(famag);
 				err += sqr(famag - fnmag);
 			}
