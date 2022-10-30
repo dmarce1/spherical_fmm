@@ -2155,8 +2155,8 @@ std::string greens_xz(int P) {
 					tprint_chain("O[%i] = (zx%i * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
 
 				} else {
-					tprint_chain("O[%i] = detail::fma(zx%i, O[%i], TCAST(-%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
-							index(n - 2, m));
+					tprint_chain("O[%i] = detail::fma(zx%i, O[%i], TCAST(-%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m),
+							(n - 1) * (n - 1) - m * m, index(n - 2, m));
 				}
 			}
 		}
@@ -3086,8 +3086,12 @@ std::string M2L_ewald(int P) {
 
 std::string regular_harmonic(int P) {
 	auto fname = func_header("regular_harmonic", P, false, false, false, true, "", "Y", EXP, "x", LIT, "y", LIT, "z", LIT);
-	init_real("ax");
-	init_real("ay");
+	init_real("ax0");
+	init_real("ay0");
+	init_real("ax1");
+	init_real("ay1");
+	init_real("ax2");
+	init_real("ay2");
 	if (P > 1) {
 		init_real("r2");
 		tprint("r2 = detail::fma(x, x, detail::fma(y, y, z * z));\n");
@@ -3099,34 +3103,39 @@ std::string regular_harmonic(int P) {
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
 			if (m - 1 > 0) {
-				tprint("ax = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, m - 1), 1.0 / (2.0 * m));
-				tprint("ay = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, -(m - 1)), 1.0 / (2.0 * m));
-				tprint("Y[%i] = x * ax - y * ay;\n", lindex(m, m));
-				tprint("Y[%i] = detail::fma(y, ax, x * ay);\n", lindex(m, -m));
+				tprint("ax0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("ay0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, -(m - 1)), 1.0 / (2.0 * m));
+				tprint("Y[%i] = x * ax0 - y * ay0;\n", lindex(m, m));
+				tprint("Y[%i] = detail::fma(y, ax0, x * ay0);\n", lindex(m, -m));
 			} else {
-				tprint("ax = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, m - 1), 1.0 / (2.0 * m));
-				tprint("Y[%i] = x * ax;\n", lindex(m, m));
-				tprint("Y[%i] = y * ax;\n", lindex(m, -m));
+				tprint("ax0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, m - 1), 1.0 / (2.0 * m));
+				tprint("Y[%i] = x * ax0;\n", lindex(m, m));
+				tprint("Y[%i] = y * ax0;\n", lindex(m, -m));
 			}
 		}
+	}
+	for (int m = 0; m <= P; m++) {
+		tprint_new_chain();
 		if (m + 1 <= P) {
 			if (m == 0) {
-				tprint("Y[%i] = z * Y[%i];\n", lindex(m + 1, m), lindex(m, m));
+				tprint_chain("Y[%i] = z * Y[%i];\n", lindex(m + 1, m), lindex(m, m));
 			} else {
-				tprint("Y[%i] = z * Y[%i];\n", lindex(m + 1, m), lindex(m, m));
-				tprint("Y[%i] = z * Y[%i];\n", lindex(m + 1, -m), lindex(m, -m));
+				tprint_chain("Y[%i] = z * Y[%i];\n", lindex(m + 1, m), lindex(m, m));
+				tprint_chain("Y[%i] = z * Y[%i];\n", lindex(m + 1, -m), lindex(m, -m));
 			}
 		}
 		for (int n = m + 2; n <= P; n++) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-			tprint("ax =  TCAST(%.20e) * z;\n", inv * double(2 * n - 1));
-			tprint("ay =  TCAST(%.20e) * r2;\n", -(double) inv);
-			tprint("Y[%i] = detail::fma(ax, Y[%i], ay * Y[%i]);\n", lindex(n, m), lindex(n - 1, m), lindex(n - 2, m));
+			tprint_chain("ax%i =  TCAST(%.20e) * z;\n", current_chain, inv * double(2 * n - 1));
+			tprint_chain("ay%i =  TCAST(%.20e) * r2;\n", current_chain, -(double) inv);
+			tprint_chain("Y[%i] = detail::fma(ax%i, Y[%i], ay%i * Y[%i]);\n", lindex(n, m), current_chain, lindex(n - 1, m), current_chain, lindex(n - 2, m));
 			if (m != 0) {
-				tprint("Y[%i] = detail::fma(ax, Y[%i], ay * Y[%i]);\n", lindex(n, -m), lindex(n - 1, -m), lindex(n - 2, -m));
+				tprint_chain("Y[%i] = detail::fma(ax%i, Y[%i], ay%i * Y[%i]);\n", lindex(n, -m), current_chain, lindex(n - 1, -m), current_chain,
+						lindex(n - 2, -m));
 			}
 		}
 	}
+	tprint_flush_chains();
 	deindent();
 	tprint("}");
 	tprint("\n");
