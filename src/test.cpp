@@ -737,7 +737,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 			random_unit(x0, y0, z0);
 			random_unit(x1, y1, z1);
 			random_unit(x2, y2, z2);
-			const auto alpha = 0.5 * rand1() + 0.00;
+			const auto alpha = 0.45 * rand1() + 0.05;
 			x1 *= alpha;
 			y1 *= alpha;
 			z1 *= alpha;

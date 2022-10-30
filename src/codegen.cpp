@@ -1783,8 +1783,8 @@ void greens_body(int P, const char* M = nullptr) {
 	}
 }
 
-std::string robust_greens(int P) {
-	auto fname = func_header("robust_greens", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
+std::string greens_safe(int P) {
+	auto fname = func_header("greens_safe", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
 	const auto mul = [](std::string a, std::string b, std::string c, int l) {
 		tprint( "flags[%i] *= detail::safe_mul(%s, %s, %s);\n", l, a.c_str(), b.c_str(), c.c_str());
 	};
@@ -2261,7 +2261,7 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("r2 = detail::fma(x0, x0, detail::fma(y0, y0, z0 * z0));\n");
 	tprint("rzero = TCONVERT(r2 < TCAST(%0.20e));\n", tiny());
 	tprint("r = detail::sqrt(r2) + rzero;\n");
-	tprint("robust_greens(Gr_st, x0 + rzero, y0, z0);\n");
+	tprint("greens_safe(Gr_st, x0 + rzero, y0, z0);\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
 	tprint("detail::erfcexp(xxx, &gam1, &exp0);\n");
 	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
@@ -4361,7 +4361,7 @@ void safe_math_double() {
 	tprint("T safe_mul(T& a, T b, T c) {\n");
 	indent();
 	tprint("const V be = ((V&)b & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const V ce = ((V&)b & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
+	tprint("const V ce = ((V&)c & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
 	tprint("const T flag = T(be + ce < V(3069));\n");
 	tprint("a = (flag * b) * c;\n");
 	tprint("return flag;\n");
@@ -4370,8 +4370,8 @@ void safe_math_double() {
 	tprint("T safe_add(T& a, T b, T c) {\n");
 	indent();
 	tprint("const V be = ((V&)b & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const V ce = ((V&)b & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const T flag = T(be < V(1022)) * T(ce < V(1022));\n");
+	tprint("const V ce = ((V&)c & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
+	tprint("const T flag = T(be < V(2046)) * T(ce < V(2046));\n");
 	tprint("a = detail::fma(flag, b, c);\n");
 	tprint("return flag;\n");
 	deindent();
@@ -5922,7 +5922,7 @@ int main() {
 				for (scaled = 0; scaled <= enable_scaled; scaled++) {
 					flops_t regular_harmonic_flops[pmax + 1];
 					flops_t greens_flops[pmax + 1];
-					flops_t robust_greens_flops[pmax + 1];
+					flops_t greens_safe_flops[pmax + 1];
 					flops_t greens_ewald_flops[pmax + 1];
 					flops_t greens_ewald_real_flops0[pmax + 1];
 					for (nodip = 0; nodip <= 1; nodip++) {
@@ -6035,10 +6035,10 @@ int main() {
 								fp = nullptr;
 								greens_flops[P] = count_flops(fname);
 
-								fname = robust_greens(P);
+								fname = greens_safe(P);
 								fclose(fp);
 								fp = nullptr;
-								robust_greens_flops[P] = count_flops(fname);
+								greens_safe_flops[P] = count_flops(fname);
 
 								flops0.reset();
 								flops0 += sqrt_flops();
@@ -6168,7 +6168,7 @@ int main() {
 									fclose(fp);
 									fp = nullptr;
 									flops0 = count_flops(fname);
-									flops0 += robust_greens_flops[P];
+									flops0 += greens_safe_flops[P];
 									greens_ewald_flops[P] = flops0;
 								}
 								fname = M2L_ewald(P);
