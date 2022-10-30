@@ -795,8 +795,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 			M.init(0.1);
 			L.init(0.01);
 #else
-			multipole_periodic < vec_real, P > M;
-			expansion_periodic < vec_real, P > L;
+			multipole_periodic < real, P > M;
+			expansion_periodic < real, P > L;
 			M.init();
 			L.init();
 #endif
@@ -1059,6 +1059,22 @@ test_res test_binary(F* f1, F* f2, T a, T b) {
 	return res;
 }
 
+float safe_multiply(float& a, float b, float c) {
+	const int be = ((int&)b & 0x7F100000) >> 23;
+	const int ce = ((int&)b & 0x7F100000) >> 23;
+	const float flag = float(be + ce <= 380);
+	a = (flag * b) * c;
+	return flag;
+}
+
+float safe_add(float& a, float b, float c) {
+	const int be = ((int&)b & 0x7F100000) >> 23;
+	const int ce = ((int&)b & 0x7F100000) >> 23;
+	const float flag = float(be < 127) * float(ce < 127);
+	a = flag * b + flag * c;
+	return flag;
+}
+
 int main() {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
@@ -1106,7 +1122,7 @@ int main() {
 	 printf("\n");
 	 */
 	run_tests<PMAX + 1, PMIN> run;
-	real theta = 0.7;
+	real theta = 0.5;
 	printf("M2L\n");
 	run(CC, theta);
 	printf("M2P\n");
