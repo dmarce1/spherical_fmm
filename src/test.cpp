@@ -881,17 +881,17 @@ real test_M2L(test_type type, real theta = 0.5) {
 			L.init();
 #endif
 			f.init();
-/*			P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
+			P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
 			M += M1;
 			P2M(M1, T(1.0), -T(xb), -T(yb), -T(zb));
 			M += M1;
-			M2M(M, -T(0), -T(0), -T(0));*/
+			M2M(M, -T(0), -T(0), -T(0));/*
 			P2M(M1, T(1.0), -T(0), -T(0), -T(0));
 			M2M(M1, -T(xa), -T(ya), -T(za));
 			M += M1;
 			P2M(M1, T(1.0), -T(0), -T(0), -T(0));
 			M2M(M1, -T(xb), -T(yb), -T(zb));
-			M += M1;
+			M += M1;*/
 			if (type == CC) {
 				M2L(L, M, T(x1), T(y1), T(z1));
 				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));

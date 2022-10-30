@@ -9,7 +9,7 @@ option(SFMM_CUDA_DOUBLE "Enable CUDA Double Precision" OFF)
 option(SFMM_CUDA_FLOAT "Enable CUDA Single Precision" OFF)
 option(SFMM_VEC_DOUBLE "Enable CUDA SIMD Double Precision" OFF)
 option(SFMM_VEC_FLOAT "Enable CUDA SIMD Single Precision" OFF)
-set(SFMM_PMIN "2" CACHE STRING "pmin")
+set(SFMM_PMIN "10" CACHE STRING "pmin")
 set(SFMM_PMAX "10" CACHE STRING "pmax")
 if( SFMM_WITH_CUDA ) 
 	find_package(CUDA)
@@ -166,3 +166,7 @@ endif()
 
 
 
+add_executable(tree_code ${CMAKE_CURRENT_SOURCE_DIR}/src/tree_code.cpp )
+target_include_directories(tree_code PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(tree_code PUBLIC sfmmd)
+target_compile_options(tree_code PUBLIC -march=native)
