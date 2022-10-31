@@ -870,7 +870,7 @@ real test_M2L(test_type type, real theta = 0.5) {
 #ifdef SCALED
 			multipole<T, P> M1(0.1);
 			multipole<T, P> M;
-			expansionT, P> L;
+			expansion<T, P> L;
 			M.init(0.1);
 			L.init(0.01);
 #else

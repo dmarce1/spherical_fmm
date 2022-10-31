@@ -1225,7 +1225,7 @@ void init_reals(std::string var, int cnt) {
 	tprint("};\n");
 	ntab = ontab;
 	fprintf(fp, "#else\n");
-	tprint("T %s [%i];\n");
+	tprint("T %s [%i];\n", var.c_str(), cnt);
 	fprintf(fp, "#endif\n");
 //			" = {";
 	/*	for (int n = 0; n < cnt - 1; n++) {
@@ -4197,12 +4197,12 @@ std::string L2P(int P) {
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
 	init_reals("L2", 4);
 	tprint("detail::regular_harmonic(Y_st, -x, -y, -z);\n");
-	if( !nopot ) {
-		tprint( "L2[0] = L[0];\n");
+	if (!nopot) {
+		tprint("L2[0] = L[0];\n");
 	}
-	tprint( "L2[1] = L[1];\n");
-	tprint( "L2[2] = L[2];\n");
-	tprint( "L2[3] = L[3];\n");
+	tprint("L2[1] = L[1];\n");
+	tprint("L2[2] = L[2];\n");
+	tprint("L2[3] = L[3];\n");
 	for (int n = nopot; n <= 1; n++) {
 		for (int m = 0; m <= n; m++) {
 			tprint_new_chain();
@@ -4341,12 +4341,21 @@ std::string L2P(int P) {
 			tprint("L2[%i] = fma(z * z, L_st.trace2(), L2[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
-	if( !nopot ) {
-		tprint( "f.potential += L2[0];\n");
+	if (scaled) {
+		if (!nopot) {
+			tprint("L2[0] *= tmp1;");
+		}
+		tprint("tmp1 *= tmp1;\n");
+		tprint("L2[1] *= tmp1;\n");
+		tprint("L2[2] *= tmp1;\n");
+		tprint("L2[3] *= tmp1;\n");
 	}
-	tprint( "f.force[0] -= L2[3];\n");
-	tprint( "f.force[1] -= L2[1];\n");
-	tprint( "f.force[2] -= L2[2];\n");
+	if (!nopot) {
+		tprint("f.potential += L2[0];\n");
+	}
+	tprint("f.force[0] -= L2[3];\n");
+	tprint("f.force[1] -= L2[1];\n");
+	tprint("f.force[2] -= L2[2];\n");
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -5530,38 +5539,42 @@ int main() {
 						deindent();
 						tprint("}\n");
 
+						tprint("SFMM_PREFIX expansion%s%s(T r0 = T(1)) {\n", period_name(), scaled_name());
+						indent();
+						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
+						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+						indent();
+						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+						}
+						fprintf(fp, "#endif\n");
 						if (scaled) {
-							tprint("SFMM_PREFIX expansion%s%s(T r0 = T(1)) {\n", period_name(), scaled_name());
-							indent();
-							fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-							tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-							indent();
-							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 1) {
-								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-							}
-							fprintf(fp, "#endif\n");
 							tprint("r = r0;\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
-							indent();
-							tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-							indent();
-							tprint("o[n] = T(0);\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 1) {
-								tprint("t = T(0);\n");
-							}
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
+						indent();
+						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+						indent();
+						tprint("o[n] = T(0);\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = T(0);\n");
+						}
+						if (scaled) {
 							tprint("r = r0;\n");
-							deindent();
-							tprint("}\n");
+						}
+						deindent();
+						tprint("}\n");
 
-							tprint("SFMM_PREFIX void rescale(T r0) {\n");
-							indent();
+						tprint("SFMM_PREFIX void rescale(T r0) {\n");
+						indent();
+						if (scaled) {
 							tprint("const T a = r0 / r;\n");
 							tprint("T b = a;\n");
 							tprint("r = r0;\n");
@@ -5576,42 +5589,18 @@ int main() {
 									tprint("b *= a;\n");
 								}
 							}
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX T scale() const {\n");
-							indent();
-							tprint("return r;\n");
-							deindent();
-							tprint("}\n");
-						} else {
-							tprint("SFMM_PREFIX expansion%s%s() {\n", period_name(), scaled_name());
-							indent();
-							fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-							tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-							indent();
-							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 1) {
-								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-							}
-							fprintf(fp, "#endif\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX void init() {\n");
-							indent();
-							tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-							indent();
-							tprint("o[n] = T(0);\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 1) {
-								tprint("t = T(0);\n");
-							}
-							deindent();
-							tprint("}\n");
-
 						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T scale() const {\n");
+						indent();
+						if (scaled) {
+							tprint("return r;\n");
+						} else {
+							tprint("return T(1);\n");
+						}
+						deindent();
+						tprint("}\n");
 						if (periodic && P > 1) {
 							tprint("SFMM_PREFIX T& trace2() {\n");
 							indent();
@@ -5712,39 +5701,42 @@ int main() {
 						tprint("return *this;\n");
 						deindent();
 						tprint("}\n");
-						if (scaled) {
-							tprint("SFMM_PREFIX multipole%s%s%s(T r0 = T(1)) {\n", period_name(), scaled_name(), dip_name());
-							indent();
-							fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-							tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-							indent();
-							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 2) {
-								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-							}
-							fprintf(fp, "#endif\n");
+
+						tprint("SFMM_PREFIX multipole%s%s%s(T r0 = T(1)) {\n", period_name(), scaled_name(), dip_name());
+						indent();
+						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
+						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+						indent();
+						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2) {
+							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+						}
+						fprintf(fp, "#endif\n");
+						if( scaled ) {
 							tprint("r = r0;\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
-							indent();
-							tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-							indent();
-							tprint("o[n] = T(0);\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 2) {
-								tprint("t = T(0);\n");
-							}
-							if (scaled) {
-								tprint("r = r0;\n");
-							}
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX void rescale(T r0) {\n");
-							indent();
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
+						indent();
+						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+						indent();
+						tprint("o[n] = T(0);\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2) {
+							tprint("t = T(0);\n");
+						}
+						if (scaled) {
+							tprint("r = r0;\n");
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX void rescale(T r0) {\n");
+						indent();
+						if (scaled) {
 							tprint("const T a = r / r0;\n");
 							tprint("T b = a;\n");
 							tprint("r = r0;\n");
@@ -5761,42 +5753,18 @@ int main() {
 									tprint("b *= a;\n");
 								}
 							}
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX T scale() const {\n");
-							indent();
-							tprint("return r;\n");
-							deindent();
-							tprint("}\n");
-						} else {
-							tprint("SFMM_PREFIX multipole%s%s%s() {\n", period_name(), scaled_name(), dip_name());
-							indent();
-							fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-							tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-							indent();
-							tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 2) {
-								tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-							}
-							fprintf(fp, "#endif\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX void init() {\n");
-							indent();
-							tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-							indent();
-							tprint("o[n] = T(0);\n");
-							deindent();
-							tprint("}\n");
-							if (periodic && P > 2) {
-								tprint("t = T(0);\n");
-							}
-							deindent();
-							tprint("}\n");
-
 						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T scale() const {\n");
+						indent();
+						if (scaled) {
+							tprint("return r;\n");
+						} else {
+							tprint("return T(1);\n");
+						}
+						deindent();
+						tprint("}\n");
 						if (periodic && P > 2 && P > 1) {
 							tprint("SFMM_PREFIX T& trace2() {\n");
 							indent();
