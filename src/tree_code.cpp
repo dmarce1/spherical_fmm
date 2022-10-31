@@ -6,11 +6,12 @@
 #include <vector>
 #include <fenv.h>
 
-constexpr double theta_max = 0.5;
+constexpr double theta_max = 0.6;
 constexpr double hsoft = 0.01;
 
 #define NDIM 3
 #define BUCKET_SIZE 16
+#define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
@@ -76,7 +77,7 @@ inline T sqr(T a) {
 }
 
 inline rtype abs(vec3 vec) {
-	return std::sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));
+	return sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));
 }
 
 namespace sfmm {
@@ -90,7 +91,7 @@ double rand1() {
 template<class T, int ORDER>
 class tree {
 
-	using multipole_type = sfmm::multipole<T,ORDER>;
+	using multipole_type = sfmm::multipole_wo_dipole<T,ORDER>;
 	using expansion_type = sfmm::expansion<T,ORDER>;
 	using force_type = sfmm::force_type<T>;
 	struct particle {
@@ -152,8 +153,8 @@ class tree {
 		static const T hinv = T(1) / hsoft;
 		static const T hinv3 = sqr(hinv) * hinv;
 		if (r2 > h2) {
-			const T rinv = 1.0 / std::sqrt(r2);
-			const T rinv3 = sqr(rinv) * rinv;
+			const T rinv = sfmm::rsqrt(r2);
+			T rinv3 = sqr(rinv) * rinv;
 			f.potential += m * rinv;
 			f.force[0] -= m * x * rinv3;
 			f.force[1] -= m * y * rinv3;
@@ -212,13 +213,12 @@ public:
 		}
 		double scale = end[0] - begin[0];
 		multipole.init(scale);
-		center = (begin + end) * 0.5;
 		if (parts.size()) {
-		//	center = T(0);
-		//	for (const auto& part : parts) {
-		//		center += part.x;
-	//		}
-			//center /= parts.size();
+			center = T(0);
+			for (const auto& part : parts) {
+				center += part.x;
+			}
+			center /= parts.size();
 			radius = 0.0;
 			for (const auto& part : parts) {
 				multipole_type M;
@@ -228,11 +228,11 @@ public:
 				multipole += M;
 			}
 		} else if (children.size()) {
-		//	const auto& left = children[LEFT];
-		///	const auto& right = children[RIGHT];
-		//	center = left.center * left.multipole(0, 0).real() + right.center * right.multipole(0, 0).real();
-		//	const double total = left.multipole(0, 0).real() + right.multipole(0, 0).real();
-		//	center /= total;
+			const auto& left = children[LEFT];
+			const auto& right = children[RIGHT];
+			center = left.center * left.multipole(0, 0).real() + right.center * right.multipole(0, 0).real();
+			const double total = left.multipole(0, 0).real() + right.multipole(0, 0).real();
+			center /= total;
 			radius = 0.0;
 			for (int ci = 0; ci < NCHILD; ci++) {
 				vec3 dx = children[ci].center - center;
@@ -241,6 +241,8 @@ public:
 				sfmm::M2M(M, dx[0], dx[1], dx[2]);
 				multipole += M;
 			}
+		} else {
+			center = (begin + end) * 0.5;
 		}
 		multipole.rescale(radius);
 	}
@@ -261,8 +263,15 @@ public:
 		}
 		list_iterate(checklist, Plist, Clist, false);
 		for (auto src : Clist) {
-			dx = src->center - center;
-			sfmm::M2L(expansion, src->multipole, dx[0], dx[1], dx[2]);
+			if (src->children.size() == 0 && (src->parts.size() < MIN_CLOUD)) {
+				for (const auto& part : src->parts) {
+					dx = part.x - center;
+					sfmm::P2L(expansion, T(1), dx[0], dx[1], dx[2]);
+				}
+			} else {
+				dx = src->center - center;
+				sfmm::M2L(expansion, src->multipole, dx[0], dx[1], dx[2]);
+			}
 		}
 		for (auto src : Plist) {
 			for (const auto& part : src->parts) {
@@ -288,9 +297,18 @@ public:
 				sfmm::L2P(part.f, expansion, dx[0], dx[1], dx[2]);
 			}
 			for (auto src : Clist) {
-				for (auto& part : parts) {
-					dx = src->center - part.x;
-					sfmm::M2P(part.f, src->multipole, dx[0], dx[1], dx[2]);
+				if (parts.size() < MIN_CLOUD) {
+					for (auto& snk_part : parts) {
+						for (const auto& src_part : src->parts) {
+							dx = src_part.x - snk_part.x;
+							P2P(snk_part.f, T(1), dx[0], dx[1], dx[2]);
+						}
+					}
+				} else {
+					for (auto& part : parts) {
+						dx = src->center - part.x;
+						sfmm::M2P(part.f, src->multipole, dx[0], dx[1], dx[2]);
+					}
 				}
 			}
 			for (auto src : Plist) {
@@ -326,14 +344,14 @@ public:
 					famag += sqr(fa.force[0]) + sqr(fa.force[1]) + sqr(fa.force[2]);
 					fnmag += sqr(snk_part.f.force[0]) + sqr(snk_part.f.force[1]) + sqr(snk_part.f.force[2]);
 				}
-			//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
-				famag = std::sqrt(famag);
-				fnmag = std::sqrt(fnmag);
+				//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
+				famag = sqrt(famag);
+				fnmag = sqrt(fnmag);
 				norm += sqr(famag);
 				err += sqr(famag - fnmag);
 			}
 		}
-		err = std::sqrt(err / norm);
+		err = sqrt(err / norm);
 		return err;
 	}
 	void initialize() {
