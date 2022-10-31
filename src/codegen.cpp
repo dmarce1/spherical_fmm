@@ -1580,12 +1580,14 @@ void z_rot(int P, const char* name, stage_t stage) {
 
 		}
 	}
-	tprint_flush_chains();
-	fprintf(fp, "#ifndef NDEBUG\n");
-	for (auto i : set_nan) {
-		tprint("%s[%i] = std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+	if (set_nan.size()) {
+		tprint_flush_chains();
+		fprintf(fp, "#ifndef NDEBUG\n");
+		for (auto i : set_nan) {
+			tprint("%s[%i] = std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+		}
+		fprintf(fp, "#endif\n");
 	}
-	fprintf(fp, "#endif\n");
 }
 
 void xz_swap(int P, const char* name, bool inv, stage_t stage) {
@@ -1602,6 +1604,7 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage) {
 	} else {
 		index = lindex;
 	}
+	std::vector<int> set_nan;
 	for (int n = 1; n <= P; n++) {
 		if (name == "M" && nodip && n == 1) {
 			continue;
@@ -1629,24 +1632,29 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage) {
 		if (stage == PRE2 && mmax > (P) - n) {
 			mmax = (P + 1) - n;
 		}
-		for (int m = 0; m <= mmax; m++) {
-			for (int l = 0; l <= lmax; l++) {
-				bool flag = false;
-				if (stage == POST2) {
-					if (P == n && n % 2 != abs(l) % 2) {
-						continue;
-					} else if (nodip && P - 1 == n && n % 2 != abs(l) % 2) {
-						continue;
+		for (int m = 0; m <= n; m++) {
+			if (m <= mmax) {
+				for (int l = 0; l <= lmax; l++) {
+					bool flag = false;
+					if (stage == POST2) {
+						if (P == n && n % 2 != abs(l) % 2) {
+							continue;
+						} else if (nodip && P - 1 == n && n % 2 != abs(l) % 2) {
+							continue;
+						}
+					}
+					double r = l == 0 ? brot(n, m, 0) : brot(n, m, l) + nonepow<double>(l) * brot(n, m, -l);
+					double i = l == 0 ? 0.0 : brot(n, m, l) - nonepow<double>(l) * brot(n, m, -l);
+					if (r != 0.0) {
+						ops[n + m].push_back(std::make_pair(r, P + l));
+					}
+					if (i != 0.0 && m != 0) {
+						ops[n - m].push_back(std::make_pair(i, P - l));
 					}
 				}
-				double r = l == 0 ? brot(n, m, 0) : brot(n, m, l) + nonepow<double>(l) * brot(n, m, -l);
-				double i = l == 0 ? 0.0 : brot(n, m, l) - nonepow<double>(l) * brot(n, m, -l);
-				if (r != 0.0) {
-					ops[n + m].push_back(std::make_pair(r, P + l));
-				}
-				if (i != 0.0 && m != 0) {
-					ops[n - m].push_back(std::make_pair(i, P - l));
-				}
+			} else {
+				set_nan.push_back(index(n, m));
+				set_nan.push_back(index(n, -m));
 			}
 		}
 		for (int m = 0; m < 2 * n + 1; m++) {
@@ -1692,6 +1700,13 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage) {
 			}
 		}
 		tprint_flush_chains();
+	}
+	if (set_nan.size()) {
+		fprintf(fp, "#ifndef NDEBUG\n");
+		for (auto i : set_nan) {
+			tprint("%s[%i] = std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+		}
+		fprintf(fp, "#endif\n");
 	}
 }
 
