@@ -1497,7 +1497,7 @@ bool close21(double a) {
 void z_rot(int P, const char* name, bool noevenhi, bool exclude, int noimaghi) {
 	tprint("rx[0] = cosphi;\n");
 	tprint("ry[0] = sinphi;\n");
-	for (int m = 1; m < P; m++) {
+	for (int m = 1; m <= P; m++) {
 		tprint("rx[%i] = rx[%i] * cosphi - ry[%i] * sinphi;\n", m, m - 1, m - 1);
 		tprint("ry[%i] = fma(rx[%i], sinphi, ry[%i] * cosphi);\n", m, m - 1, m - 1);
 	}
@@ -1728,7 +1728,7 @@ void m2l(int P, int Q, const char* mname, const char* lname) {
 		for (int m = -n; m <= n; m++) {
 			if (first[n][n + m]) {
 				//	printf("---- %i %i %i %i %i\n", nodip, P, Q, n, m);
-				tprint("L[%i] = TCAST(0);\n", lindex(n, m));
+	//			tprint("L[%i] = TCAST(0);\n", lindex(n, m));
 			}
 		}
 	}
@@ -2536,7 +2536,7 @@ std::string greens_ewald(int P, double alpha) {
 
 }
 
-std::string M2L_norot(int P, int Q) {
+std::string M2L_rot0(int P, int Q) {
 	std::string fname;
 	if (Q > 1) {
 		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
@@ -2646,8 +2646,8 @@ std::string M2L_rot1(int P, int Q) {
 	init_real("R");
 	init_real("cosphi");
 	init_real("sinphi");
-	init_reals("rx", P);
-	init_reals("ry", P);
+	init_reals("rx", std::max(P, Q+1));
+	init_reals("ry", std::max(P, Q+1));
 	init_real("tmp0");
 	init_reals("L", exp_sz(Q));
 	tprint("detail::expansion_xz%s<%s, %i> O_st;\n", period_name(), type.c_str(), P);
@@ -2888,8 +2888,8 @@ std::string M2L_rot2(int P, int Q) {
 	init_real("sinphi");
 	init_real("cosphi0");
 	init_real("sinphi0");
-	init_reals("rx\n", P);
-	init_reals("ry\n", P);
+	init_reals("rx", std::max(P, Q+1));
+	init_reals("ry", std::max(P, Q+1));
 	init_real("tmp0");
 	init_real("r2przero");
 	init_real("rinv");
@@ -2959,6 +2959,9 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("sinphi = -R * rinv;\n");
 	z_rot(P - 1, "M", false, false, false);
 	xz_swap(P - 1, "M", false, true, false, false);
+	for( int i = 0; i < exp_sz(Q); i++) {
+		tprint( "L[%i] = TCAST(0);\n", i);
+	}
 	m2l(P, Q, "M", "L");
 	xz_swap(Q, "L", true, false, true, false);
 	tprint("sinphi = -sinphi;\n");
@@ -2968,7 +2971,7 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("sinphi = -sinphi0;\n");
 	z_rot(Q, "L", false, true, false);
 	if (Q > 1) {
-		for (int n = 0; n < exp_sz(Q); n++) {
+		for (int n = nopot; n < exp_sz(Q); n++) {
 			tprint("L0[%i] += L[%i];\n", n, n);
 		}
 
@@ -3202,7 +3205,7 @@ std::string regular_harmonic_xz(int P) {
 	return fname;
 }
 
-std::string M2M_norot(int P) {
+std::string M2M_rot0(int P) {
 	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
 	if (P < 2 && nodip || P < 1) {
 		deindent();
@@ -3388,8 +3391,8 @@ std::string M2M_rot1(int P) {
 	}
 	tprint("detail::expansion_xz%s<%s, %i> Y_st;\n", period_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
-	init_reals("rx\n", P);
-	init_reals("ry\n", P);
+	init_reals("rx\n", P + 1);
+	init_reals("ry\n", P + 1);
 	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
@@ -3558,8 +3561,8 @@ std::string M2M_rot2(int P) {
 		return fname;
 	}
 	init_reals("A", 2 * P + 1);
-	init_reals("rx\n", P);
-	init_reals("ry\n", P);
+	init_reals("rx\n", P + 1);
+	init_reals("ry\n", P + 1);
 	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
@@ -3767,7 +3770,7 @@ std::string P2M(int P) {
 	return fname;
 }
 
-std::string L2L_norot(int P) {
+std::string L2L_rot0(int P) {
 	auto index = lindex;
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("/* algorithm= no rotation, full l^4 */\n");
@@ -3934,8 +3937,8 @@ std::string L2L_rot1(int P) {
 
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
-	init_reals("rx", P);
-	init_reals("ry", P);
+	init_reals("rx", P+1);
+	init_reals("ry", P+1);
 	tprint("detail::expansion_xz%s<%s, %i> Y_st;\n", period_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
 	init_real("tmp0");
@@ -4093,8 +4096,8 @@ std::string L2L_rot2(int P) {
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
-	init_reals("rx", P);
-	init_reals("ry", P);
+	init_reals("rx", P+1);
+	init_reals("ry", P+1);
 	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
@@ -5202,6 +5205,7 @@ int main() {
 	tprint("#define SFMM_PREFIX\n");
 	tprint("#endif\n");
 	tprint("\n");
+	tprint("#include <cstdio>\n");
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("#include <limits>\n");
@@ -5923,7 +5927,7 @@ int main() {
 							}
 							flops_t flops0, flops1, flops2;
 							if (P < pmax) {
-								fname = M2M_norot(P);
+								fname = M2M_rot0(P);
 								fclose(fp);
 								fp = nullptr;
 								flops0 += regular_harmonic_flops[P];
@@ -5949,7 +5953,7 @@ int main() {
 										flops_map[P]["M2M"] = flops1;
 										rot_map[P]["M2M"] = 1;
 									} else {
-										M2M_norot(P);
+										M2M_rot0(P);
 										flops_map[P]["M2M"] = flops0;
 										rot_map[P]["M2M"] = 0;
 									}
@@ -5964,7 +5968,7 @@ int main() {
 								flops2.reset();
 							}
 							if (P >= pmin && !nodip) {
-								fname = L2L_norot(P);
+								fname = L2L_rot0(P);
 								fclose(fp);
 								fp = nullptr;
 								flops0 += regular_harmonic_flops[P];
@@ -5990,7 +5994,7 @@ int main() {
 										flops_map[P]["L2L"] = flops1;
 										rot_map[P]["L2L"] = 1;
 									} else {
-										L2L_norot(P);
+										L2L_rot0(P);
 										flops_map[P]["L2L"] = flops0;
 										rot_map[P]["L2L"] = 0;
 									}
@@ -6039,7 +6043,7 @@ int main() {
 							flops1.reset();
 							flops2.reset();
 
-							fname = M2L_norot(P, P);
+							fname = M2L_rot0(P, P);
 							fclose(fp);
 							fp = nullptr;
 							flops0 += count_flops(fname);
@@ -6061,11 +6065,11 @@ int main() {
 							//		printf( "%i %i %i\n", flops0.load(), flops1.load(), flops2.load());
 							if (flops2.load() > flops0.load() || flops2.load() > flops1.load()) {
 								if (flops1.load() < flops0.load()) {
-									M2L_rot1(P, P);
+									M2L_rot2(P, P);
 									flops_map[P]["M2L"] = flops1;
 									rot_map[P]["M2L"] = 1;
 								} else {
-									M2L_norot(P, P);
+									M2L_rot2(P, P);
 									flops_map[P]["M2L"] = flops0;
 									rot_map[P]["M2L"] = 0;
 								}
@@ -6078,7 +6082,7 @@ int main() {
 							flops0.reset();
 							flops1.reset();
 							flops2.reset();
-							fname = M2L_norot(P, 1);
+							fname = M2L_rot0(P, 1);
 							fclose(fp);
 							fp = nullptr;
 							flops0 += count_flops(fname);
@@ -6104,7 +6108,7 @@ int main() {
 									flops_map[P]["M2P"] = flops1;
 									rot_map[P]["M2P"] = 1;
 								} else {
-									M2L_norot(P, 1);
+									M2L_rot0(P, 1);
 									flops_map[P]["M2P"] = flops0;
 									rot_map[P]["M2P"] = 0;
 								}

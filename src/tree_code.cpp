@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <sfmmf.hpp>
+#include <sfmmd.hpp>
 
 #include <array>
 #include <vector>
@@ -15,7 +16,7 @@ constexpr double hsoft = 0.01;
 #define NCHILD 2
 #define TEST_SIZE 10000
 
-using rtype = float;
+using rtype = double;
 
 #define VEC3_BINARY_OP( op ) \
 		vec3 operator op (const vec3& other) const { \
@@ -75,7 +76,7 @@ inline T sqr(T a) {
 }
 
 inline rtype abs(vec3 vec) {
-	return sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));
+	return std::sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));
 }
 
 namespace sfmm {
@@ -89,8 +90,8 @@ double rand1() {
 template<class T, int ORDER>
 class tree {
 
-	using multipole_type = sfmm::multipole_scaled<T,ORDER>;
-	using expansion_type = sfmm::expansion_scaled<T,ORDER>;
+	using multipole_type = sfmm::multipole<T,ORDER>;
+	using expansion_type = sfmm::expansion<T,ORDER>;
 	using force_type = sfmm::force_type<T>;
 	struct particle {
 		vec3 x;
@@ -147,12 +148,12 @@ class tree {
 
 	void P2P(force_type& f, T m, T x, T y, T z) {
 		const T r2 = sqr(x) + sqr(y) + sqr(z);
-		const T rinv = sfmm::rsqrt(r2);
 		static const T h2 = hsoft * hsoft;
 		static const T hinv = T(1) / hsoft;
 		static const T hinv3 = sqr(hinv) * hinv;
 		if (r2 > h2) {
-			T rinv3 = sqr(rinv) * rinv;
+			const T rinv = 1.0 / std::sqrt(r2);
+			const T rinv3 = sqr(rinv) * rinv;
 			f.potential += m * rinv;
 			f.force[0] -= m * x * rinv3;
 			f.force[1] -= m * y * rinv3;
@@ -211,12 +212,13 @@ public:
 		}
 		double scale = end[0] - begin[0];
 		multipole.init(scale);
+		center = (begin + end) * 0.5;
 		if (parts.size()) {
-			center = T(0);
-			for (const auto& part : parts) {
-				center += part.x;
-			}
-			center /= parts.size();
+		//	center = T(0);
+		//	for (const auto& part : parts) {
+		//		center += part.x;
+	//		}
+			//center /= parts.size();
 			radius = 0.0;
 			for (const auto& part : parts) {
 				multipole_type M;
@@ -226,11 +228,11 @@ public:
 				multipole += M;
 			}
 		} else if (children.size()) {
-			const auto& left = children[LEFT];
-			const auto& right = children[RIGHT];
-			center = left.center * left.multipole(0, 0).real() + right.center * right.multipole(0, 0).real();
-			const double total = left.multipole(0, 0).real() + right.multipole(0, 0).real();
-			center /= total;
+		//	const auto& left = children[LEFT];
+		///	const auto& right = children[RIGHT];
+		//	center = left.center * left.multipole(0, 0).real() + right.center * right.multipole(0, 0).real();
+		//	const double total = left.multipole(0, 0).real() + right.multipole(0, 0).real();
+		//	center /= total;
 			radius = 0.0;
 			for (int ci = 0; ci < NCHILD; ci++) {
 				vec3 dx = children[ci].center - center;
@@ -239,8 +241,6 @@ public:
 				sfmm::M2M(M, dx[0], dx[1], dx[2]);
 				multipole += M;
 			}
-		} else {
-			center = (begin + end) * 0.5;
 		}
 		multipole.rescale(radius);
 	}
@@ -326,13 +326,14 @@ public:
 					famag += sqr(fa.force[0]) + sqr(fa.force[1]) + sqr(fa.force[2]);
 					fnmag += sqr(snk_part.f.force[0]) + sqr(snk_part.f.force[1]) + sqr(snk_part.f.force[2]);
 				}
-				famag = sqrt(famag);
-				fnmag = sqrt(fnmag);
+			//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
+				famag = std::sqrt(famag);
+				fnmag = std::sqrt(fnmag);
 				norm += sqr(famag);
 				err += sqr(famag - fnmag);
 			}
 		}
-		err = sqrt(err / norm);
+		err = std::sqrt(err / norm);
 		return err;
 	}
 	void initialize() {
@@ -353,19 +354,19 @@ std::vector<tree<T, ORDER>*> tree<T, ORDER>::nodes;
 template<class T, int ORDER = PMIN>
 struct run_tests {
 	void operator()() const {
-		tree<rtype, ORDER> root;
+		tree<T, ORDER> root;
 		root.set_root();
 		root.initialize();
 		root.compute_multipoles();
 		root.compute_gravity_field();
 		printf("%i %e\n", ORDER, root.compare_analytic(0.1));
-		run_tests<T,ORDER+1> run;
+		run_tests<T, ORDER + 1> run;
 		run();
 	}
 };
 
 template<class T>
-struct run_tests<T,PMAX+1> {
+struct run_tests<T, PMAX + 1> {
 	void operator()() const {
 	}
 };
@@ -374,7 +375,11 @@ int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-	run_tests<rtype> run;
-	run();
+	printf("\ndouble\n");
+	run_tests<double> run2;
+	run2();
+	printf("float\n");
+	run_tests<float> run1;
+	run1();
 	return 0;
 }
