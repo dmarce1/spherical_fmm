@@ -1513,6 +1513,7 @@ void z_rot(int P, const char* name, stage_t stage) {
 	} else {
 		index = lindex;
 	}
+	std::vector<int> set_nan;
 	for (int m = 1; m <= P; m++) {
 		tprint_new_chain();
 		for (int l = m; l <= P; l++) {
@@ -1530,39 +1531,34 @@ void z_rot(int P, const char* name, stage_t stage) {
 					}
 				}
 			}
-			if (stage == PRE2) {
-				if (l == P) {
-				/*	if (l % 2 == m % 2) {
-						tprint("#ifndef NDEBUG\n");
-						tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, index(l, m), type.c_str());
-						if( m != 0 ) {
-							tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, index(l, -m), type.c_str());
-						}
-						tprint("#endif\n");
-						continue;
-					}*/
-				}
-			}
-			bool ionly = false;
-			bool ronly = false;
+			bool read_ionly = false;
+			bool read_ronly = false;
+			bool write_ronly = false;
 			if (stage == POST2) {
 				if (l == P) {
-					ionly = m % 2;
+					read_ionly = m % 2;
 				} else if (nodip && l == P - 1) {
-					ionly = m % 2;
+					read_ionly = m % 2;
 				}
 				if (l == P) {
-					ronly = !(m % 2);
+					read_ronly = !(m % 2);
 				} else if (nodip && l == P - 1) {
-					ronly = !(m % 2);
+					read_ronly = !(m % 2);
+				}
+			} else if (stage == PRE2) {
+				if (l == P) {
+					write_ronly = m % 2 != l % 2;
 				}
 			}
-			if (ionly) {
+			if (read_ionly) {
 				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
 				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, -m), m);
-			} else if (ronly || ((stage == XZ1 || stage == XZ2) && (l > (P - ((stage == XZ1) + 2 * (stage == XZ2)))))) {
+			} else if (read_ronly || ((stage == XZ1 || stage == XZ2) && (l > (P - ((stage == XZ1) + 2 * (stage == XZ2)))))) {
 				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
 				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+			} else if (write_ronly) {
+				tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
+				set_nan.push_back(index(l, -m));
 			} else {
 				bool sw = false;
 				if (stage == POST1 && (l >= P - 1)) {
@@ -1585,6 +1581,11 @@ void z_rot(int P, const char* name, stage_t stage) {
 		}
 	}
 	tprint_flush_chains();
+	fprintf(fp, "#ifndef NDEBUG\n");
+	for (auto i : set_nan) {
+		tprint("%s[%i] = std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+	}
+	fprintf(fp, "#endif\n");
 }
 
 void xz_swap(int P, const char* name, bool inv, stage_t stage) {
@@ -6082,11 +6083,11 @@ int main() {
 							//		printf( "%i %i %i\n", flops0.load(), flops1.load(), flops2.load());
 							if (flops2.load() > flops0.load() || flops2.load() > flops1.load()) {
 								if (flops1.load() < flops0.load()) {
-									M2L_rot2(P, P);
+									M2L_rot1(P, P);
 									flops_map[P]["M2L"] = flops1;
 									rot_map[P]["M2L"] = 1;
 								} else {
-									M2L_rot2(P, P);
+									M2L_rot0(P, P);
 									flops_map[P]["M2L"] = flops0;
 									rot_map[P]["M2L"] = 0;
 								}
