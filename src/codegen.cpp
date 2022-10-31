@@ -1580,11 +1580,11 @@ void z_rot(int P, const char* name, stage_t stage) {
 
 		}
 	}
+	tprint_flush_chains();
 	if (set_nan.size()) {
-		tprint_flush_chains();
 		fprintf(fp, "#ifndef NDEBUG\n");
 		for (auto i : set_nan) {
-			tprint("%s[%i] = std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
 		}
 		fprintf(fp, "#endif\n");
 	}
@@ -1704,7 +1704,7 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage) {
 	if (set_nan.size()) {
 		fprintf(fp, "#ifndef NDEBUG\n");
 		for (auto i : set_nan) {
-			tprint("%s[%i] = std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
 		}
 		fprintf(fp, "#endif\n");
 	}
