@@ -339,11 +339,91 @@ static std::string complex_defs = "\n"
 		"#endif\n"
 		"";
 
+static std::string vec3_header() {
+	return "\n"
+			"#ifndef SFMM_VEC342\n"
+			"#define SFMM_VEC342\n"
+			"\n"
+			"#define SFMM_NDIM 3"
+			"\n"
+			"#define sfmm_create_vec3_op1( op ) \\\n"
+			"\t\tSFMM_PREFIX vec3 operator op (const vec3& other) const { \\\n"
+			"\t\t\tvec3 result; \\\n"
+			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
+			"\t\t\t\tresult[dim] = (*this)[dim] op other[dim]; \\\n"
+			"\t\t\t} \\\n"
+			"\t\t\treturn result; \\\n"
+			"\t\t} \\\n"
+			"\t\tSFMM_PREFIX vec3& operator op##= (const vec3& other) { \\\n"
+			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
+			"\t\t\t\t(*this)[dim] op##= other[dim]; \\\n"
+			"\t\t\t} \\\n"
+			"\t\t\treturn *this; \\\n"
+			"\t\t}\n"
+			"\n"
+			"#define sfmm_create_vec3_op2( op ) \\\n"
+			"\t\tSFMM_PREFIX vec3 operator op (const T other) const { \\\n"
+			"\t\t\tvec3 result; \\\n"
+			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
+			"\t\t\t\tresult[dim] = (*this)[dim] op other; \\\n"
+			"\t\t\t} \\\n"
+			"\t\t\treturn result; \\\n"
+			"\t\t} \\\n"
+			"\t\tSFMM_PREFIX vec3& operator op##= (const T other) { \\\n"
+			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
+			"\t\t\t\t(*this)[dim] op##= other; \\\n"
+			"\t\t\t} \\\n"
+			"\t\t\treturn *this; \\\n"
+			"\t\t}\n"
+			"\n"
+			"template<class T>\n"
+			"struct vec3: public std::array<T, SFMM_NDIM> {\n"
+			"\tsfmm_create_vec3_op1( + )\n"
+			"\tsfmm_create_vec3_op1( - )\n"
+			"\tsfmm_create_vec3_op1( * )\n"
+			"\tsfmm_create_vec3_op1( / )\n"
+			"\tsfmm_create_vec3_op2( * )\n"
+			"\tsfmm_create_vec3_op2( / )\n"
+			"\tSFMM_PREFIX vec3 operator-() const {\n"
+			"\t\tvec3 result;\n"
+			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
+			"\t\t\tresult[dim] = -(*this)[dim];\n"
+			"\t\t}\n"
+			"\t\treturn result;\n"
+			"\t}\n"
+			"\tSFMM_PREFIX vec3& operator=(T a) {\n"
+			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
+			"\t\t\t(*this)[dim] = a;\n"
+			"\t\t}\n"
+			"\t\treturn *this;\n"
+			"\t}\n"
+			"\tSFMM_PREFIX vec3<T>(T x, T y, T z) {\n"
+			"\t\t(*this)[0] = x;\n"
+			"\t\t(*this)[1] = y;\n"
+			"\t\t(*this)[2] = z;\n"
+			"\t}\n"
+			"\nvec3() = default;\n"
+			"\nvec3(const vec3&) = default;\n"
+			"\nvec3& operator=(const vec3&) = default;\n"
+			"};\n"
+			"template<class T>\n"
+			"SFMM_PREFIX inline T sqr(T a) {\n"
+			"\treturn a * a;\n"
+			"}\n"
+			"\n"
+			"template<class T>\n"
+			"SFMM_PREFIX inline T abs(vec3<T> vec) {\n"
+			"\treturn sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));\n"
+			"}\n"
+			"\n"
+			"#endif\n"
+			"";
+}
 static std::string vec_header() {
 	std::string str = "\n";
 	str += "#ifndef SFMM_VEC_HEADER42\n";
 	str += "#define SFMM_VEC_HEADER42\n";
-	str += "#define create_binary_op(vtype, type, op) \\\n";
+	str += "#define sfmm_create_binary_op(vtype, type, op) \\\n";
 	str += "   inline vtype operator op (const vtype& u ) const { \\\n";
 	str += "      vtype w; \\\n";
 	str += "      w.v = v op u.v; \\\n";
@@ -354,19 +434,19 @@ static std::string vec_header() {
 	str += "	      return *this; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_unary_op(vtype, type, op) \\\n";
+	str += "#define sfmm_create_unary_op(vtype, type, op) \\\n";
 	str += "   inline vtype operator op () const { \\\n";
 	str += "      vtype w; \\\n";
 	str += "      w.v = op v; \\\n";
 	str += "      return w; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_convert_op_prot(vtype,type,ovtype,otype) \\\n";
+	str += "#define sfmm_create_convert_op_prot(vtype,type,ovtype,otype) \\\n";
 	str += "   inline vtype(const ovtype&); \\\n";
 	str += "   inline vtype& operator=(const ovtype&); \\\n";
 	str += "   inline vtype& operator=(const otype&)\n";
 	str += "\n";
-	str += "#define create_convert_op_def(vtype,type,ovtype,otype) \\\n";
+	str += "#define sfmm_create_convert_op_def(vtype,type,ovtype,otype) \\\n";
 	str += "   inline vtype::vtype(const ovtype& other) { \\\n";
 	str += "	     v = __builtin_convertvector(other.v, simd_t); \\\n";
 	str += "   } \\\n";
@@ -375,7 +455,7 @@ static std::string vec_header() {
 	str += "	     return *this; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_broadcast_op(vtype,type) \\\n";
+	str += "#define sfmm_create_broadcast_op(vtype,type) \\\n";
 	str += "   inline vtype(const type& other) { \\\n";
 	str += "	     v = other - simd_t{}; \\\n";
 	str += "   } \\\n";
@@ -384,20 +464,20 @@ static std::string vec_header() {
 	str += "	     return *this; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_compare_op_prot(vtype,vstype,stype,op) \\\n";
+	str += "#define sfmm_create_compare_op_prot(vtype,vstype,stype,op) \\\n";
 	str += "   inline vstype operator op (const vtype&) const\n";
 	str += "\n";
-	str += "#define create_compare_op_def(vtype,vstype,sitype,op) \\\n";
+	str += "#define sfmm_create_compare_op_def(vtype,vstype,sitype,op) \\\n";
 	str += "   inline vstype vtype::operator op (const vtype& other) const { \\\n";
 	str += "	     vstype w; \\\n";
 	str += "      w.v = (-(v op other.v)); \\\n";
 	str += "      return w; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_vec_types_fwd(vtype)              \\\n";
+	str += "#define sfmm_create_vec_types_fwd(vtype)              \\\n";
 	str += "class vtype\n";
 	str += "\n";
-	str += "#define create_rvec_types(vtype, type, vstype, stype, vutype, utype, size)              \\\n";
+	str += "#define sfmm_create_rvec_types(vtype, type, vstype, stype, vutype, utype, size)              \\\n";
 	str += "   class vtype {                                           \\\n";
 	str += "      typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \\\n";
 	str += "      simd_t v;  \\\n";
@@ -409,26 +489,26 @@ static std::string vec_header() {
 	str += "	     inline type& operator[](int i) {  \\\n";
 	str += "		     return v[i]; \\\n";
 	str += "	     }\\\n";
-	str += "      create_binary_op(vtype, type, +); \\\n";
-	str += "      create_binary_op(vtype, type, -); \\\n";
-	str += "      create_binary_op(vtype, type, *); \\\n";
-	str += "      create_binary_op(vtype, type, /); \\\n";
-	str += "      create_unary_op(vtype, type, +); \\\n";
-	str += "      create_unary_op(vtype, type, -); \\\n";
-	str += "      create_convert_op_prot(vtype,type,vstype,stype); \\\n";
-	str += "      create_convert_op_prot(vtype,type,vutype,utype); \\\n";
-	str += "      create_broadcast_op(vtype,type); \\\n";
-	str += "      create_compare_op_prot(vtype, vstype, stype, <); \\\n";
-	str += "      create_compare_op_prot(vtype, vstype, stype, >); \\\n";
-	str += "      create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
-	str += "      create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
-	str += "      create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
-	str += "      create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, +); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, -); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, *); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, /); \\\n";
+	str += "      sfmm_create_unary_op(vtype, type, +); \\\n";
+	str += "      sfmm_create_unary_op(vtype, type, -); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype,type,vstype,stype); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype,type,vutype,utype); \\\n";
+	str += "      sfmm_create_broadcast_op(vtype,type); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
 	str += "      friend class vstype; \\\n";
 	str += "      friend class vutype; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_ivec_types(vtype, type, votype, otype, vrtype, rtype, vstype, stype, size)              \\\n";
+	str += "#define sfmm_create_ivec_types(vtype, type, votype, otype, vrtype, rtype, vstype, stype, size)              \\\n";
 	str += "   class vtype {                                           \\\n";
 	str += "      typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \\\n";
 	str += "      simd_t v;  \\\n";
@@ -440,73 +520,73 @@ static std::string vec_header() {
 	str += "      inline type& operator[](int i) {  \\\n";
 	str += "         return v[i]; \\\n";
 	str += "      }\\\n";
-	str += "      create_binary_op(vtype, type, +); \\\n";
-	str += "      create_binary_op(vtype, type, -); \\\n";
-	str += "      create_binary_op(vtype, type, *); \\\n";
-	str += "      create_binary_op(vtype, type, /); \\\n";
-	str += "      create_binary_op(vtype, type, &); \\\n";
-	str += "      create_binary_op(vtype, type, ^); \\\n";
-	str += "      create_binary_op(vtype, type, |); \\\n";
-	str += "      create_binary_op(vtype, type, >>); \\\n";
-	str += "      create_binary_op(vtype, type, <<); \\\n";
-	str += "      create_unary_op(vtype, type, +); \\\n";
-	str += "      create_unary_op(vtype, type, -); \\\n";
-	str += "      create_unary_op(vtype, type, ~); \\\n";
-	str += "      create_broadcast_op(vtype,type); \\\n";
-	str += "      create_convert_op_prot(vtype,type,vrtype,rtype); \\\n";
-	str += "      create_convert_op_prot(vtype,type,votype,otype); \\\n";
-	str += "      create_compare_op_prot(vtype,vstype,stype,<); \\\n";
-	str += "      create_compare_op_prot(vtype,vstype,stype,>); \\\n";
-	str += "      create_compare_op_prot(vtype,vstype,stype,<=); \\\n";
-	str += "      create_compare_op_prot(vtype,vstype,stype,>=); \\\n";
-	str += "      create_compare_op_prot(vtype,vstype,stype,==); \\\n";
-	str += "      create_compare_op_prot(vtype,vstype,stype,!=); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, +); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, -); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, *); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, /); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, &); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, ^); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, |); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, >>); \\\n";
+	str += "      sfmm_create_binary_op(vtype, type, <<); \\\n";
+	str += "      sfmm_create_unary_op(vtype, type, +); \\\n";
+	str += "      sfmm_create_unary_op(vtype, type, -); \\\n";
+	str += "      sfmm_create_unary_op(vtype, type, ~); \\\n";
+	str += "      sfmm_create_broadcast_op(vtype,type); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype,type,vrtype,rtype); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype,type,votype,otype); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,<); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,>); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,<=); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,>=); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,==); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,!=); \\\n";
 	str += "      friend class vrtype; \\\n";
 	str += "      friend class votype; \\\n";
 	str += "   }\n";
 	str += "\n";
-	str += "#define create_rvec_types_def(vtype, type, vstype, stype, vutype, utype, size)\\\n";
-	str += "   create_convert_op_def(vtype, type, vstype, stype); \\\n";
-	str += "   create_convert_op_def(vtype, type, vutype, utype)\n";
+	str += "#define sfmm_create_rvec_types_def(vtype, type, vstype, stype, vutype, utype, size)\\\n";
+	str += "   sfmm_create_convert_op_def(vtype, type, vstype, stype); \\\n";
+	str += "   sfmm_create_convert_op_def(vtype, type, vutype, utype)\n";
 	str += "\n";
-	str += "#define create_ivec_types_def(vtype, type, votype, otype, vrtype, rtype, size)              \\\n";
-	str += "   create_convert_op_def(vtype,type,vrtype,rtype); \\\n";
-	str += "   create_convert_op_def(vtype,type,votype,otype)\n";
+	str += "#define sfmm_create_ivec_types_def(vtype, type, votype, otype, vrtype, rtype, size)              \\\n";
+	str += "   sfmm_create_convert_op_def(vtype,type,vrtype,rtype); \\\n";
+	str += "   sfmm_create_convert_op_def(vtype,type,votype,otype)\n";
 	str += "\n";
-	str += "#define create_vec_types(vrtype,rtype,vstype,stype,vutype,utype,size) \\\n";
-	str += "   create_vec_types_fwd(vrtype); \\\n";
-	str += "   create_vec_types_fwd(vutype); \\\n";
-	str += "   create_vec_types_fwd(vstype); \\\n";
-	str += "   create_rvec_types(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
-	str += "   create_ivec_types(vutype,utype,vstype,stype,vrtype,rtype,vstype,stype,size); \\\n";
-	str += "   create_ivec_types(vstype,stype,vutype,utype,vrtype,rtype,vstype,stype,size); \\\n";
-	str += "   create_rvec_types_def(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
-	str += "   create_ivec_types_def(vutype,utype,vstype,stype,vrtype,rtype, size); \\\n";
-	str += "   create_ivec_types_def(vstype,stype,vutype,utype,vrtype,rtype, size); \\\n";
-	str += "   create_compare_op_def(vrtype,vstype,stype,<); \\\n";
-	str += "   create_compare_op_def(vrtype,vstype,stype,>); \\\n";
-	str += "   create_compare_op_def(vrtype,vstype,stype,<=); \\\n";
-	str += "   create_compare_op_def(vrtype,vstype,stype,>=); \\\n";
-	str += "   create_compare_op_def(vrtype,vstype,stype,==); \\\n";
-	str += "   create_compare_op_def(vrtype,vstype,stype,!=); \\\n";
-	str += "   create_compare_op_def(vutype,vstype,stype,<); \\\n";
-	str += "   create_compare_op_def(vutype,vstype,stype,>); \\\n";
-	str += "   create_compare_op_def(vutype,vstype,stype,<=); \\\n";
-	str += "   create_compare_op_def(vutype,vstype,stype,>=); \\\n";
-	str += "   create_compare_op_def(vutype,vstype,stype,==); \\\n";
-	str += "   create_compare_op_def(vutype,vstype,stype,!=); \\\n";
-	str += "   create_compare_op_def(vstype,vstype,stype,<); \\\n";
-	str += "   create_compare_op_def(vstype,vstype,stype,>); \\\n";
-	str += "   create_compare_op_def(vstype,vstype,stype,<=); \\\n";
-	str += "   create_compare_op_def(vstype,vstype,stype,>=); \\\n";
-	str += "   create_compare_op_def(vstype,vstype,stype,==); \\\n";
-	str += "   create_compare_op_def(vstype,vstype,stype,!=)\n";
+	str += "#define sfmm_create_vec_types(vrtype,rtype,vstype,stype,vutype,utype,size) \\\n";
+	str += "   sfmm_create_vec_types_fwd(vrtype); \\\n";
+	str += "   sfmm_create_vec_types_fwd(vutype); \\\n";
+	str += "   sfmm_create_vec_types_fwd(vstype); \\\n";
+	str += "   sfmm_create_rvec_types(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
+	str += "   sfmm_create_ivec_types(vutype,utype,vstype,stype,vrtype,rtype,vstype,stype,size); \\\n";
+	str += "   sfmm_create_ivec_types(vstype,stype,vutype,utype,vrtype,rtype,vstype,stype,size); \\\n";
+	str += "   sfmm_create_rvec_types_def(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
+	str += "   sfmm_create_ivec_types_def(vutype,utype,vstype,stype,vrtype,rtype, size); \\\n";
+	str += "   sfmm_create_ivec_types_def(vstype,stype,vutype,utype,vrtype,rtype, size); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,<); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,>); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,<=); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,>=); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,==); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,!=); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,<); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,>); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,<=); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,>=); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,==); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,!=); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,<); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,>); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,<=); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,>=); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,==); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,!=)\n";
 	str += "#endif\n";
 	char* b;
 #ifdef VEC_FLOAT
 	str += "#ifndef SFMM_VEC_FLOAT42\n";
 	str += "#define SFMM_VEC_FLOAT42\n";
-	ASPRINTF(&b, "create_vec_types(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
+	ASPRINTF(&b, "sfmm_create_vec_types(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
 	ASPRINTF(&b, "inline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
@@ -568,7 +648,7 @@ static std::string vec_header() {
 #ifdef VEC_DOUBLE
 	str += "#ifndef SFMM_VEC_DOUBLE42\n";
 	str += "#define SFMM_VEC_DOUBLE42\n";
-	ASPRINTF(&b, "create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
+	ASPRINTF(&b, "sfmm_create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
 	ASPRINTF(&b, "inline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
@@ -1199,7 +1279,7 @@ void ewald_limits(int& r2, int& h2, double alpha) {
 }
 
 enum arg_type {
-	LIT, PTR, CPTR, EXP, HEXP, MUL, CEXP, CMUL, FORCE
+	LIT, PTR, CPTR, EXP, HEXP, MUL, CEXP, CMUL, FORCE, VEC3
 };
 
 void init_real(std::string var) {
@@ -1241,7 +1321,9 @@ void init_reals(std::string var, int cnt) {
 template<class ...Args>
 std::string func_args(int P, const char* arg, arg_type atype, int term) {
 	std::string str;
-	if (atype == EXP) {
+	if (atype == VEC3) {
+		str += std::string("vec3<") + type + "> " + arg;
+	} else if (atype == EXP) {
 		str += std::string("expansion") + period_name() + scaled_name() + "<" + type + ", " + std::to_string(P) + ">& " + arg + "_st";
 	} else if (atype == HEXP) {
 		str += std::string("detail::expansion_xz") + period_name() + "<" + type + ", " + std::to_string(P) + ">& " + arg + "_st";
@@ -1326,7 +1408,7 @@ void func_args_cover(int P, const char* arg, arg_type atype, Args&& ...args) {
 }
 
 template<class ... Args>
-std::string func_header(const char* func, int P, bool pub, bool calcpot, bool scale, bool flags, std::string head, Args&& ...args) {
+std::string func_header(const char* func, int P, bool pub, bool calcpot, bool scale, bool flags, bool vec, std::string head, Args&& ...args) {
 	static std::set<std::string> igen;
 	std::string func_name = std::string(func);
 	if (nopot && calcpot) {
@@ -1415,6 +1497,11 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		tprint("}\n");
 	}
 	func_args_cover(P, std::forward<Args>(args)..., 0);
+	if( vec) {
+		tprint( "T& x=dx[0];\n");
+		tprint( "T& y=dx[1];\n");
+		tprint( "T& z=dx[2];\n");
+	}
 	return file_name;
 }
 
@@ -1822,7 +1909,7 @@ void greens_body(int P, const char* M = nullptr) {
 }
 
 std::string greens_safe(int P) {
-	auto fname = func_header("greens_safe", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("greens_safe", P, true, false, false, true, true, "", "O", EXP, "dx", VEC3);
 	const auto mul = [](std::string a, std::string b, std::string c, int l) {
 		tprint( "flags[%i] *= safe_mul(%s, %s, %s);\n", l, a.c_str(), b.c_str(), c.c_str());
 	};
@@ -2106,7 +2193,7 @@ bool close2zero(double a) {
 }
 
 std::string P2L(int P) {
-	auto fname = func_header("P2L", P, true, true, true, true, "", "L", EXP, "M", LIT, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("P2L", P, true, true, true, true, true, "", "L", EXP, "M", LIT, "dx", VEC3);
 	init_reals("O", exp_sz(P));
 	init_real("tmp1");
 	init_real("r2");
@@ -2134,7 +2221,7 @@ std::string P2L(int P) {
 }
 
 std::string greens(int P) {
-	auto fname = func_header("greens", P, true, false, false, true, "", "O", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("greens", P, true, false, false, true, true, "", "O", EXP, "dx", VEC3);
 	init_real("r2");
 	init_real("r2inv");
 	init_real("ax0");
@@ -2151,7 +2238,7 @@ std::string greens(int P) {
 }
 
 std::string greens_xz(int P) {
-	auto fname = func_header("greens_xz", P, false, false, false, true, "", "O", HEXP, "x", LIT, "z", LIT, "r2inv", LIT);
+	auto fname = func_header("greens_xz", P, false, false, false, true, false, "", "O", HEXP, "x", LIT, "z", LIT, "r2inv", LIT);
 	init_real("ax0");
 	init_real("ay0");
 	init_real("ay1");
@@ -2204,7 +2291,7 @@ std::string greens_xz(int P) {
 }
 
 std::string M2LG(int P, int Q) {
-	auto fname = func_header("M2LG", P, true, true, false, true, "", "L", EXP, "M", CMUL, "O", EXP);
+	auto fname = func_header("M2LG", P, true, true, false, true, false,"", "L", EXP, "M", CMUL, "O", EXP);
 	m2lg_body(P, Q);
 	if (!nopot && P > 2 && periodic) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
@@ -2236,7 +2323,7 @@ std::string greens_ewald(int P, double alpha) {
 	if (!periodic) {
 		return 0;
 	}
-	auto fname = func_header("greens_ewald", P, true, true, false, true, "", "G", EXP, "x0", LIT, "y0", LIT, "z0", LIT);
+	auto fname = func_header("greens_ewald", P, true, true, false, true, true, "", "G", EXP, "dx", VEC3);
 	const auto c = tprint_on;
 	tprint("expansion%s%s<%s, %i> Gr_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("T* Gr(Gr_st.data());\n", type.c_str(), P);
@@ -2279,7 +2366,7 @@ std::string greens_ewald(int P, double alpha) {
 				s += "p";
 				s += std::to_string(h);
 			} else {
-				s += "x0";
+				s += "x";
 			}
 		};
 		add_symbol(hx);
@@ -2305,10 +2392,10 @@ std::string greens_ewald(int P, double alpha) {
 			}
 		}
 	}
-	tprint("r2 = fma(x0, x0, fma(y0, y0, z0 * z0));\n");
+	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("rzero = TCONVERT(r2 < TCAST(%0.20e));\n", tiny());
 	tprint("r = sqrt(r2) + rzero;\n");
-	tprint("greens_safe(Gr_st, x0 + rzero, y0, z0);\n");
+	tprint("greens_safe(Gr_st, vec3<T>(x + rzero, y, z));\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
 	tprint("erfcexp(xxx, &gam1, &exp0);\n");
 	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
@@ -2339,15 +2426,15 @@ std::string greens_ewald(int P, double alpha) {
 				if (ii > R2 || ii == 0) {
 					continue;
 				}
-				std::string xstr = "x0";
+				std::string xstr = "x";
 				if (ix != 0) {
 					xstr += std::string(" ") + (ix < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(ix)) + ")";
 				}
-				std::string ystr = "y0";
+				std::string ystr = "y";
 				if (iy != 0) {
 					ystr += std::string(" ") + (iy < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(iy)) + ")";
 				}
-				std::string zstr = "z0";
+				std::string zstr = "z";
 				if (iz != 0) {
 					zstr += std::string(" ") + (iz < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(iz)) + ")";
 				}
@@ -2360,9 +2447,9 @@ std::string greens_ewald(int P, double alpha) {
 	for (int hx = -H; hx <= H; hx++) {
 		if (hx) {
 			if (abs(hx) == 1) {
-				tprint("x2 = %cx0;\n", hx < 0 ? '-' : ' ');
+				tprint("x2 = %cx;\n", hx < 0 ? '-' : ' ');
 			} else {
-				tprint("x2 = TCAST(%i) * x0;\n", hx);
+				tprint("x2 = TCAST(%i) * x;\n", hx);
 			}
 		} else {
 			tprint("x2 = TCAST(0);\n");
@@ -2373,9 +2460,9 @@ std::string greens_ewald(int P, double alpha) {
 			}
 			if (hy) {
 				if (abs(hy) == 1) {
-					tprint("x2y2 = x2 %c y0;\n", hy > 0 ? '+' : '-');
+					tprint("x2y2 = x2 %c y;\n", hy > 0 ? '+' : '-');
 				} else {
-					tprint("x2y2 = fma(TCAST(%i), y0, x2);\n", hy);
+					tprint("x2y2 = fma(TCAST(%i), y, x2);\n", hy);
 				}
 			} else {
 				tprint("x2y2 = x2;\n", hy);
@@ -2387,9 +2474,9 @@ std::string greens_ewald(int P, double alpha) {
 				}
 				if (hz) {
 					if (abs(hz) == 1) {
-						tprint("hdotx = x2y2 %c z0;\n", hz > 0 ? '+' : '-');
+						tprint("hdotx = x2y2 %c z;\n", hz > 0 ? '+' : '-');
 					} else {
-						tprint("hdotx = fma(TCAST(%i), z0, x2y2);\n", hz);
+						tprint("hdotx = fma(TCAST(%i), z, x2y2);\n", hz);
 					}
 				} else {
 					tprint("hdotx = x2y2;\n", hz);
@@ -2572,9 +2659,9 @@ std::string greens_ewald(int P, double alpha) {
 std::string M2L_rot0(int P, int Q) {
 	std::string fname;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2L", P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
 	} else {
-		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2P", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
 	tprint("/* algorithm= no rotation, full l^4 */\n");
 	init_real("tmp1");
@@ -2632,7 +2719,7 @@ std::string M2L_rot0(int P, int Q) {
 			tprint("z *= tmp1;\n");
 		}
 	}
-	tprint("greens(O_st, x, y, z);\n");
+	tprint("greens(O_st, vec3<T>(x, y, z));\n");
 	m2lg_body(P, Q);
 	if (Q == 1) {
 		if (scaled) {
@@ -2664,9 +2751,9 @@ std::string M2L_rot0(int P, int Q) {
 std::string M2L_rot1(int P, int Q) {
 	std::string fname;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2L", P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
 	} else {
-		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2P", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	init_real("R2");
@@ -2898,9 +2985,9 @@ std::string M2L_rot1(int P, int Q) {
 std::string M2L_rot2(int P, int Q) {
 	std::string fname;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2L", P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
 	} else {
-		fname = func_header("M2P", P, true, true, true, true, "", "f", FORCE, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+		fname = func_header("M2P", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	tprint("multipole%s%s%s<%s, %i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
@@ -3036,7 +3123,7 @@ std::string M2L_rot2(int P, int Q) {
 }
 
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, true, true, true, "", "L0", EXP, "M0", CMUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2L_ewald", P, true, true, true, true,true,  "", "L0", EXP, "M0", CMUL, "dx", VEC3);
 	tprint("expansion%s%s<%s, %i> G_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("expansion%s%s<%s,%i> L_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("multipole%s%s%s<%s,%i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
@@ -3085,7 +3172,7 @@ std::string M2L_ewald(int P) {
 			tprint("M_st.r = M0_st.r;\n");
 		}
 	}
-	tprint("greens_ewald%s(G_st, x, y, z);\n", nopot ? "_wo_potential" : "");
+	tprint("greens_ewald%s(G_st, vec3<T>(x, y, z));\n", nopot ? "_wo_potential" : "");
 	tprint("M2LG%s(L_st, M_st, G_st);\n", nopot ? "_wo_potential" : "");
 	if (scaled) {
 		tprint("a = L0_st.scale() / M_st.scale();\n");
@@ -3120,7 +3207,7 @@ std::string M2L_ewald(int P) {
 }
 
 std::string regular_harmonic(int P) {
-	auto fname = func_header("regular_harmonic", P, false, false, false, true, "", "Y", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("regular_harmonic", P, false, false, false, true, true, "", "Y", EXP, "dx", VEC3);
 	init_real("ax0");
 	init_real("ay0");
 	init_real("ax1");
@@ -3185,7 +3272,7 @@ void cuda_header() {
 }
 
 std::string regular_harmonic_xz(int P) {
-	auto fname = func_header("regular_harmonic_xz", P, false, false, false, true, "", "Y", HEXP, "x", LIT, "z", LIT);
+	auto fname = func_header("regular_harmonic_xz", P, false, false, false, true, false, "", "Y", HEXP, "x", LIT, "z", LIT);
 	init_real("ax0");
 	init_real("ay0");
 	init_real("ax1");
@@ -3239,7 +3326,7 @@ std::string regular_harmonic_xz(int P) {
 }
 
 std::string M2M_rot0(int P) {
-	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
 	if (P < 2 && nodip || P < 1) {
 		deindent();
 		tprint("}\n");
@@ -3258,7 +3345,7 @@ std::string M2M_rot0(int P) {
 	}
 	tprint("expansion%s%s<%s, %i> Y_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
-	tprint("detail::regular_harmonic(Y_st, -x, -y, -z);\n");
+	tprint("detail::regular_harmonic(Y_st, vec3<T>( -x, -y, -z ));\n");
 	if (P > 1 && !nopot && periodic) {
 		tprint("M_st.trace2() = fma(TCAST(-4) * x, M[%i], M_st.trace2());\n", mindex(1, 1));
 		tprint("M_st.trace2() = fma(TCAST(-4) * y, M[%i], M_st.trace2());\n", mindex(1, -1));
@@ -3412,7 +3499,7 @@ std::string M2M_rot0(int P) {
 
 std::string M2M_rot1(int P) {
 	auto index = mindex;
-	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	if (P < 2 && nodip || P < 1) {
 		deindent();
@@ -3583,7 +3670,7 @@ std::string M2M_rot1(int P) {
 
 std::string M2M_rot2(int P) {
 	auto index = mindex;
-	auto fname = func_header("M2M", P + 1, true, true, true, true, "", "M", MUL, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("M2M", P + 1, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	if (P < 2 && nodip || P < 1) {
 		deindent();
@@ -3688,7 +3775,7 @@ std::string M2M_rot2(int P) {
 
 std::string P2M(int P) {
 	tprint("\n");
-	auto fname = func_header("P2M", P + 1, true, true, true, true, "", "M", MUL, "m", LIT, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("P2M", P + 1, true, true, true, true, true, "", "M", MUL, "m", LIT, "dx", VEC3);
 	init_real("ax0");
 	init_real("ay0");
 	init_real("ax1");
@@ -3805,7 +3892,7 @@ std::string P2M(int P) {
 
 std::string L2L_rot0(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2L", P, true, true, true, true, true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (scaled) {
@@ -3816,7 +3903,7 @@ std::string L2L_rot0(int P) {
 	}
 	tprint("expansion%s%s<%s, %i> Y_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
-	tprint("detail::regular_harmonic(Y_st, -x, -y, -z);\n");
+	tprint("detail::regular_harmonic(Y_st, vec3<T>( -x, -y, -z ));\n");
 
 	for (int n = nopot; n <= P; n++) {
 		for (int m = 0; m <= n; m++) {
@@ -3968,7 +4055,7 @@ std::string L2L_rot0(int P) {
 std::string L2L_rot1(int P) {
 	auto index = lindex;
 
-	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2L", P, true, true, true, true, true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	init_reals("rx", P + 1);
 	init_reals("ry", P + 1);
@@ -4126,7 +4213,7 @@ std::string L2L_rot1(int P) {
 
 std::string L2L_rot2(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2L", P, true, true, true, true,true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
 	init_reals("rx", P + 1);
@@ -4220,7 +4307,7 @@ std::string L2L_rot2(int P) {
 
 std::string L2P(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2P", P, true, true, true, true, "", "f", FORCE, "L", EXP, "x", LIT, "y", LIT, "z", LIT);
+	auto fname = func_header("L2P", P, true, true, true, true, true, "", "f", FORCE, "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (scaled) {
@@ -4232,7 +4319,7 @@ std::string L2P(int P) {
 	tprint("expansion%s%s<%s, %i> Y_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
 	init_reals("L2", 4);
-	tprint("detail::regular_harmonic(Y_st, -x, -y, -z);\n");
+	tprint("detail::regular_harmonic(Y_st, vec3<T>( -x, -y, -z ));\n");
 	if (!nopot) {
 		tprint("L2[0] = L[0];\n");
 	}
@@ -4620,7 +4707,7 @@ void math_vec_float() {
 
 	fp = fopen(full_header.c_str(), "at");
 	tprint("\n");
-	tprint("#ifndef __CUDACC__\n");
+	fprintf(fp, "#ifndef __CUDACC__\n");
 	tprint("inline v%isf fma(v%isf a, v%isf b, v%isf c) {\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	indent();
 	tprint("return a * b + c;\n");
@@ -5238,7 +5325,7 @@ int main() {
 	tprint("#define SFMM_PREFIX\n");
 	tprint("#endif\n");
 	tprint("\n");
-	tprint("#include <cstdio>\n");
+	tprint("#include <array>\n");
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("#include <limits>\n");
@@ -5247,23 +5334,9 @@ int main() {
 	tprint("#define sfmmCalculateWithPotential    0\n");
 	tprint("#define sfmmCalculateWithoutPotential 1\n");
 	tprint("\n");
-	tprint("namespace sfmm {\n");
-	tprint("template<class T>\n");
-	tprint("struct force_type {\n");
-	indent();
-	tprint("T potential;\n");
-	tprint("T force[3];\n");
-	tprint("SFMM_PREFIX inline void init() {\n");
-	indent();
-	tprint("potential = force[0] = force[1] = force[2] = T(0);\n");
-	deindent();
-	tprint("}\n");
-	deindent();
-	tprint("};\n");
-	tprint("\n");
-	tprint("#else\n");
-	tprint("namespace sfmm {\n");
 	tprint("#endif\n");
+	tprint("\n");
+	tprint("namespace sfmm {\n");
 	tprint("\n");
 	fprintf(fp, "%s\n", complex_header.c_str());
 	nopot = 1;
@@ -5327,6 +5400,25 @@ int main() {
 	ntypenames++;
 	funcnum = 3;
 #endif
+	tprint("%s\n", vec3_header().c_str());
+	tprint("#ifndef SFMM_FULL_HEADER4112\n");
+	tprint("#define SFMM_FULL_HEADER4112\n\n");
+	tprint("\n");
+	tprint("template<class T>\n");
+	tprint("struct force_type {\n");
+	indent();
+	tprint("T potential;\n");
+	tprint("vec3<T> force;\n");
+	tprint("SFMM_PREFIX inline void init() {\n");
+	indent();
+	tprint("potential = force[0] = force[1] = force[2] = T(0);\n");
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("};\n");
+	tprint("\n");
+	tprint("#endif\n");
+
 #if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
 	tprint("#ifndef __CUDACC__\n");
 	tprint("%s\n", vec_header().c_str());
@@ -5363,7 +5455,7 @@ int main() {
 			"\tSFMM_PREFIX complex<T> operator()(int n, int m) const { \\\n"
 			"\t\tcomplex<T> c; \\\n"
 			"\t\tconst int n2n = n * n + n; \\\n"
-			"\t\tconst int m0 = abs(m); \\\n"
+			"\t\tconst int m0 = std::abs(m); \\\n"
 			"\t\tconst int ip = n2n + m0; \\\n"
 			"\t\tconst int im = n2n - m0; \\\n"
 			"\t\tc.real() = o[ip]; \\\n"
@@ -5382,7 +5474,7 @@ int main() {
 			"\tSFMM_PREFIX reference operator()(int n, int m) { \\\n"
 			"\t\treference ref; \\\n"
 			"\t\tconst int n2n = n * n + n; \\\n"
-			"\t\tconst int m0 = abs(m); \\\n"
+			"\t\tconst int m0 = std::abs(m); \\\n"
 			"\t\tconst int ip = n2n + m0; \\\n"
 			"\t\tconst int im = n2n - m0; \\\n"
 			"\t\tref.ax = o + ip; \\\n"
@@ -5436,7 +5528,7 @@ int main() {
 			"SFMM_PREFIX complex<T> operator()(int n, int m) const { \\\n"
 			"\tcomplex<T> c; \\\n"
 			"\tconst int n2n = n * n + n; \\\n"
-			"\tconst int m0 = abs(m); \\\n"
+			"\tconst int m0 = std::abs(m); \\\n"
 			"\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
 			"\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
 			"\tc.real() = o[ip]; \\\n"
@@ -5455,7 +5547,7 @@ int main() {
 			"SFMM_PREFIX reference operator()(int n, int m) { \\\n"
 			"\treference ref; \\\n"
 			"\tconst int n2n = n * n + n; \\\n"
-			"\tconst int m0 = abs(m); \\\n"
+			"\tconst int m0 = std::abs(m); \\\n"
 			"\tconst int ip = n == 0 ? 0 : n2n + m0 - 3; \\\n"
 			"\tconst int im = n == 0 ? 0 : n2n - m0 - 3; \\\n"
 			"\tref.ax = o + ip; \\\n"
@@ -5652,22 +5744,22 @@ int main() {
 						}
 
 						if (scaled && periodic && P >= pmin) {
-							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T, int);\n", P, P);
-							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, T, T, T);\n", pot_name(), P,
+							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>, int);\n", P, P);
+							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>);\n", pot_name(), P,
 									P);
-							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, T, T, T, int);\n", P,
+							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, vec3<T>, int);\n", P,
 									P);
-							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, T, T, T);\n",
+							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, vec3<T>);\n",
 									pot_name(), P, P);
 						}
 						if (scaled && P >= pmin) {
-							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T, int);\n", period_name(), P, period_name(),
+							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, vec3<T>, int);\n", period_name(), P, period_name(),
 									P);
-							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, T, T, T);\n", pot_name(), period_name(), P,
+							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, vec3<T>);\n", pot_name(), period_name(), P,
 									period_name(), P);
-							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, T, T, T, int);\n", period_name(), P,
+							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, vec3<T>, int);\n", period_name(), P,
 									period_name(), P);
-							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, T, T, T);\n", pot_name(), period_name(),
+							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, vec3<T>);\n", pot_name(), period_name(),
 									P, period_name(), P);
 						}
 						deindent();
@@ -5815,17 +5907,17 @@ int main() {
 							tprint("}\n");
 						}
 						if (periodic) {
-							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, T, T, T, int);\n", scaled_name(), P,
+							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>, int);\n", scaled_name(), P,
 									scaled_name(), dip_name(), P);
-							tprint("friend void M2L_ewald%s(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, T, T, T);\n", pot_name(),
+							tprint("friend void M2L_ewald%s(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>);\n", pot_name(),
 									scaled_name(), P, scaled_name(), dip_name(), P);
 						}
-						tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, T, T, T, int);\n", period_name(), scaled_name(), P,
+						tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", period_name(), scaled_name(), P,
 								period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2L%s(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, T, T, T);\n", pot_name(), period_name(), scaled_name(), P,
+						tprint("friend void M2L%s(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>);\n", pot_name(), period_name(), scaled_name(), P,
 								period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2P(force_type<T>&, const multipole%s%s%s<T, %i>&, T, T, T, int);\n", period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2P%s(force_type<T>&, const multipole%s%s%s<T, %i>&, T, T, T);\n", pot_name(), period_name(), scaled_name(), dip_name(),
+						tprint("friend void M2P(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", period_name(), scaled_name(), dip_name(), P);
+						tprint("friend void M2P%s(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>);\n", pot_name(), period_name(), scaled_name(), dip_name(),
 								P);
 						deindent();
 						tprint("};\n");
@@ -6259,7 +6351,7 @@ int main() {
 		tprint("expansion%s%s<T, P> Gr_st;\n", period_name(), scaled_name());
 		tprint("const T r2 = fma(x, x, fma(y, y, z * z));\n");
 		tprint("const T r = sqrt(r2);\n");
-		tprint("greens(Gr_st, x, y, z);\n");
+		tprint("greens(Gr_st, vec3<T>(x, y, z));\n");
 		tprint("const T* Gr(Gr_st.data());\n");
 		tprint("T* G (G_st.data());\n");
 		tprint("const T xxx = T(ALPHA) * r;\n");

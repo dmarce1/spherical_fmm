@@ -19,74 +19,27 @@ constexpr double hsoft = 0.01;
 
 using rtype = double;
 
-#define VEC3_BINARY_OP( op ) \
-		vec3 operator op (const vec3& other) const { \
-			vec3 result; \
-			for( int dim = 0; dim < NDIM; dim++ ) { \
-				result[dim] = (*this)[dim] op other[dim]; \
-			} \
-			return result; \
-		} \
-		vec3& operator op##= (const vec3& other) { \
-			for( int dim = 0; dim < NDIM; dim++ ) { \
-				(*this)[dim] op##= other[dim]; \
-			} \
-			return *this; \
-		}
-
-#define VEC3_SINGLE_BINARY_OP( op ) \
-		vec3 operator op (const rtype other) const { \
-			vec3 result; \
-			for( int dim = 0; dim < NDIM; dim++ ) { \
-				result[dim] = (*this)[dim] op other; \
-			} \
-			return result; \
-		} \
-		vec3& operator op##= (const rtype other) { \
-			for( int dim = 0; dim < NDIM; dim++ ) { \
-				(*this)[dim] op##= other; \
-			} \
-			return *this; \
-		}
-
-struct vec3: public std::array<rtype, NDIM> {
-	VEC3_BINARY_OP( + )
-	VEC3_BINARY_OP( - )
-	VEC3_BINARY_OP( * )
-	VEC3_BINARY_OP( / )
-	VEC3_SINGLE_BINARY_OP( * )
-	VEC3_SINGLE_BINARY_OP( / )
-	vec3 operator-() const {
-		vec3 result;
-		for (int dim = 0; dim < NDIM; dim++) {
-			result[dim] = -(*this)[dim];
-		}
-		return result;
-	}
-	vec3& operator=(rtype a) {
-		for (int dim = 0; dim < NDIM; dim++) {
-			(*this)[dim] = a;
-		}
-		return *this;
-	}
-};
-
-template<class T>
-inline T sqr(T a) {
-	return a * a;
-}
-
-inline rtype abs(vec3 vec) {
-	return sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));
-}
-
-namespace sfmm {
-
-}
-
 double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
 }
+
+template<class T>
+void P2P(sfmm::force_type<T>& f, T m, sfmm::vec3<T> dx) {
+	const T r2 = sfmm::sqr(dx[0]) + sfmm::sqr(dx[1]) + sfmm::sqr(dx[2]);
+	static const T h2 = hsoft * hsoft;
+	static const T hinv = T(1) / hsoft;
+	static const T hinv3 = sfmm::sqr(hinv) * hinv;
+	if (r2 > h2) {
+		const T rinv = sfmm::rsqrt(r2);
+		T rinv3 = sfmm::sqr(rinv) * rinv;
+		f.potential += m * rinv;
+		f.force -= dx * m * rinv3;
+	} else if (r2 > 0.0) {
+		f.potential += m * (T(1.5) * hinv - T(0.5) * r2 * hinv3);
+		f.force -= dx * m * hinv3;
+	}
+}
+
 
 template<class T, int ORDER>
 class tree {
@@ -95,16 +48,16 @@ class tree {
 	using expansion_type = sfmm::expansion<T,ORDER>;
 	using force_type = sfmm::force_type<T>;
 	struct particle {
-		vec3 x;
+		sfmm::vec3<T> x;
 		force_type f;
 	};
 
 	multipole_type multipole;
 	std::vector<tree> children;
 	std::vector<particle> parts;
-	vec3 begin;
-	vec3 end;
-	vec3 center;
+	sfmm::vec3<T> begin;
+	sfmm::vec3<T> end;
+	sfmm::vec3<T> center;
 	tree* parent;
 	double radius;
 
@@ -120,7 +73,7 @@ class tree {
 		for (auto& check : checklist) {
 			bool far = leaf && check.opened;
 			if (!far) {
-				const vec3 dx = center - check.ptr->center;
+				const sfmm::vec3<T> dx = center - check.ptr->center;
 				const double d = abs(dx);
 				far = radius + check.ptr->radius < theta_max * d;
 			}
@@ -147,25 +100,6 @@ class tree {
 		checklist = nextlist;
 	}
 
-	void P2P(force_type& f, T m, T x, T y, T z) {
-		const T r2 = sqr(x) + sqr(y) + sqr(z);
-		static const T h2 = hsoft * hsoft;
-		static const T hinv = T(1) / hsoft;
-		static const T hinv3 = sqr(hinv) * hinv;
-		if (r2 > h2) {
-			const T rinv = sfmm::rsqrt(r2);
-			T rinv3 = sqr(rinv) * rinv;
-			f.potential += m * rinv;
-			f.force[0] -= m * x * rinv3;
-			f.force[1] -= m * y * rinv3;
-			f.force[2] -= m * z * rinv3;
-		} else if (r2 > 0.0) {
-			f.potential += m * (T(1.5) * hinv - T(0.5) * r2 * hinv3);
-			f.force[0] -= m * x * hinv3;
-			f.force[1] -= m * y * hinv3;
-			f.force[2] -= m * z * hinv3;
-		}
-	}
 public:
 
 	tree() {
@@ -179,7 +113,7 @@ public:
 		children = decltype(children)();
 	}
 
-	void add_particle(vec3 p, int depth = 0) {
+	void add_particle(sfmm::vec3<T> p, int depth = 0) {
 		const int xdim = depth % NDIM;
 		if (children.size()) {
 			if (p[xdim] < children[LEFT].end[xdim]) {
@@ -222,9 +156,9 @@ public:
 			radius = 0.0;
 			for (const auto& part : parts) {
 				multipole_type M;
-				vec3 dx = part.x - center;
+				sfmm::vec3<T> dx = part.x - center;
 				radius = std::max(radius, (double) abs(dx));
-				sfmm::P2M(M, T(1), dx[0], dx[1], dx[2]);
+				sfmm::P2M(M, T(1), dx);
 				multipole += M;
 			}
 		} else if (children.size()) {
@@ -235,10 +169,10 @@ public:
 			center /= total;
 			radius = 0.0;
 			for (int ci = 0; ci < NCHILD; ci++) {
-				vec3 dx = children[ci].center - center;
+				sfmm::vec3<T> dx = children[ci].center - center;
 				radius = std::max(radius, ((double) abs(dx) + children[ci].radius));
 				auto M = children[ci].multipole;
-				sfmm::M2M(M, dx[0], dx[1], dx[2]);
+				sfmm::M2M(M, dx);
 				multipole += M;
 			}
 		} else {
@@ -249,11 +183,11 @@ public:
 
 	void compute_gravity_field(expansion_type expansion = expansion_type(), std::vector<check_type> checklist = std::vector<check_type>()) {
 		std::vector<tree*> Clist, Plist;
-		vec3 dx;
+		sfmm::vec3<T> dx;
 		if (parent) {
 			expansion.rescale(radius);
 			dx = parent->center - center;
-			sfmm::L2L(expansion, dx[0], dx[1], dx[2]);
+			sfmm::L2L(expansion, dx);
 		} else {
 			check_type ck;
 			ck.ptr = this;
@@ -263,20 +197,13 @@ public:
 		}
 		list_iterate(checklist, Plist, Clist, false);
 		for (auto src : Clist) {
-			if (src->children.size() == 0 && (src->parts.size() < MIN_CLOUD)) {
-				for (const auto& part : src->parts) {
-					dx = part.x - center;
-					sfmm::P2L(expansion, T(1), dx[0], dx[1], dx[2]);
-				}
-			} else {
-				dx = src->center - center;
-				sfmm::M2L(expansion, src->multipole, dx[0], dx[1], dx[2]);
-			}
+			dx = src->center - center;
+			sfmm::M2L(expansion, src->multipole, dx);
 		}
 		for (auto src : Plist) {
 			for (const auto& part : src->parts) {
 				dx = part.x - center;
-				sfmm::P2L(expansion, T(1), dx[0], dx[1], dx[2]);
+				sfmm::P2L(expansion, T(1), dx);
 			}
 		}
 		if (children.size()) {
@@ -294,28 +221,19 @@ public:
 			for (auto& part : parts) {
 				part.f.init();
 				dx = center - part.x;
-				sfmm::L2P(part.f, expansion, dx[0], dx[1], dx[2]);
+				sfmm::L2P(part.f, expansion, dx);
 			}
 			for (auto src : Clist) {
-				if (parts.size() < MIN_CLOUD) {
-					for (auto& snk_part : parts) {
-						for (const auto& src_part : src->parts) {
-							dx = src_part.x - snk_part.x;
-							P2P(snk_part.f, T(1), dx[0], dx[1], dx[2]);
-						}
-					}
-				} else {
-					for (auto& part : parts) {
-						dx = src->center - part.x;
-						sfmm::M2P(part.f, src->multipole, dx[0], dx[1], dx[2]);
-					}
+				for (auto& part : parts) {
+					dx = src->center - part.x;
+					sfmm::M2P(part.f, src->multipole, dx);
 				}
 			}
 			for (auto src : Plist) {
 				for (auto& snk_part : parts) {
 					for (const auto& src_part : src->parts) {
 						dx = src_part.x - snk_part.x;
-						P2P(snk_part.f, T(1), dx[0], dx[1], dx[2]);
+						P2P<T>(snk_part.f, T(1), dx);
 					}
 				}
 			}
@@ -334,21 +252,21 @@ public:
 				fa.init();
 				for (const auto& src_node : nodes) {
 					for (const auto& src_part : src_node->parts) {
-						const vec3 dx = src_part.x - snk_part.x;
-						P2P(fa, T(1), dx[0], dx[1], dx[2]);
+						const sfmm::vec3<T> dx = src_part.x - snk_part.x;
+						P2P<T>(fa, T(1), dx);
 					}
 				}
 				double famag = 0.0;
 				double fnmag = 0.0;
 				for (int dim = 0; dim < NDIM; dim++) {
-					famag += sqr(fa.force[0]) + sqr(fa.force[1]) + sqr(fa.force[2]);
-					fnmag += sqr(snk_part.f.force[0]) + sqr(snk_part.f.force[1]) + sqr(snk_part.f.force[2]);
+					famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
+					fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
 				}
 				//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
 				famag = sqrt(famag);
 				fnmag = sqrt(fnmag);
-				norm += sqr(famag);
-				err += sqr(famag - fnmag);
+				norm += sfmm::sqr(famag);
+				err += sfmm::sqr(famag - fnmag);
 			}
 		}
 		err = sqrt(err / norm);
@@ -356,7 +274,7 @@ public:
 	}
 	void initialize() {
 		for (int i = 0; i < TEST_SIZE; i++) {
-			vec3 x;
+			sfmm::vec3<T> x;
 			for (int dim = 0; dim < NDIM; dim++) {
 				x[dim] = rand1();
 			}
