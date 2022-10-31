@@ -11,6 +11,10 @@
 #include <cstring>
 #include <functional>
 
+enum stage_t {
+	PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL
+};
+
 struct flops_t {
 	int r;
 	int i;
@@ -1494,7 +1498,7 @@ bool close21(double a) {
 	return std::abs(1.0 - a) < 1.0e-20;
 }
 
-void z_rot(int P, const char* name, bool noevenhi, bool exclude, int noimaghi) {
+void z_rot(int P, const char* name, stage_t stage) {
 	tprint("rx[0] = cosphi;\n");
 	tprint("ry[0] = sinphi;\n");
 	for (int m = 1; m <= P; m++) {
@@ -1515,20 +1519,33 @@ void z_rot(int P, const char* name, bool noevenhi, bool exclude, int noimaghi) {
 			if (name == "M" && nodip && l == 1) {
 				continue;
 			}
-			if (noevenhi) {
+			if (stage == POST1) {
 				if (l == P) {
 					if (l % 2 != m % 2) {
 						continue;
 					}
 				} else if (nodip && l == P - 1) {
-					if (l % 2 == m % 2) {
+					if (l % 2 != m % 2) {
 						continue;
 					}
 				}
 			}
+			if (stage == PRE2) {
+				if (l == P) {
+				/*	if (l % 2 == m % 2) {
+						tprint("#ifndef NDEBUG\n");
+						tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, index(l, m), type.c_str());
+						if( m != 0 ) {
+							tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, index(l, -m), type.c_str());
+						}
+						tprint("#endif\n");
+						continue;
+					}*/
+				}
+			}
 			bool ionly = false;
 			bool ronly = false;
-			if (exclude) {
+			if (stage == POST2) {
 				if (l == P) {
 					ionly = m % 2;
 				} else if (nodip && l == P - 1) {
@@ -1543,12 +1560,12 @@ void z_rot(int P, const char* name, bool noevenhi, bool exclude, int noimaghi) {
 			if (ionly) {
 				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
 				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, -m), m);
-			} else if (ronly || (noimaghi && (l > (P - noimaghi)))) {
+			} else if (ronly || ((stage == XZ1 || stage == XZ2) && (l > (P - ((stage == XZ1) + 2 * (stage == XZ2)))))) {
 				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
 				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
 			} else {
 				bool sw = false;
-				if (noevenhi && (l >= P - 1)) {
+				if (stage == POST1 && (l >= P - 1)) {
 					if (nodip) {
 						sw = true;
 					} else {
@@ -1570,7 +1587,7 @@ void z_rot(int P, const char* name, bool noevenhi, bool exclude, int noimaghi) {
 	tprint_flush_chains();
 }
 
-void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict, bool noevenhi) {
+void xz_swap(int P, const char* name, bool inv, stage_t stage) {
 	auto brot = [inv](int n, int m, int l) {
 		if( inv ) {
 			return Brot(n,m,l);
@@ -1589,7 +1606,7 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 			continue;
 		}
 		int lmax = n;
-		if (l_restrict) {
+		if (stage == POST1) {
 			lmax = std::min(n, P - n);
 			if (nodip && n == P - 1) {
 				lmax = 0;
@@ -1597,10 +1614,10 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 		}
 		for (int m = -lmax; m <= lmax; m++) {
 			bool flag = false;
-			if (noevenhi) {
+			if (stage == POST2) {
 				if (P == n && n % 2 != abs(m) % 2) {
 					continue;
-				} else if (nodip && n == P - 1 && n % 2 == abs(m) % 2) {
+				} else if (nodip && n == P - 1 && n % 2 != abs(m) % 2) {
 					continue;
 				}
 			}
@@ -1608,16 +1625,16 @@ void xz_swap(int P, const char* name, bool inv, bool m_restrict, bool l_restrict
 		}
 		std::vector<std::vector<std::pair<double, int>>>ops(2 * n + 1);
 		int mmax = n;
-		if (m_restrict && mmax > (P) - n) {
+		if (stage == PRE2 && mmax > (P) - n) {
 			mmax = (P + 1) - n;
 		}
 		for (int m = 0; m <= mmax; m++) {
 			for (int l = 0; l <= lmax; l++) {
 				bool flag = false;
-				if (noevenhi) {
+				if (stage == POST2) {
 					if (P == n && n % 2 != abs(l) % 2) {
 						continue;
-					} else if (nodip && P - 1 == n && n % 2 == abs(l) % 2) {
+					} else if (nodip && P - 1 == n && n % 2 != abs(l) % 2) {
 						continue;
 					}
 				}
@@ -1728,7 +1745,7 @@ void m2l(int P, int Q, const char* mname, const char* lname) {
 		for (int m = -n; m <= n; m++) {
 			if (first[n][n + m]) {
 				//	printf("---- %i %i %i %i %i\n", nodip, P, Q, n, m);
-	//			tprint("L[%i] = TCAST(0);\n", lindex(n, m));
+				//			tprint("L[%i] = TCAST(0);\n", lindex(n, m));
 			}
 		}
 	}
@@ -2646,8 +2663,8 @@ std::string M2L_rot1(int P, int Q) {
 	init_real("R");
 	init_real("cosphi");
 	init_real("sinphi");
-	init_reals("rx", std::max(P, Q+1));
-	init_reals("ry", std::max(P, Q+1));
+	init_reals("rx", std::max(P, Q + 1));
+	init_reals("ry", std::max(P, Q + 1));
 	init_real("tmp0");
 	init_reals("L", exp_sz(Q));
 	tprint("detail::expansion_xz%s<%s, %i> O_st;\n", period_name(), type.c_str(), P);
@@ -2714,7 +2731,7 @@ std::string M2L_rot1(int P, int Q) {
 	tprint("r2inv = TCAST(1) / (r2 + rzero);\n");
 	tprint("cosphi = fma(x, Rinv, Rzero);\n");
 	tprint("sinphi = -y * Rinv;\n");
-	z_rot(P - 1, "M", false, false, false);
+	z_rot(P - 1, "M", FULL);
 	tprint("detail::greens_xz(O_st, R, z, r2inv);\n");
 	const auto oindex = [](int l, int m) {
 		return l*(l+1)/2+m;
@@ -2826,9 +2843,9 @@ std::string M2L_rot1(int P, int Q) {
 	tprint_flush_chains();
 	tprint("sinphi = -sinphi;\n");
 	if (nodip) {
-		z_rot(Q, "L", false, false, 2 * ((Q == P) || (Q == 1 && P == 2)));
+		z_rot(Q, "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL);
 	} else {
-		z_rot(Q, "L", false, false, Q == P);
+		z_rot(Q, "L", XZ1);
 	}
 	if (Q > 1) {
 		for (int n = 0; n < exp_sz(Q); n++) {
@@ -2888,8 +2905,8 @@ std::string M2L_rot2(int P, int Q) {
 	init_real("sinphi");
 	init_real("cosphi0");
 	init_real("sinphi0");
-	init_reals("rx", std::max(P, Q+1));
-	init_reals("ry", std::max(P, Q+1));
+	init_reals("rx", std::max(P, Q + 1));
+	init_reals("ry", std::max(P, Q + 1));
 	init_real("tmp0");
 	init_real("r2przero");
 	init_real("rinv");
@@ -2951,25 +2968,25 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("rinv = rsqrt(r2przero);\n");
 	tprint("cosphi = y * Rinv;\n");
 	tprint("sinphi = fma(x, Rinv, Rzero);\n");
-	z_rot(P - 1, "M", false, false, false);
-	xz_swap(P - 1, "M", false, false, false, false);
+	z_rot(P - 1, "M", PRE1);
+	xz_swap(P - 1, "M", false, PRE1);
 	tprint("cosphi0 = cosphi;\n");
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = fma(z, rinv, rzero);\n");
 	tprint("sinphi = -R * rinv;\n");
-	z_rot(P - 1, "M", false, false, false);
-	xz_swap(P - 1, "M", false, true, false, false);
-	for( int i = 0; i < exp_sz(Q); i++) {
-		tprint( "L[%i] = TCAST(0);\n", i);
+	z_rot(P - 1, "M", PRE2);
+	xz_swap(P - 1, "M", false, PRE2);
+	for (int i = 0; i < exp_sz(Q); i++) {
+//		tprint("L[%i] = TCAST(0);\n", i);
 	}
 	m2l(P, Q, "M", "L");
-	xz_swap(Q, "L", true, false, true, false);
+	xz_swap(Q, "L", true, POST1);
 	tprint("sinphi = -sinphi;\n");
-	z_rot(Q, "L", true, false, false);
-	xz_swap(Q, "L", true, false, false, true);
+	z_rot(Q, "L", POST1);
+	xz_swap(Q, "L", true, POST2);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
-	z_rot(Q, "L", false, true, false);
+	z_rot(Q, "L", POST2);
 	if (Q > 1) {
 		for (int n = nopot; n < exp_sz(Q); n++) {
 			tprint("L0[%i] += L[%i];\n", n, n);
@@ -3414,7 +3431,7 @@ std::string M2M_rot1(int P) {
 	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 	tprint("cosphi = fma(x, Rinv, Rzero);\n");
 	tprint("sinphi = -y * Rinv;\n");
-	z_rot(P, "M", false, false, false);
+	z_rot(P, "M", FULL);
 	if (P > 1 && !nopot && periodic) {
 		tprint("M_st.trace2() = fma(TCAST(-4) * R, M[%i], M_st.trace2());\n", index(1, 1));
 		tprint("M_st.trace2() = fma(TCAST(-2) * z, M[%i], M_st.trace2());\n", index(1, 0));
@@ -3539,7 +3556,7 @@ std::string M2M_rot1(int P) {
 		tprint_flush_chains();
 	}
 	tprint("sinphi = -sinphi;\n");
-	z_rot(P, "M", false, false, false);
+	z_rot(P, "M", FULL);
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -3595,14 +3612,14 @@ std::string M2M_rot2(int P) {
 	tprint("r = (TCAST(1) - rzero) / rinv;\n");
 	tprint("cosphi = y * Rinv;\n");
 	tprint("sinphi = fma(x, Rinv, Rzero);\n");
-	z_rot(P, "M", false, false, false);
-	xz_swap(P, "M", false, false, false, false);
+	z_rot(P, "M", FULL);
+	xz_swap(P, "M", false, FULL);
 	tprint("cosphi0 = cosphi;\n");
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = fma(z, rinv, rzero);\n");
 	tprint("sinphi = -R * rinv;\n");
-	z_rot(P, "M", false, false, false);
-	xz_swap(P, "M", false, false, false, false);
+	z_rot(P, "M", FULL);
+	xz_swap(P, "M", false, FULL);
 	if (P > 1 && !nopot && periodic) {
 		tprint("M_st.trace2() = fma(TCAST(-2) * r, M[%i], M_st.trace2());\n", index(1, 0));
 		tprint("M_st.trace2() = fma(r * r, M[%i], M_st.trace2());\n", index(0, 0));
@@ -3638,13 +3655,13 @@ std::string M2M_rot2(int P) {
 		}
 		tprint_flush_chains();
 	}
-	xz_swap(P, "M", false, false, false, false);
+	xz_swap(P, "M", false, FULL);
 	tprint("sinphi = -sinphi;\n");
-	z_rot(P, "M", false, false, false);
-	xz_swap(P, "M", false, false, false, false);
+	z_rot(P, "M", FULL);
+	xz_swap(P, "M", false, FULL);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
-	z_rot(P, "M", false, false, false);
+	z_rot(P, "M", FULL);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -3937,8 +3954,8 @@ std::string L2L_rot1(int P) {
 
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
-	init_reals("rx", P+1);
-	init_reals("ry", P+1);
+	init_reals("rx", P + 1);
+	init_reals("ry", P + 1);
 	tprint("detail::expansion_xz%s<%s, %i> Y_st;\n", period_name(), type.c_str(), P);
 	tprint("T* Y(Y_st.data());\n", type.c_str(), P);
 	init_real("tmp0");
@@ -3962,7 +3979,7 @@ std::string L2L_rot1(int P) {
 	tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 	tprint("cosphi = fma(x, Rinv, Rzero);\n");
 	tprint("sinphi = -y * Rinv;\n");
-	z_rot(P, "L", false, false, false);
+	z_rot(P, "L", FULL);
 	const auto yindex = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
@@ -4082,7 +4099,7 @@ std::string L2L_rot1(int P) {
 			tprint("L[%i] = fma(z * z, L_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
-	z_rot(P, "L", false, false, false);
+	z_rot(P, "L", FULL);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -4096,8 +4113,8 @@ std::string L2L_rot2(int P) {
 	auto fname = func_header("L2L", P, true, true, true, true, "", "L", EXP, "x", LIT, "y", LIT, "z", LIT);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
-	init_reals("rx", P+1);
-	init_reals("ry", P+1);
+	init_reals("rx", P + 1);
+	init_reals("ry", P + 1);
 	init_real("tmp0");
 	init_real("R");
 	init_real("Rinv");
@@ -4130,14 +4147,14 @@ std::string L2L_rot2(int P) {
 	tprint("r = (TCAST(1) - rzero) / rinv;\n");
 	tprint("cosphi = y * Rinv;\n");
 	tprint("sinphi = fma(x, Rinv, Rzero);\n");
-	z_rot(P, "L", false, false, false);
-	xz_swap(P, "L", true, false, false, false);
+	z_rot(P, "L", FULL);
+	xz_swap(P, "L", true, FULL);
 	tprint("cosphi0 = cosphi;\n");
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = fma(z, rinv, rzero);\n");
 	tprint("sinphi = -R * rinv;\n");
-	z_rot(P, "L", false, false, false);
-	xz_swap(P, "L", true, false, false, false);
+	z_rot(P, "L", FULL);
+	xz_swap(P, "L", true, FULL);
 	tprint("A[0] = TCAST(1);\n");
 	for (int n = 1; n <= P; n++) {
 		tprint("A[%i] = -r * A[%i];\n", n, n - 1);
@@ -4170,13 +4187,13 @@ std::string L2L_rot2(int P) {
 			tprint("L[%i] = fma(r * r, L_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
-	xz_swap(P, "L", true, false, false, false);
+	xz_swap(P, "L", true, FULL);
 	tprint("sinphi = -sinphi;\n");
-	z_rot(P, "L", false, false, false);
-	xz_swap(P, "L", true, false, false, false);
+	z_rot(P, "L", FULL);
+	xz_swap(P, "L", true, FULL);
 	tprint("cosphi = cosphi0;\n");
 	tprint("sinphi = -sinphi0;\n");
-	z_rot(P, "L", false, false, false);
+	z_rot(P, "L", FULL);
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -5718,7 +5735,7 @@ int main() {
 							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
 						}
 						fprintf(fp, "#endif\n");
-						if( scaled ) {
+						if (scaled) {
 							tprint("r = r0;\n");
 						}
 						deindent();
