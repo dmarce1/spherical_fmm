@@ -44,7 +44,7 @@ void P2P(sfmm::force_type<T>& f, T m, sfmm::vec3<T> dx) {
 template<class T, int ORDER>
 class tree {
 
-	using multipole_type = sfmm::multipole_wo_dipole<T,ORDER>;
+	using multipole_type = sfmm::multipole<T,ORDER>;
 	using expansion_type = sfmm::expansion<T,ORDER>;
 	using force_type = sfmm::force_type<T>;
 	struct particle {

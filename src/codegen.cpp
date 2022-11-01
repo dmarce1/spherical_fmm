@@ -1497,10 +1497,10 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		tprint("}\n");
 	}
 	func_args_cover(P, std::forward<Args>(args)..., 0);
-	if( vec) {
-		tprint( "T& x=dx[0];\n");
-		tprint( "T& y=dx[1];\n");
-		tprint( "T& z=dx[2];\n");
+	if (vec) {
+		tprint("T& x=dx[0];\n");
+		tprint("T& y=dx[1];\n");
+		tprint("T& z=dx[2];\n");
 	}
 	return file_name;
 }
@@ -1637,10 +1637,12 @@ void z_rot(int P, const char* name, stage_t stage) {
 					write_ronly = m % 2 != l % 2;
 				}
 			}
+			read_ronly = read_ronly || (stage == XZ1 && l >= P);
+			read_ronly = read_ronly || (stage == XZ2 && l >= P - 1);
 			if (read_ionly) {
 				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
 				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, -m), m);
-			} else if (read_ronly || ((stage == XZ1 || stage == XZ2) && (l > (P - ((stage == XZ1) + 2 * (stage == XZ2)))))) {
+			} else if (read_ronly) {
 				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
 				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
 			} else if (write_ronly) {
@@ -2291,7 +2293,7 @@ std::string greens_xz(int P) {
 }
 
 std::string M2LG(int P, int Q) {
-	auto fname = func_header("M2LG", P, true, true, false, true, false,"", "L", EXP, "M", CMUL, "O", EXP);
+	auto fname = func_header("M2LG", P, true, true, false, true, false, "", "L", EXP, "M", CMUL, "O", EXP);
 	m2lg_body(P, Q);
 	if (!nopot && P > 2 && periodic) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
@@ -2948,7 +2950,7 @@ std::string M2L_rot1(int P, int Q) {
 	if (nodip) {
 		z_rot(Q, "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL);
 	} else {
-		z_rot(Q, "L", XZ1);
+		z_rot(Q, "L", Q == P ? XZ1 : FULL);
 	}
 	if (Q > 1) {
 		for (int n = 0; n < exp_sz(Q); n++) {
@@ -3123,7 +3125,7 @@ std::string M2L_rot2(int P, int Q) {
 }
 
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, true, true, true,true,  "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+	auto fname = func_header("M2L_ewald", P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
 	tprint("expansion%s%s<%s, %i> G_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("expansion%s%s<%s,%i> L_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("multipole%s%s%s<%s,%i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
@@ -4213,7 +4215,7 @@ std::string L2L_rot1(int P) {
 
 std::string L2L_rot2(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2L", P, true, true, true, true,true, "", "L", EXP, "dx", VEC3);
+	auto fname = func_header("L2L", P, true, true, true, true, true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
 	init_reals("rx", P + 1);
