@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <stack>
 
 enum stage_t {
 	PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL
@@ -102,7 +103,19 @@ static int scaled = 0;
 static int pmin = PMIN;
 static int pmax = PMAX;
 static std::string basetype;
+#ifdef FLOAT
 static std::string type = "float";
+#endif
+#ifdef DOUBLE
+static std::string type = "double";
+#endif
+#ifdef VEC_FLOAT
+static std::string type = std::string("v") + std::to_string(VEC_FLOAT_SIZE) + "sf";
+#endif
+#ifdef VEC_DOUBLE
+static std::string type = std::string("v") + std::to_string(VEC_DOUBLE_SIZE) + "df";
+#endif
+
 static std::string sitype = "int";
 static std::string uitype = "unsigned";
 static const int divops = 4;
@@ -156,7 +169,6 @@ static const char* scaled_name() {
 	return scaled ? "_scaled" : "";
 }
 
-
 std::string random_macro() {
 	static std::set<int> used;
 	char* macro;
@@ -164,137 +176,203 @@ std::string random_macro() {
 	do {
 		num = rand();
 	} while (used.find(num) != used.end());
-	ASPRINTF(&macro, "SFMM_MACRO_%0i", num);
+	ASPRINTF(&macro, "SFMM_MACRO_%0i_%s", (unsigned ) num, type.c_str());
 	used.insert(num);
 	std::string result = macro;
 	free(macro);
 	return result;
 }
 
+std::string type_macro() {
+	return "SFMM_MACRO_" + type;
+}
+
 static const char* dip_name() {
 	return nodip ? "_wo_dipole" : "";
+}
+
+template<class ...Args>
+std::string print2str(const char* fstr, Args&&...args) {
+	std::string result;
+	char* str;
+	ASPRINTF(&str, fstr, std::forward<Args>(args)...);
+	result = str;
+	free(str);
+	return result;
+}
+
+template<class ...Args>
+std::string print2str(const char* fstr) {
+	std::string result = fstr;
+	return result;
 }
 
 static std::string vec_header() {
 	std::string str = "\n";
 	std::string macro;
-	char* b;
+
 #ifdef VEC_FLOAT
-	ASPRINTF(&b, "SFMM_SIMD_FACTORY(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
-	str += b;
-	free(b);
-	ASPRINTF(&b, "\ninline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
-	str += b;
-	free(b);
+	str += "#ifndef __CUDACC__\n";
+	str += print2str("SFMM_SIMD_FACTORY(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
+	str += print2str("\ninline void load(const float* src, v%isf& dest, float* maxdest ) {\n", VEC_FLOAT_SIZE);
+	str += print2str("\tdest.load(src, maxdest);\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline float vaccess(const v%isf& src, int i) {\n", VEC_FLOAT_SIZE);
+	str += print2str("\treturn src[i];\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline float& vaccess(v%isf& src, int i) {\n", VEC_FLOAT_SIZE);
+	str += print2str("\treturn src[i];\n");
+	str += print2str("}\n\n");
+	str += "namespace detail {\n";
+	str += "template<>\n";
+	str += print2str( "struct vsize_helper<%s> {\n", type.c_str());
+	str += std::string("\tstatic constexpr size_t size = ") + std::to_string(VEC_FLOAT_SIZE) + ";\n");
+	str += "};\n}\n";
+	str += print2str("\ninline void load_padded(const float* src, v%isf& dest, float* maxdest ) {\n", VEC_FLOAT_SIZE);
+	str += print2str("\tdest.load_padded(src, maxdest);\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void store_zmask(float* dest, const v%isf& src, const v%isf& zmask ) {\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
+	str += print2str("\tsrc.store_zmask(dest, zmask);\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline float reduce_sum(v%isf v) {\n", VEC_FLOAT_SIZE);
 	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(float))));\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(float))));\n", sz, sz);
 	}
-	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
-	str += b;
-	free(b);
+	str += print2str("\ttype%i a%i = *((type%i*)(&v));\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	for (int sz = VEC_FLOAT_SIZE / 2; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
+		str += print2str("\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
+		str += print2str("\ta%i += b%i;\n", sz, sz);
 	}
-	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
-	str += b;
-	free(b);
+	str += print2str("\treturn a2[0] + a2[1];\n");
 	str += "}\n";
-	ASPRINTF(&b, "\ninline int64_t sum(v%isi32 v) {\n", VEC_FLOAT_SIZE);
-	str += b;
-	free(b);
+	str += print2str("\ninline int64_t reduce_sum(v%isi32 v) {\n", VEC_FLOAT_SIZE);
 	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(int32_t))));\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(int32_t))));\n", sz, sz);
 	}
 	str += "\n";
-	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
-	str += b;
-	free(b);
+	str += print2str("\ttype%i a%i = *((type%i*)(&v));\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	for (int sz = VEC_FLOAT_SIZE / 2; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
+		str += print2str("\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
+		str += print2str("\ta%i += b%i;\n", sz, sz);
 	}
-	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
-	str += b;
-	free(b);
+	str += print2str("\treturn a2[0] + a2[1];\n");
 	str += "}\n";
+	str += "#endif /* __CUDACC__ */\n";
 #endif
 
 #ifdef VEC_DOUBLE
-	ASPRINTF(&b, "SFMM_SIMD_FACTORY(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
-	str += b;
-	free(b);
-	ASPRINTF(&b, "\ninline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
-	str += b;
-	free(b);
+	str += "#ifndef __CUDACC__\n";
+	str += print2str("SFMM_SIMD_FACTORY(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
+	str += print2str("\ninline double vaccess(const v%idf& src, int i) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\treturn src[i];\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline double& vaccess(v%idf& src, int i) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\treturn src[i];\n");
+	str += print2str("}\n\n");
+	str += "namespace detail {\n";
+	str += "template<>\n";
+	str += print2str( "struct vsize_helper<%s> {\n", type.c_str());
+	str += std::string("\tstatic constexpr size_t size = ") + std::to_string(VEC_DOUBLE_SIZE) + ";\n";
+	str += "};\n}\n";
+	str += print2str("\ninline void load(const double* src, v%idf& dest, double* maxdest ) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\tdest.load(src, maxdest);\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void load_padded(const double* src, v%idf& dest, double* maxdest ) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\tdest.load_padded(src, maxdest);\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void store_zmask(double* dest, const v%idf& src, const v%idf& zmask ) {\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
+	str += print2str("\tsrc.store_zmask(dest, zmask);\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline double reduce_sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
 	for (int sz = VEC_DOUBLE_SIZE; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(double))));\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(double))));\n", sz, sz);
 	}
-	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
-	str += b;
-	free(b);
+	str += print2str("\ttype%i a%i = *((type%i*)(&v));\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	for (int sz = VEC_DOUBLE_SIZE / 2; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
+		str += print2str("\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
+		str += print2str("\ta%i += b%i;\n", sz, sz);
 	}
-	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
-	str += b;
-	free(b);
+	str += print2str("\treturn a2[0] + a2[1];\n");
 	str += "}\n";
 	str += "\n";
-	ASPRINTF(&b, "inline double sum(v%isi64 v) {\n", VEC_DOUBLE_SIZE);
-	str += b;
-	free(b);
+	str += print2str("inline double reduce_sum(v%isi64 v) {\n", VEC_DOUBLE_SIZE);
 	for (int sz = VEC_DOUBLE_SIZE; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(int64_t))));\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(int64_t))));\n", sz, sz);
 	}
-	ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&v));\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
-	str += b;
-	free(b);
+	str += print2str("\ttype%i a%i = *((type%i*)(&v));\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	for (int sz = VEC_DOUBLE_SIZE / 2; sz > 1; sz /= 2) {
-		ASPRINTF(&b, "\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
-		str += b;
-		free(b);
-		ASPRINTF(&b, "\ta%i += b%i;\n", sz, sz);
-		str += b;
-		free(b);
+		str += print2str("\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
+		str += print2str("\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
+		str += print2str("\ta%i += b%i;\n", sz, sz);
 	}
-	ASPRINTF(&b, "\treturn a2[0] + a2[1];\n");
-	str += b;
-	free(b);
+	str += print2str("\treturn a2[0] + a2[1];\n");
 	str += "}\n";
+	str += "#endif /* __CUDACC__ */\n";
+#endif
+
+#ifdef FLOAT
+	str += print2str("\ninline float vaccess(const float& src, int) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\treturn src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline float& vaccess(float& src, int) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\treturn src;\n");
+	str += print2str("}\n\n");
+	str += "namespace detail {\n";
+	str += "template<>\n";
+	str += print2str( "struct vsize_helper<%s> {\n", type.c_str());
+	str += std::string("\tstatic constexpr size_t size = 1;");
+	str += "};\n}\n";
+	str += print2str("\ninline void load(const float* src, float& dest, float* ) {\n");
+	str += print2str("\tdest = *src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void load_padded(const float* src, float& dest, const float* ) {\n");
+	str += print2str("\tdest = *src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void store_zmask(float* dest, float src, float) {\n");
+	str += print2str("\t*dest = src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline float reduce_sum(float v) {\n");
+	str += print2str("\treturn v;")
+	str += "}\n";
+	str += "\n";
+	str += print2str("inline float reduce_sum(float v) {\n");
+	str += print2str("\treturn v;")
+	str += "}\n";
+
+#endif
+
+#ifdef DOUBLE
+	str += print2str("\ninline double vaccess(const double& src, int) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\treturn src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline double& vaccess(double& src, int) {\n", VEC_DOUBLE_SIZE);
+	str += print2str("\treturn src;\n");
+	str += print2str("}\n\n");
+	str += "namespace detail {\n";
+	str += "template<>\n";
+	str += print2str( "struct vsize_helper<%s> {\n", type.c_str());
+	str += std::string("\tstatic constexpr size_t size = 1;");
+	str += "};\n}\n\n";
+	str += print2str("\ninline void load(const double* src, double& dest, double* ) {\n");
+	str += print2str("\tdest = *src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void load_padded(const double* src, double& dest, const double* ) {\n");
+	str += print2str("\tdest = *src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline void store_zmask(double* dest, double src, double) {\n");
+	str += print2str("\t*dest = src;\n");
+	str += print2str("}\n\n");
+	str += print2str("\ninline double reduce_sum(double v) {\n");
+	str += print2str("\treturn v;");
+	str += "}\n";
+	str += "\n";
+	str += print2str("inline double reduce_sum(double v) {\n");
+	str += print2str("\treturn v;");
+	str += "}\n";
+
 #endif
 
 	return str;
@@ -341,14 +419,14 @@ int mul_sz(int P) {
 static flops_t greens_ewald_real_flops;
 
 double tiny() {
-	if (is_float(type)) {
+	if (is_float (type)) {
 		return 10.0 * std::numeric_limits<float>::min();
 	} else {
 		return 10.0 * std::numeric_limits<double>::min();
 	}
 }
 double huge() {
-	if (is_float(type)) {
+	if (is_float (type)) {
 		return 0.1 * std::numeric_limits<float>::max();
 	} else {
 		return 0.1 * std::numeric_limits<double>::max();
@@ -437,7 +515,7 @@ flops_t erfcexp_flops() {
 	if (!is_float(type)) {
 		fps.fma += 11;
 	}
-	if (is_float(type)) {
+	if (is_float (type)) {
 		if (is_vec(type)) {
 			fps.r += 14;
 			fps.rcmp++;
@@ -615,15 +693,25 @@ constexpr double dfactorial(int n) {
 	}
 }
 
+static std::stack<std::string> block_stack;
 
 void open_block() {
 	const auto macro = random_macro();
 	fprintf(fp, "#ifndef %s\n", macro.c_str());
 	fprintf(fp, "#define %s\n\n", macro.c_str());
+	block_stack.push(macro);
+}
+
+void open_block(std::string name) {
+	const auto macro = "SFMM_MACRO_" + name;
+	fprintf(fp, "#ifndef %s\n", macro.c_str());
+	fprintf(fp, "#define %s\n\n", macro.c_str());
+	block_stack.push(macro);
 }
 
 void close_block() {
-	fprintf(fp, "#endif\n\n");
+	fprintf(fp, "#endif /* %s */\n\n", block_stack.top().c_str());
+	block_stack.pop();
 }
 
 template<class ...Args>
@@ -886,9 +974,9 @@ enum arg_type {
 void init_real(std::string var) {
 	fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
 	tprint("T %s(std::numeric_limits<%s>::signaling_NaN());\n", var.c_str(), basetype.c_str());
-	fprintf(fp, "#else\n");
+	fprintf(fp, "#else /* NDEBUG */ \n");
 	tprint("T %s;\n", var.c_str(), type.c_str());
-	fprintf(fp, "#endif\n");
+	fprintf(fp, "#endif /* NDEBUG */ \n");
 	if (var == "tmp1") {
 		for (int i = 2; i < nchains; i++) {
 			init_real(std::string("tmp") + std::to_string(i));
@@ -909,9 +997,9 @@ void init_reals(std::string var, int cnt) {
 	}
 	tprint("};\n");
 	ntab = ontab;
-	fprintf(fp, "#else\n");
+	fprintf(fp, "#else /* NDEBUG */ \n");
 	tprint("T %s [%i];\n", var.c_str(), cnt);
-	fprintf(fp, "#endif\n");
+	fprintf(fp, "#endif /* NDEBUG */ \n");
 //			" = {";
 	/*	for (int n = 0; n < cnt - 1; n++) {
 	 str += "std::numeric_limits<T>::signaling_NaN(), ";
@@ -1062,7 +1150,7 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		if (pub) {
 			tprint("%s;\n", func_name.c_str());
 		} else {
-			if (is_vec(type)) {
+			if (is_vec (type)) {
 				detail_header_vec += func_name + ";\n";
 			} else {
 				detail_header += func_name + ";\n";
@@ -1296,7 +1384,7 @@ void z_rot(int P, const char* name, stage_t stage) {
 		for (auto i : set_nan) {
 			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
 		}
-		fprintf(fp, "#endif\n");
+		fprintf(fp, "#endif /* NDEBUG */ \n");
 	}
 }
 
@@ -1416,7 +1504,7 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage) {
 		for (auto i : set_nan) {
 			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
 		}
-		fprintf(fp, "#endif\n");
+		fprintf(fp, "#endif /* NDEBUG */ \n");
 	}
 }
 
@@ -1942,7 +2030,7 @@ std::string M2LG(int P, int Q) {
 std::string greens_ewald(int P, double alpha) {
 	auto index = lindex;
 	int R2, H2;
-	if (is_float(type)) {
+	if (is_float (type)) {
 		ewald_limits<float>(R2, H2, alpha);
 	} else {
 		ewald_limits<double>(R2, H2, alpha);
@@ -4387,7 +4475,7 @@ void math_vec_float() {
 	tprint("void erfcexp(v%isf, v%isf*, v%isf*);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	tprint("v%isf safe_mul(v%isf&, v%isf, v%isf);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
 	tprint("v%isf safe_add(v%isf&, v%isf, v%isf);\n", VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE, VEC_FLOAT_SIZE);
-	tprint("#endif\n");
+	tprint("#endif /* __CUDACC__ */ \n");
 	fclose(fp);
 	if (cuda) {
 		fp = fopen("./generated_code/src/math/math_vec_float.cu", "wt");
@@ -4739,7 +4827,7 @@ void math_vec_double() {
 	tprint("void erfcexp(v%idf, v%idf*, v%idf*);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	tprint("v%idf safe_mul(v%idf&, v%idf, v%idf);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
 	tprint("v%idf safe_add(v%idf&, v%idf, v%idf);\n", VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE, VEC_DOUBLE_SIZE);
-	tprint("#endif\n");
+	tprint("#endif /* __CUDACC__ */\n");
 	fclose(fp);
 	fp = fopen("./generated_code/src/math/math_vec_double.cpp", "wt");
 	tprint("\n");
@@ -4984,12 +5072,12 @@ int main() {
 	set_file(full_header.c_str());
 	tprint("#pragma once\n");
 	tprint("\n");
-	open_block();
+	open_block("HEADERS");
 	tprint("#ifdef __CUDA_ARCH__\n");
 	tprint("#define SFMM_PREFIX __device__\n");
 	tprint("#else\n");
 	tprint("#define SFMM_PREFIX\n");
-	tprint("#endif\n");
+	tprint("#endif /* __CUDA_ARCH__ */\n");
 	tprint("\n");
 	tprint("#include <array>\n");
 	tprint("#include <cmath>\n");
@@ -5003,7 +5091,7 @@ int main() {
 	close_block();
 	tprint("namespace sfmm {\n");
 	tprint("\n");
-	open_block();
+	open_block("COMPLEX_HEADER");
 	include("complex.hpp");
 	close_block();
 	nopot = 1;
@@ -5067,7 +5155,7 @@ int main() {
 	ntypenames++;
 	funcnum = 3;
 #endif
-	open_block();
+	open_block("VEC3");
 	include("vec3.hpp");
 	tprint("template<class T>\n");
 	tprint("struct force_type {\n");
@@ -5083,18 +5171,20 @@ int main() {
 	tprint("};\n");
 	tprint("\n");
 	close_block();
+	open_block("VECSIZE");
+	include("vec_size.hpp");
+	close_block();
 
 #if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
 	open_block();
 	tprint("#ifndef __CUDACC__\n");
 	include("vec_simd.hpp");
-	tprint("%s", vec_header().c_str());
-	tprint("#endif");
+	tprint("#endif /* __CUDACC__ */ \n");
 	tprint("\n");
+	tprint("%s", vec_header().c_str());
 	close_block();
 #endif
-	tprint("#ifndef SFMM_EXPANSION_MEMBERS42\n");
-	tprint("#define SFMM_EXPANSION_MEMBERS42\n");
+	open_block("EXPANSION_MEMBERS");
 	std::string str1 = "\n#define SFMM_EXPANSION_MEMBERS(classname, type, ppp) \\\n"
 			"\tclass reference { \\\n"
 			"\t\tT* ax; \\\n"
@@ -5270,7 +5360,7 @@ int main() {
 			}
 		}
 	}
-	tprint("#endif\n");
+	close_block();
 
 	nopot = 0;
 	typecast_functions();
@@ -5309,7 +5399,7 @@ int main() {
 #if defined(VEC_DOUBLE)
 		math_vec_double();
 #endif
-		if (is_vec(type)) {
+		if (is_vec (type)) {
 			set_file(full_header.c_str());
 			tprint("#ifndef __CUDACC__\n");
 		}
@@ -5613,9 +5703,9 @@ int main() {
 				}
 			}
 		}
-		if (is_vec(type)) {
+		if (is_vec (type)) {
 			set_file(full_header.c_str());
-			tprint("#endif\n");
+			tprint("#endif /* __CUDACC__ */ \n");
 		}
 	}
 //	printf("./generated_code/include/sfmm.h");
@@ -5630,9 +5720,10 @@ int main() {
 	tprint("%s", detail_header.c_str());
 	tprint("#ifndef __CUDACC__\n");
 	tprint("%s", detail_header_vec.c_str());
-	tprint("#endif\n\n");
+	tprint("#endif /* __CUDACC__ */\n\n");
 	for (scaled = 0; scaled <= enable_scaled; scaled++) {
 		tprint("\n");
+		open_block("GREENS_EWALD_REAL" + scaled ? "_SCALED" : "");
 		tprint("template<class T, int P, int ALPHA100>\n");
 		tprint("SFMM_PREFIX void greens_ewald_real(expansion%s%s<T, P>& G_st, T x, T y, T z) {\n", period_name(), scaled_name());
 		indent();
@@ -5667,6 +5758,7 @@ int main() {
 		tprint("}\n");
 		deindent();
 		tprint("}\n");
+		close_block();
 	}
 	tprint("\n");
 	tprint("}\n");
@@ -5812,6 +5904,21 @@ int main() {
 							deindent();
 							tprint("}\n");
 						}
+						tprint("SFMM_PREFIX static size_t size() {\n");
+						indent();
+						tprint("return %i;\n", exp_sz(P));
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX const T& operator[](int i) const {\n");
+						indent();
+						tprint("return o[i];\n");
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T& operator[](int i) {\n");
+						indent();
+						tprint("return o[i];\n");
+						deindent();
+						tprint("}\n");
 
 						if (scaled && periodic && P >= pmin) {
 							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>, int);\n", P, P);
@@ -5976,6 +6083,21 @@ int main() {
 							deindent();
 							tprint("}\n");
 						}
+						tprint("SFMM_PREFIX static size_t size() {\n");
+						indent();
+						tprint("return %i;\n", mul_sz(P));
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX const T& operator[](int i) const {\n");
+						indent();
+						tprint("return o[i];\n");
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T& operator[](int i) {\n");
+						indent();
+						tprint("return o[i];\n");
+						deindent();
+						tprint("}\n");
 						if (periodic) {
 							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>, int);\n", scaled_name(), P,
 									scaled_name(), dip_name(), P);
@@ -6052,7 +6174,7 @@ int main() {
 		}
 	}
 	nopot = 0;
-	open_block();
+	open_block("COMPLEX_DEFS");
 	include("complex_impl.hpp");
 	close_block();
 	tprint("}\n");

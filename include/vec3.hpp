@@ -32,13 +32,7 @@
 
 template<class T>
 struct vec3: public std::array<T, SFMM_NDIM> {
-	SFMM_VEC3_OP1( + )
-	SFMM_VEC3_OP1( - )
-	SFMM_VEC3_OP1( * )
-	SFMM_VEC3_OP1( / )
-	SFMM_VEC3_OP2( * )
-	SFMM_VEC3_OP2( / )
-	SFMM_PREFIX
+	SFMM_VEC3_OP1( + )SFMM_VEC3_OP1( - )SFMM_VEC3_OP1( * )SFMM_VEC3_OP1( / )SFMM_VEC3_OP2( * )SFMM_VEC3_OP2( / )SFMM_PREFIX
 	vec3 operator-() const {
 		vec3 result;
 		for (int dim = 0; dim < SFMM_NDIM; dim++) {
@@ -53,8 +47,7 @@ struct vec3: public std::array<T, SFMM_NDIM> {
 		}
 		return *this;
 	}
-	SFMM_PREFIX
-	vec3<T>(T x, T y, T z) {
+	SFMM_PREFIX vec3<T>(T x, T y, T z) {
 		(*this)[0] = x;
 		(*this)[1] = y;
 		(*this)[2] = z;
@@ -68,7 +61,12 @@ struct vec3: public std::array<T, SFMM_NDIM> {
 };
 
 template<class T>
+SFMM_PREFIX T sqr(const T& a) {
+	return a * a;
+}
+
+template<class T>
 SFMM_PREFIX inline T abs(vec3<T> vec) {
-	return sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+	return sqrt(sqr(vec[0])+sqr(vec[1])+sqr(vec[2]));
 }
 

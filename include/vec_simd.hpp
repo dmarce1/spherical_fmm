@@ -59,13 +59,13 @@ class vtype;
 
 #ifdef NDEBUG
 #define SFMM_SIMD_PADDING(type, sz)  \
-   inline void pad(int, int=type(1)) { \
+   inline void pad(int) { \
    }
 #else
 #define SFMM_SIMD_PADDING(type, sz)  \
-   inline void pad(int n, type value = type(1)) { \
+   inline void pad(int n) { \
       for( int i = sz - n; i < sz; i++ ) { \
-         v[i] = value; \
+         v[i] = v[0]; \
       } \
    }
 #endif
@@ -86,12 +86,13 @@ class vtype;
 		return result; \
 	}
 
-#define SFMM_SIMD_LOAD_PROT(vtype, type, size) \
-	inline vtype load(type* ptr, type* end); \
-   inline vtype load_with_padding(type* ptr, type* end, type pad_val = type(1))
+#define SFMM_SIMD_LOADSTORE_PROT(vtype, type, size) \
+	inline vtype load(const type*, const type*); \
+   inline vtype load_padded(const type*, const type*); \
+   inline void store_zmask(type*, vtype) const
 
-#define SFMM_SIMD_LOAD_DEF(vtype, type, size) \
-	inline vtype vtype::load(type* ptr, type* end) { \
+#define SFMM_SIMD_LOADSTORE_DEF(vtype, type, size) \
+	inline vtype vtype::load(const type* ptr, const type* end) { \
 		const int iend = end - ptr > size ? end - ptr : size; \
 		const int tailcnt = size - iend; \
 		for( int i = 0; i < iend; i++) { \
@@ -99,10 +100,19 @@ class vtype;
 		} \
 		return mask(tailcnt); \
    } \
-   inline vtype vtype::load_with_padding(type* ptr, type* end, type pad_val) { \
+   inline vtype vtype::load_padded(const type* ptr, const type* end) { \
    	const vtype m = load(ptr, end); \
-   	pad(end - ptr > size ? 0 : size - (end - ptr), pad_val); \
+   	pad(end - ptr > size ? 0 : end - (ptr + size)); \
    	return m; \
+   } \
+   inline void vtype::store_zmask(type* ptr, vtype zmask) const { \
+	   for( int i = 0; i < size; i++) { \
+	   	if( zmask[i] ) { \
+	   		ptr[i] = v[i]; \
+	   	} else { \
+	   		break; \
+	   	} \
+	   } \
    }
 
 #define SFMM_SIMD_REAL_TYPE(vtype, type, vstype, stype, vutype, utype, size)              \
@@ -135,7 +145,7 @@ class vtype;
       SFMM_SIMD_PADDING(type, size);\
       SFMM_SIMD_SIZE(size);\
       SFMM_SIMD_MASK_PROT(vtype, type, size); \
-      SFMM_SIMD_LOAD_PROT(vtype, type, size); \
+      SFMM_SIMD_LOADSTORE_PROT(vtype, type, size); \
       friend class vstype; \
       friend class vutype; \
    }
@@ -176,7 +186,7 @@ class vtype;
       SFMM_SIMD_PADDING(type, size);\
       SFMM_SIMD_SIZE(size);\
       SFMM_SIMD_MASK_PROT(vtype, type, size); \
-      SFMM_SIMD_LOAD_PROT(vtype, type, size); \
+      SFMM_SIMD_LOADSTORE_PROT(vtype, type, size); \
       friend class vrtype; \
       friend class votype; \
    }
@@ -220,7 +230,7 @@ class vtype;
    SFMM_SIMD_MASK_DEF(vrtype, rtype, size); \
    SFMM_SIMD_MASK_DEF(vstype, stype, size); \
    SFMM_SIMD_MASK_DEF(vutype, utype, size); \
-   SFMM_SIMD_LOAD_DEF(vrtype, rtype, size); \
-   SFMM_SIMD_LOAD_DEF(vstype, stype, size); \
-   SFMM_SIMD_LOAD_DEF(vutype, utype, size)
+   SFMM_SIMD_LOADSTORE_DEF(vrtype, rtype, size); \
+   SFMM_SIMD_LOADSTORE_DEF(vstype, stype, size); \
+   SFMM_SIMD_LOADSTORE_DEF(vutype, utype, size)
 

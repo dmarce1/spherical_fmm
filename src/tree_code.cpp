@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include <sfmmf.hpp>
 #include <sfmmd.hpp>
+#include <sfmmv4df.hpp>
 
 #include <array>
 #include <vector>
@@ -308,14 +308,16 @@ struct run_tests<T, PMAX + 1> {
 };
 
 int main(int argc, char **argv) {
+	sfmm::vec3<sfmm::v4df> vec;
+	sfmm::vaccess(vec,3) = 2.4;
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
 	printf("\ndouble\n");
 	run_tests<double> run2;
 	run2();
-	printf("float\n");
+	/*printf("float\n");
 	run_tests<float> run1;
-	run1();
+	run1();*/
 	return 0;
 }
