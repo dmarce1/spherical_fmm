@@ -83,6 +83,12 @@ static int tprint_on = true;
 //#define VEC_DOUBLE_SIZE 2
 //#define VEC_FLOAT_SIZE 8
 
+#ifdef ROOT_DIR
+static std::string root_dir = std::string(ROOT_DIR) + "/include/";
+#else
+static std::string root_dir = "";
+#endif
+
 #define ASPRINTF(...) if( asprintf(__VA_ARGS__) == 0 ) {printf( "ASPRINTF error %s %i\n", __FILE__, __LINE__); abort(); }
 #define SYSTEM(...) if( system(__VA_ARGS__) != 0 ) {printf( "SYSTEM error %s %i\n", __FILE__, __LINE__); abort(); }
 
@@ -110,6 +116,7 @@ static std::string vsi32 = std::string("v") + std::to_string(VEC_FLOAT_SIZE) + "
 static std::string vsi64 = std::string("v") + std::to_string(VEC_DOUBLE_SIZE) + "si64";
 static std::string vui32 = std::string("v") + std::to_string(VEC_FLOAT_SIZE) + "ui32";
 static std::string vui64 = std::string("v") + std::to_string(VEC_DOUBLE_SIZE) + "ui64";
+
 #ifdef FLOAT
 static std::string header = "sfmmf.hpp";
 bool enable_scaled = true;
@@ -149,466 +156,31 @@ static const char* scaled_name() {
 	return scaled ? "_scaled" : "";
 }
 
+
+std::string random_macro() {
+	static std::set<int> used;
+	char* macro;
+	int num;
+	do {
+		num = rand();
+	} while (used.find(num) != used.end());
+	ASPRINTF(&macro, "SFMM_MACRO_%0i", num);
+	used.insert(num);
+	std::string result = macro;
+	free(macro);
+	return result;
+}
+
 static const char* dip_name() {
 	return nodip ? "_wo_dipole" : "";
 }
 
-static std::string complex_header = "\n"
-		"#ifndef SFMM_COMPLEX_DECL_HPP_42\n"
-		"#define SFMM_COMPLEX_DECL_HPP_42\n"
-		"\n"
-		"template<class T>\n"
-		"class complex {\n"
-		"\tT x, y;\n"
-		"public:\n"
-		"\tSFMM_PREFIX complex() = default;\n"
-		"\tSFMM_PREFIX complex(T a);\n"
-		"\tSFMM_PREFIX complex(T a, T b);\n"
-		"\tSFMM_PREFIX complex& operator+=(complex other);\n"
-		"\tSFMM_PREFIX complex& operator-=(complex other);\n"
-		"\tSFMM_PREFIX complex operator*(complex other) const;\n"
-		"\tSFMM_PREFIX complex operator/(complex other) const;\n"
-		"\tSFMM_PREFIX complex operator/=(complex other);\n"
-		"\tSFMM_PREFIX complex operator/(T other) const;\n"
-		"\tSFMM_PREFIX complex operator*(T other) const;\n"
-		"\tSFMM_PREFIX complex& operator*=(T other);\n"
-		"\tSFMM_PREFIX complex& operator*=(complex other);\n"
-		"\tSFMM_PREFIX complex operator+(complex other) const;\n"
-		"\tSFMM_PREFIX complex operator-(complex other) const;\n"
-		"\tSFMM_PREFIX complex conj() const;\n"
-		"\tSFMM_PREFIX T real() const;\n"
-		"\tSFMM_PREFIX T imag() const;\n"
-		"\tSFMM_PREFIX T& real();\n"
-		"\tSFMM_PREFIX T& imag();\n"
-		"\tSFMM_PREFIX T norm() const;\n"
-		"\tSFMM_PREFIX T abs() const;\n"
-		"\tSFMM_PREFIX complex operator-() const;\n"
-		"};\n"
-		"\n"
-		"#endif\n"
-		"";
-
-static std::string complex_defs = "\n"
-		"#ifndef SFMM_COMPLEX_DEF_HPP_42\n"
-		"#define SFMM_COMPLEX_DEF_HPP_42\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T>::complex(T a) :\n"
-		"\t\tx(a), y(0.0) {\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T>::complex(T a, T b) :\n"
-		"\t\tx(a), y(b) {\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T>& complex<T>::operator+=(complex<T> other) {\n"
-		"\tx += other.x;\n"
-		"\ty += other.y;\n"
-		"\treturn *this;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T>& complex<T>::operator-=(complex<T> other) {\n"
-		"\tx -= other.x;\n"
-		"\ty -= other.y;\n"
-		"\treturn *this;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator*(complex<T> other) const {\n"
-		"\tcomplex<T> a;\n"
-		"\ta.x = x * other.x - y * other.y;\n"
-		"\ta.y = fma(x, other.y, y * other.x);\n"
-		"\treturn a;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator/(complex<T> other) const {\n"
-		"\treturn *this * other.conj() / other.norm();\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator/=(complex<T> other) {\n"
-		"\t*this = *this * other.conj() / other.norm();\n"
-		"\treturn *this;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator/(T other) const {\n"
-		"\tcomplex<T> b;\n"
-		"\tb.x = x / other;\n"
-		"\tb.y = y / other;\n"
-		"\treturn b;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator*(T other) const {\n"
-		"\tcomplex<T> b;\n"
-		"\tb.x = x * other;\n"
-		"\tb.y = y * other;\n"
-		"\treturn b;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T>& complex<T>::operator*=(T other) {\n"
-		"\tx *= other;\n"
-		"\ty *= other;\n"
-		"\treturn *this;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T>& complex<T>::operator*=(complex<T> other) {\n"
-		"\t*this = *this * other;\n"
-		"\treturn *this;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator+(complex<T> other) const {\n"
-		"\tcomplex<T> a;\n"
-		"\ta.x = x + other.x;\n"
-		"\ta.y = y + other.y;\n"
-		"\treturn a;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator-(complex<T> other) const {\n"
-		"\tcomplex<T> a;\n"
-		"\ta.x = x - other.x;\n"
-		"\ta.y = y - other.y;\n"
-		"\treturn a;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::conj() const {\n"
-		"\tcomplex<T> a;\n"
-		"\ta.x = x;\n"
-		"\ta.y = -y;\n"
-		"\treturn a;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX T complex<T>::real() const {\n"
-		"\treturn x;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX T complex<T>::imag() const {\n"
-		"\treturn y;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX T& complex<T>::real() {\n"
-		"\treturn x;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX T& complex<T>::imag() {\n"
-		"\treturn y;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX T complex<T>::norm() const {\n"
-		"\treturn fma(x,x,y*y);\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX T complex<T>::abs() const {\n"
-		"\treturn sqrt(norm());\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX complex<T> complex<T>::operator-() const {\n"
-		"\tcomplex<T> a;\n"
-		"\ta.x = -x;\n"
-		"\ta.y = -y;\n"
-		"\treturn a;\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"SFMM_PREFIX inline complex<T> operator*(T a, complex<T> b) {\n"
-		"\treturn complex<T>(a*b.real(),a*b.imag());\n"
-		"}\n"
-		"\n"
-		"template<class T>\n"
-		"inline void swap(complex<T>& a, complex<T>& b) {\n"
-		"\tstd::swap(a.real(), b.real());\n"
-		"\tstd::swap(a.imag(), b.imag());\n"
-		"}\n"
-		"\n"
-		"#endif\n"
-		"";
-
-static std::string vec3_header() {
-	return "\n"
-			"#ifndef SFMM_VEC342\n"
-			"#define SFMM_VEC342\n"
-			"\n"
-			"#define SFMM_NDIM 3\n"
-			"\n"
-			"#define sfmm_create_vec3_op1( op ) \\\n"
-			"\t\tSFMM_PREFIX vec3 operator op (const vec3& other) const { \\\n"
-			"\t\t\tvec3 result; \\\n"
-			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
-			"\t\t\t\tresult[dim] = (*this)[dim] op other[dim]; \\\n"
-			"\t\t\t} \\\n"
-			"\t\t\treturn result; \\\n"
-			"\t\t} \\\n"
-			"\t\tSFMM_PREFIX vec3& operator op##= (const vec3& other) { \\\n"
-			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
-			"\t\t\t\t(*this)[dim] op##= other[dim]; \\\n"
-			"\t\t\t} \\\n"
-			"\t\t\treturn *this; \\\n"
-			"\t\t}\n"
-			"\n"
-			"#define sfmm_create_vec3_op2( op ) \\\n"
-			"\t\tSFMM_PREFIX vec3 operator op (const T other) const { \\\n"
-			"\t\t\tvec3 result; \\\n"
-			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
-			"\t\t\t\tresult[dim] = (*this)[dim] op other; \\\n"
-			"\t\t\t} \\\n"
-			"\t\t\treturn result; \\\n"
-			"\t\t} \\\n"
-			"\t\tSFMM_PREFIX vec3& operator op##= (const T other) { \\\n"
-			"\t\t\tfor( int dim = 0; dim < SFMM_NDIM; dim++ ) { \\\n"
-			"\t\t\t\t(*this)[dim] op##= other; \\\n"
-			"\t\t\t} \\\n"
-			"\t\t\treturn *this; \\\n"
-			"\t\t}\n"
-			"\n"
-			"template<class T>\n"
-			"struct vec3: public std::array<T, SFMM_NDIM> {\n"
-			"\tsfmm_create_vec3_op1( + )\n"
-			"\tsfmm_create_vec3_op1( - )\n"
-			"\tsfmm_create_vec3_op1( * )\n"
-			"\tsfmm_create_vec3_op1( / )\n"
-			"\tsfmm_create_vec3_op2( * )\n"
-			"\tsfmm_create_vec3_op2( / )\n"
-			"\tSFMM_PREFIX vec3 operator-() const {\n"
-			"\t\tvec3 result;\n"
-			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
-			"\t\t\tresult[dim] = -(*this)[dim];\n"
-			"\t\t}\n"
-			"\t\treturn result;\n"
-			"\t}\n"
-			"\tSFMM_PREFIX vec3& operator=(T a) {\n"
-			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
-			"\t\t\t(*this)[dim] = a;\n"
-			"\t\t}\n"
-			"\t\treturn *this;\n"
-			"\t}\n"
-			"\tSFMM_PREFIX vec3<T>(T x, T y, T z) {\n"
-			"\t\t(*this)[0] = x;\n"
-			"\t\t(*this)[1] = y;\n"
-			"\t\t(*this)[2] = z;\n"
-			"\t}\n"
-			"\nvec3() = default;\n"
-			"\nvec3(const vec3&) = default;\n"
-			"\nvec3& operator=(const vec3&) = default;\n"
-			"};\n"
-			"template<class T>\n"
-			"SFMM_PREFIX inline T sqr(T a) {\n"
-			"\treturn a * a;\n"
-			"}\n"
-			"\n"
-			"template<class T>\n"
-			"SFMM_PREFIX inline T abs(vec3<T> vec) {\n"
-			"\treturn sqrt(sqr(vec[0]) + sqr(vec[1]) + sqr(vec[2]));\n"
-			"}\n"
-			"\n"
-			"#endif\n"
-			"";
-}
 static std::string vec_header() {
 	std::string str = "\n";
-	str += "#ifndef SFMM_VEC_HEADER42\n";
-	str += "#define SFMM_VEC_HEADER42\n";
-	str += "\n";
-	str += "#define sfmm_create_binary_op(vtype, type, op) \\\n";
-	str += "   inline vtype operator op (const vtype& u ) const { \\\n";
-	str += "      vtype w; \\\n";
-	str += "      w.v = v op u.v; \\\n";
-	str += "		  return w; \\\n";
-	str += "   } \\\n";
-	str += "	  inline vtype& operator op##= (const vtype& u ) { \\\n";
-	str += "       *this = *this op u; \\\n";
-	str += "	      return *this; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_unary_op(vtype, type, op) \\\n";
-	str += "   inline vtype operator op () const { \\\n";
-	str += "      vtype w; \\\n";
-	str += "      w.v = op v; \\\n";
-	str += "      return w; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_convert_op_prot(vtype,type,ovtype,otype) \\\n";
-	str += "   inline vtype(const ovtype&); \\\n";
-	str += "   inline vtype& operator=(const ovtype&); \\\n";
-	str += "   inline vtype& operator=(const otype&)\n";
-	str += "\n";
-	str += "#define sfmm_create_convert_op_def(vtype,type,ovtype,otype) \\\n";
-	str += "   inline vtype::vtype(const ovtype& other) { \\\n";
-	str += "	     v = __builtin_convertvector(other.v, simd_t); \\\n";
-	str += "   } \\\n";
-	str += "   inline vtype& vtype::operator=(const ovtype& other) { \\\n";
-	str += "	     v = __builtin_convertvector(other.v, simd_t); \\\n";
-	str += "	     return *this; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_broadcast_op(vtype,type) \\\n";
-	str += "   inline vtype(const type& other) { \\\n";
-	str += "	     v = other - simd_t{}; \\\n";
-	str += "   } \\\n";
-	str += "   inline vtype& operator=(const type& other) { \\\n";
-	str += "	     v = other - simd_t{}; \\\n";
-	str += "	     return *this; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_compare_op_prot(vtype,vstype,stype,op) \\\n";
-	str += "   inline vstype operator op (const vtype&) const\n";
-	str += "\n";
-	str += "#define sfmm_create_compare_op_def(vtype,vstype,sitype,op) \\\n";
-	str += "   inline vstype vtype::operator op (const vtype& other) const { \\\n";
-	str += "	     vstype w; \\\n";
-	str += "      w.v = (-(v op other.v)); \\\n";
-	str += "      return w; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_vec_types_fwd(vtype)              \\\n";
-	str += "class vtype;\n";
-	str += "\n";
-	str += "#define sfmm_create_vec_size(sz) \\\n";
-	str += "   static size_t size() { \\\n";
-	str += "      return sz; \\\n";
-	str += "   } \\\n";
-	str += "\n";
-	str += "#ifdef NDEBUG\n";
-	str += "#define sfmm_create_pad_member(sz, type) { \\\n";
-	str += "   void pad(int n) { \\\n";
-	str += "   } \n";
-	str += "#else\n";
-	str += "#define sfmm_create_pad_member(sz, type) { \\\n";
-	str += "   void pad(int n) { \\\n";
-	str += "      for( int i = sz - n; i < sz; i++ ) { \\\n";
-	str += "         v[i] = type(1); \\\n";
-	str += "      } \\\n";
-	str += "   } \n";
-	str += "#endif\n";
-	str += "\n";
-	str += "#define sfmm_create_rvec_types(vtype, type, vstype, stype, vutype, utype, size)              \\\n";
-	str += "   class vtype {                                           \\\n";
-	str += "      typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \\\n";
-	str += "      simd_t v;  \\\n";
-	str += "   public: \\\n";
-	str += "      inline constexpr vtype() : v() {} \\\n";
-	str += "      inline type operator[](int i) const {  \\\n";
-	str += "         return v[i]; \\\n";
-	str += "      }\\\n";
-	str += "	     inline type& operator[](int i) {  \\\n";
-	str += "		     return v[i]; \\\n";
-	str += "	     }\\\n";
-	str += "      sfmm_create_binary_op(vtype, type, +); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, -); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, *); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, /); \\\n";
-	str += "      sfmm_create_unary_op(vtype, type, +); \\\n";
-	str += "      sfmm_create_unary_op(vtype, type, -); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype, type, vstype, stype); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype, type, vutype, utype); \\\n";
-	str += "      sfmm_create_broadcast_op(vtype, type); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,  vstype, stype, <); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
-	str += "      sfmm_create_vec_size(size);\\\n";
-	str += "      friend class vstype; \\\n";
-	str += "      friend class vutype; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_ivec_types(vtype, type, votype, otype, vrtype, rtype, vstype, stype, size)              \\\n";
-	str += "   class vtype {                                           \\\n";
-	str += "      typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \\\n";
-	str += "      simd_t v;  \\\n";
-	str += "   public: \\\n";
-	str += "      inline constexpr vtype() : v() {} \\\n";
-	str += "      inline type operator[](int i) const {  \\\n";
-	str += "         return v[i]; \\\n";
-	str += "      }\\\n";
-	str += "      inline type& operator[](int i) {  \\\n";
-	str += "         return v[i]; \\\n";
-	str += "      }\\\n";
-	str += "      sfmm_create_binary_op(vtype, type, +); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, -); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, *); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, /); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, &); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, ^); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, |); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, >>); \\\n";
-	str += "      sfmm_create_binary_op(vtype, type, <<); \\\n";
-	str += "      sfmm_create_unary_op(vtype, type, +); \\\n";
-	str += "      sfmm_create_unary_op(vtype, type, -); \\\n";
-	str += "      sfmm_create_unary_op(vtype, type, ~); \\\n";
-	str += "      sfmm_create_broadcast_op(vtype,type); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype, type, vrtype, rtype); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype, type, votype, otype); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
-	str += "      sfmm_create_vec_size(size);\\\n";
-	str += "      friend class vrtype; \\\n";
-	str += "      friend class votype; \\\n";
-	str += "   }\n";
-	str += "\n";
-	str += "#define sfmm_create_rvec_types_def(vtype, type, vstype, stype, vutype, utype, size)\\\n";
-	str += "   sfmm_create_convert_op_def(vtype, type, vstype, stype); \\\n";
-	str += "   sfmm_create_convert_op_def(vtype, type, vutype, utype)\n";
-	str += "\n";
-	str += "#define sfmm_create_ivec_types_def(vtype, type, votype, otype, vrtype, rtype, size)              \\\n";
-	str += "   sfmm_create_convert_op_def(vtype,type,vrtype,rtype); \\\n";
-	str += "   sfmm_create_convert_op_def(vtype,type,votype,otype)\n";
-	str += "\n";
-	str += "#define sfmm_create_vec_types(vrtype,rtype,vstype,stype,vutype,utype,size) \\\n";
-	str += "   sfmm_create_vec_types_fwd(vrtype); \\\n";
-	str += "   sfmm_create_vec_types_fwd(vutype); \\\n";
-	str += "   sfmm_create_vec_types_fwd(vstype); \\\n";
-	str += "   sfmm_create_rvec_types(vrtype, rtype, vstype, stype, vutype, utype,  size); \\\n";
-	str += "   sfmm_create_ivec_types(vutype, utype, vstype, stype, vrtype, rtype, vstype, stype, size); \\\n";
-	str += "   sfmm_create_ivec_types(vstype, stype, vutype, utype, vrtype, rtype, vstype, stype, size); \\\n";
-	str += "   sfmm_create_rvec_types_def(vrtype, rtype, vstype, stype, vutype, utype,  size); \\\n";
-	str += "   sfmm_create_ivec_types_def(vutype, utype, vstype, stype, vrtype, rtype,  size); \\\n";
-	str += "   sfmm_create_ivec_types_def(vstype, stype, vutype, utype, vrtype, rtype,  size); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, <); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, >); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, <=); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, >=); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, ==); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, !=); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, <); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, >); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, <=); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, >=); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, ==); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, !=); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, <); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, >); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, <=); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, >=); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, ==); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, !=)\n";
-	str += "#endif\n\n";
+	std::string macro;
 	char* b;
 #ifdef VEC_FLOAT
-	str += "#ifndef SFMM_VEC_FLOAT42\n";
-	str += "#define SFMM_VEC_FLOAT42\n\n";
-	ASPRINTF(&b, "sfmm_create_vec_types(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
+	ASPRINTF(&b, "SFMM_SIMD_FACTORY(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
 	ASPRINTF(&b, "\ninline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
@@ -664,13 +236,10 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	str += "}\n";
-	str += "#endif\n";
 #endif
 
 #ifdef VEC_DOUBLE
-	str += "#ifndef SFMM_VEC_DOUBLE42\n";
-	str += "#define SFMM_VEC_DOUBLE42\n\n";
-	ASPRINTF(&b, "sfmm_create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
+	ASPRINTF(&b, "SFMM_SIMD_FACTORY(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
 	ASPRINTF(&b, "\ninline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
@@ -726,7 +295,6 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	str += "}\n";
-	str += "#endif\n";
 #endif
 
 	return str;
@@ -1045,6 +613,17 @@ constexpr double dfactorial(int n) {
 	} else {
 		return n * dfactorial(n - 2);
 	}
+}
+
+
+void open_block() {
+	const auto macro = random_macro();
+	fprintf(fp, "#ifndef %s\n", macro.c_str());
+	fprintf(fp, "#define %s\n\n", macro.c_str());
+}
+
+void close_block() {
+	fprintf(fp, "#endif\n\n");
 }
 
 template<class ...Args>
@@ -1427,6 +1006,24 @@ template<class ...Args>
 void func_args_cover(int P, const char* arg, arg_type atype, Args&& ...args) {
 	func_args_cover(P, arg, atype, 1);
 	func_args_cover(P, std::forward<Args>(args)...);
+}
+
+void include(std::string filename) {
+	constexpr int N = 1024;
+	char buffer[N];
+	filename = root_dir + filename;
+	FILE* fp0 = fopen(filename.c_str(), "rt");
+	if (!fp0) {
+		printf("Unable to open %s\n", filename.c_str());
+		abort();
+	}
+	while (!feof(fp0)) {
+		if (!fgets(buffer, N, fp0)) {
+			break;
+		}
+		fprintf(fp, "%s", buffer);
+	}
+	fclose(fp0);
 }
 
 template<class ... Args>
@@ -5387,8 +4984,7 @@ int main() {
 	set_file(full_header.c_str());
 	tprint("#pragma once\n");
 	tprint("\n");
-	tprint("#ifndef SFMM_FULL_HEADER42\n");
-	tprint("#define SFMM_FULL_HEADER42\n");
+	open_block();
 	tprint("#ifdef __CUDA_ARCH__\n");
 	tprint("#define SFMM_PREFIX __device__\n");
 	tprint("#else\n");
@@ -5404,11 +5000,12 @@ int main() {
 	tprint("#define sfmmCalculateWithPotential    0\n");
 	tprint("#define sfmmCalculateWithoutPotential 1\n");
 	tprint("\n");
-	tprint("#endif\n");
-	tprint("\n");
+	close_block();
 	tprint("namespace sfmm {\n");
 	tprint("\n");
-	fprintf(fp, "%s\n", complex_header.c_str());
+	open_block();
+	include("complex.hpp");
+	close_block();
 	nopot = 1;
 	int ntypenames = 0;
 	std::vector<std::string> rtypenames;
@@ -5470,10 +5067,8 @@ int main() {
 	ntypenames++;
 	funcnum = 3;
 #endif
-	tprint("%s\n", vec3_header().c_str());
-	tprint("#ifndef SFMM_FULL_HEADER4112\n");
-	tprint("#define SFMM_FULL_HEADER4112\n\n");
-	tprint("\n");
+	open_block();
+	include("vec3.hpp");
 	tprint("template<class T>\n");
 	tprint("struct force_type {\n");
 	indent();
@@ -5487,13 +5082,16 @@ int main() {
 	deindent();
 	tprint("};\n");
 	tprint("\n");
-	tprint("#endif\n");
+	close_block();
 
 #if defined(VEC_DOUBLE) || defined(VEC_FLOAT)
+	open_block();
 	tprint("#ifndef __CUDACC__\n");
-	tprint("%s\n", vec_header().c_str());
-	tprint("\n#endif");
+	include("vec_simd.hpp");
+	tprint("%s", vec_header().c_str());
+	tprint("#endif");
 	tprint("\n");
+	close_block();
 #endif
 	tprint("#ifndef SFMM_EXPANSION_MEMBERS42\n");
 	tprint("#define SFMM_EXPANSION_MEMBERS42\n");
@@ -6454,7 +6052,9 @@ int main() {
 		}
 	}
 	nopot = 0;
-	fprintf(fp, "%s\n", complex_defs.c_str());
+	open_block();
+	include("complex_impl.hpp");
+	close_block();
 	tprint("}\n");
 	return 0;
 }
