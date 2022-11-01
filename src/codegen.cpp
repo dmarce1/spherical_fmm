@@ -80,8 +80,8 @@ static int tprint_on = true;
 //#define CUDA_DOUBLE
 //#define VEC_DOUBLE
 //#define VEC_FLOAT
-#define VEC_DOUBLE_SIZE 2
-#define VEC_FLOAT_SIZE 8
+//#define VEC_DOUBLE_SIZE 2
+//#define VEC_FLOAT_SIZE 8
 
 #define ASPRINTF(...) if( asprintf(__VA_ARGS__) == 0 ) {printf( "ASPRINTF error %s %i\n", __FILE__, __LINE__); abort(); }
 #define SYSTEM(...) if( system(__VA_ARGS__) != 0 ) {printf( "SYSTEM error %s %i\n", __FILE__, __LINE__); abort(); }
@@ -128,13 +128,14 @@ static std::string header = "sfmmd.hpp";
 #endif
 #ifdef VEC_FLOAT
 bool enable_scaled = true;
-static std::string header = "sfmmvf.hpp";
+static std::string header = std::string("sfmmv") + std::to_string(VEC_FLOAT_SIZE) + "sf.hpp";
 #endif
 #ifdef VEC_DOUBLE
 bool enable_scaled = false;
-static std::string header = "sfmmvd.hpp";
+static std::string header = std::string("sfmmv") + std::to_string(VEC_DOUBLE_SIZE) + "df.hpp";
 #endif
 static std::string full_header = std::string("./generated_code/include/") + header;
+//static std::string full_detail_header = std::string("./generated_code/include/detail/") + header;
 
 static const char* pot_name() {
 	return nopot ? "_wo_potential" : "";
@@ -344,7 +345,7 @@ static std::string vec3_header() {
 			"#ifndef SFMM_VEC342\n"
 			"#define SFMM_VEC342\n"
 			"\n"
-			"#define SFMM_NDIM 3"
+			"#define SFMM_NDIM 3\n"
 			"\n"
 			"#define sfmm_create_vec3_op1( op ) \\\n"
 			"\t\tSFMM_PREFIX vec3 operator op (const vec3& other) const { \\\n"
@@ -423,6 +424,7 @@ static std::string vec_header() {
 	std::string str = "\n";
 	str += "#ifndef SFMM_VEC_HEADER42\n";
 	str += "#define SFMM_VEC_HEADER42\n";
+	str += "\n";
 	str += "#define sfmm_create_binary_op(vtype, type, op) \\\n";
 	str += "   inline vtype operator op (const vtype& u ) const { \\\n";
 	str += "      vtype w; \\\n";
@@ -475,7 +477,25 @@ static std::string vec_header() {
 	str += "   }\n";
 	str += "\n";
 	str += "#define sfmm_create_vec_types_fwd(vtype)              \\\n";
-	str += "class vtype\n";
+	str += "class vtype;\n";
+	str += "\n";
+	str += "#define sfmm_create_vec_size(sz) \\\n";
+	str += "   static size_t size() { \\\n";
+	str += "      return sz; \\\n";
+	str += "   } \\\n";
+	str += "\n";
+	str += "#ifdef NDEBUG\n";
+	str += "#define sfmm_create_pad_member(sz, type) { \\\n";
+	str += "   void pad(int n) { \\\n";
+	str += "   } \n";
+	str += "#else\n";
+	str += "#define sfmm_create_pad_member(sz, type) { \\\n";
+	str += "   void pad(int n) { \\\n";
+	str += "      for( int i = sz - n; i < sz; i++ ) { \\\n";
+	str += "         v[i] = type(1); \\\n";
+	str += "      } \\\n";
+	str += "   } \n";
+	str += "#endif\n";
 	str += "\n";
 	str += "#define sfmm_create_rvec_types(vtype, type, vstype, stype, vutype, utype, size)              \\\n";
 	str += "   class vtype {                                           \\\n";
@@ -495,15 +515,16 @@ static std::string vec_header() {
 	str += "      sfmm_create_binary_op(vtype, type, /); \\\n";
 	str += "      sfmm_create_unary_op(vtype, type, +); \\\n";
 	str += "      sfmm_create_unary_op(vtype, type, -); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype,type,vstype,stype); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype,type,vutype,utype); \\\n";
-	str += "      sfmm_create_broadcast_op(vtype,type); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype, type, vstype, stype); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype, type, vutype, utype); \\\n";
+	str += "      sfmm_create_broadcast_op(vtype, type); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype,  vstype, stype, <); \\\n";
 	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >); \\\n";
 	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
 	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
 	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
 	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
+	str += "      sfmm_create_vec_size(size);\\\n";
 	str += "      friend class vstype; \\\n";
 	str += "      friend class vutype; \\\n";
 	str += "   }\n";
@@ -533,14 +554,15 @@ static std::string vec_header() {
 	str += "      sfmm_create_unary_op(vtype, type, -); \\\n";
 	str += "      sfmm_create_unary_op(vtype, type, ~); \\\n";
 	str += "      sfmm_create_broadcast_op(vtype,type); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype,type,vrtype,rtype); \\\n";
-	str += "      sfmm_create_convert_op_prot(vtype,type,votype,otype); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,<); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,>); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,<=); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,>=); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,==); \\\n";
-	str += "      sfmm_create_compare_op_prot(vtype,vstype,stype,!=); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype, type, vrtype, rtype); \\\n";
+	str += "      sfmm_create_convert_op_prot(vtype, type, votype, otype); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, <=); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, >=); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, ==); \\\n";
+	str += "      sfmm_create_compare_op_prot(vtype, vstype, stype, !=); \\\n";
+	str += "      sfmm_create_vec_size(size);\\\n";
 	str += "      friend class vrtype; \\\n";
 	str += "      friend class votype; \\\n";
 	str += "   }\n";
@@ -557,39 +579,39 @@ static std::string vec_header() {
 	str += "   sfmm_create_vec_types_fwd(vrtype); \\\n";
 	str += "   sfmm_create_vec_types_fwd(vutype); \\\n";
 	str += "   sfmm_create_vec_types_fwd(vstype); \\\n";
-	str += "   sfmm_create_rvec_types(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
-	str += "   sfmm_create_ivec_types(vutype,utype,vstype,stype,vrtype,rtype,vstype,stype,size); \\\n";
-	str += "   sfmm_create_ivec_types(vstype,stype,vutype,utype,vrtype,rtype,vstype,stype,size); \\\n";
-	str += "   sfmm_create_rvec_types_def(vrtype,rtype,vstype,stype,vutype,utype, size); \\\n";
-	str += "   sfmm_create_ivec_types_def(vutype,utype,vstype,stype,vrtype,rtype, size); \\\n";
-	str += "   sfmm_create_ivec_types_def(vstype,stype,vutype,utype,vrtype,rtype, size); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,<); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,>); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,<=); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,>=); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,==); \\\n";
-	str += "   sfmm_create_compare_op_def(vrtype,vstype,stype,!=); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,<); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,>); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,<=); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,>=); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,==); \\\n";
-	str += "   sfmm_create_compare_op_def(vutype,vstype,stype,!=); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,<); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,>); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,<=); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,>=); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,==); \\\n";
-	str += "   sfmm_create_compare_op_def(vstype,vstype,stype,!=)\n";
-	str += "#endif\n";
+	str += "   sfmm_create_rvec_types(vrtype, rtype, vstype, stype, vutype, utype,  size); \\\n";
+	str += "   sfmm_create_ivec_types(vutype, utype, vstype, stype, vrtype, rtype, vstype, stype, size); \\\n";
+	str += "   sfmm_create_ivec_types(vstype, stype, vutype, utype, vrtype, rtype, vstype, stype, size); \\\n";
+	str += "   sfmm_create_rvec_types_def(vrtype, rtype, vstype, stype, vutype, utype,  size); \\\n";
+	str += "   sfmm_create_ivec_types_def(vutype, utype, vstype, stype, vrtype, rtype,  size); \\\n";
+	str += "   sfmm_create_ivec_types_def(vstype, stype, vutype, utype, vrtype, rtype,  size); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, <); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, >); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, <=); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, >=); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, ==); \\\n";
+	str += "   sfmm_create_compare_op_def(vrtype, vstype, stype, !=); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, <); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, >); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, <=); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, >=); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, ==); \\\n";
+	str += "   sfmm_create_compare_op_def(vutype, vstype, stype, !=); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, <); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, >); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, <=); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, >=); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, ==); \\\n";
+	str += "   sfmm_create_compare_op_def(vstype, vstype, stype, !=)\n";
+	str += "#endif\n\n";
 	char* b;
 #ifdef VEC_FLOAT
 	str += "#ifndef SFMM_VEC_FLOAT42\n";
-	str += "#define SFMM_VEC_FLOAT42\n";
+	str += "#define SFMM_VEC_FLOAT42\n\n";
 	ASPRINTF(&b, "sfmm_create_vec_types(%s, float, %s, int32_t, %s, uint32_t, %i);\n", vf.c_str(), vsi32.c_str(), vui32.c_str(), VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
-	ASPRINTF(&b, "inline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
+	ASPRINTF(&b, "\ninline float sum(v%isf v) {\n", VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
 	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
@@ -615,7 +637,7 @@ static std::string vec_header() {
 	str += b;
 	free(b);
 	str += "}\n";
-	ASPRINTF(&b, "inline int64_t sum(v%isi32 v) {\n", VEC_FLOAT_SIZE);
+	ASPRINTF(&b, "\ninline int64_t sum(v%isi32 v) {\n", VEC_FLOAT_SIZE);
 	str += b;
 	free(b);
 	for (int sz = VEC_FLOAT_SIZE; sz > 1; sz /= 2) {
@@ -647,11 +669,11 @@ static std::string vec_header() {
 
 #ifdef VEC_DOUBLE
 	str += "#ifndef SFMM_VEC_DOUBLE42\n";
-	str += "#define SFMM_VEC_DOUBLE42\n";
+	str += "#define SFMM_VEC_DOUBLE42\n\n";
 	ASPRINTF(&b, "sfmm_create_vec_types(%s, double, %s, int64_t, %s, uint64_t, %i);\n", vd.c_str(), vsi64.c_str(), vui64.c_str(), VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
-	ASPRINTF(&b, "inline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
+	ASPRINTF(&b, "\ninline double sum(v%idf v) {\n", VEC_DOUBLE_SIZE);
 	str += b;
 	free(b);
 	for (int sz = VEC_DOUBLE_SIZE; sz > 1; sz /= 2) {
@@ -1410,11 +1432,12 @@ void func_args_cover(int P, const char* arg, arg_type atype, Args&& ...args) {
 template<class ... Args>
 std::string func_header(const char* func, int P, bool pub, bool calcpot, bool scale, bool flags, bool vec, std::string head, Args&& ...args) {
 	static std::set<std::string> igen;
+	pub = pub && !nopot;
 	std::string func_name = std::string(func);
 	if (nopot && calcpot) {
 		func_name += "_wo_potential";
 	}
-	std::string file_name = func_name + (std::string(func_name) == std::string("greens_ewald") ? "" : period_name()) + scaled_name() + dip_name()
+	std::string file_name = func_name + ((strncmp("greens_ewald", func_name.c_str(), 12) == 0) ? "" : period_name()) + scaled_name() + dip_name()
 			+ (cuda ? ".cu" : ".cpp");
 	func_name = "void " + func_name;
 	func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
@@ -1472,6 +1495,7 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		set_file(file_name);
 	}
 	tprint("#include \"%s\"\n", header.c_str());
+//	tprint("#include \"detail/%s\"\n", header.c_str());
 	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
 	tprint("namespace sfmm {\n");
@@ -1488,7 +1512,7 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 	if (calcpot && !nopot) {
 		tprint("if( potopt == sfmmCalculateWithoutPotential ) {\n ");
 		indent();
-		std::string str = std::string(func) + std::string("_wo_potential(");
+		std::string str = std::string("detail::") + std::string(func) + std::string("_wo_potential(");
 		str += func_args_call(P, std::forward<Args>(args)..., 0);
 		str += ");\n";
 		tprint("%s", str.c_str());
@@ -2218,6 +2242,9 @@ std::string P2L(int P) {
 	tprint("}");
 	tprint("\n");
 	tprint("}\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	tprint("\n");
 	return fname;
 }
@@ -2309,6 +2336,9 @@ std::string M2LG(int P, int Q) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -2654,6 +2684,9 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 
 }
@@ -2747,6 +2780,9 @@ std::string M2L_rot0(int P, int Q) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -2981,6 +3017,9 @@ std::string M2L_rot1(int P, int Q) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -3121,6 +3160,9 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -3205,6 +3247,9 @@ std::string M2L_ewald(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -3496,6 +3541,9 @@ std::string M2M_rot0(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -3667,6 +3715,9 @@ std::string M2M_rot1(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -3772,6 +3823,9 @@ std::string M2M_rot2(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -3889,6 +3943,9 @@ std::string P2M(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -4051,6 +4108,9 @@ std::string L2L_rot0(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -4210,6 +4270,9 @@ std::string L2L_rot1(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -4304,6 +4367,9 @@ std::string L2L_rot2(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -4486,6 +4552,9 @@ std::string L2P(int P) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
+	if (nopot) {
+		tprint("}\n");
+	}
 	return fname;
 }
 
@@ -5058,7 +5127,7 @@ void math_vec_double() {
 	constexpr double x0 = 1.0;
 	constexpr double x1 = 4.7;
 
-	fp = fopen("./generated_code/include/sfmmvd.hpp", "at");
+	fp = fopen(full_header.c_str(), "at");
 	tprint("\n");
 	tprint("#ifndef __CUDACC__\n");
 	tprint("\n");
@@ -5081,7 +5150,6 @@ void math_vec_double() {
 	tprint("#include \"typecast_v%idf.hpp\"\n", VEC_DOUBLE_SIZE);
 	tprint("\n");
 	tprint("namespace sfmm {\n");
-	tprint("namespace detail {\n");
 	tprint("\n");
 	tprint("T rsqrt(T x) {\n");
 	indent();
@@ -5606,383 +5674,6 @@ int main() {
 	}
 	tprint("#endif\n");
 
-	for (scaled = 0; scaled <= enable_scaled; scaled++) {
-		for (periodic = 0; periodic <= 1; periodic++) {
-			for (nodip = 0; nodip <= 1; nodip++) {
-
-				for (int P = pmin - 1; P <= pmax; P++) {
-					if (!nodip) {
-						tprint("\n");
-						tprint("template<>\n");
-						tprint("class expansion%s%s<%s,%i> {\n", period_name(), scaled_name(), type.c_str(), P);
-						indent();
-						tprint("typedef %s T;\n", type.c_str());
-						tprint("T o[%i];\n", exp_sz(P));
-						if (periodic && P > 1) {
-							tprint("T t;\n");
-						}
-						if (scaled) {
-							tprint("T r;\n");
-						}
-
-						deindent();
-						tprint("public:\n");
-						indent();
-						tprint("SFMM_EXPANSION_MEMBERS(expansion%s%s, %s, %i);\n", period_name(), scaled_name(), type.c_str(), P);
-						tprint("SFMM_PREFIX expansion%s%s& operator=(const expansion%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
-						indent();
-						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-						indent();
-						tprint("o[n] = other.o[n];\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("t = other.t;\n");
-						}
-						if (scaled) {
-							tprint("r = other.r;\n");
-						}
-						tprint("return *this;\n");
-						deindent();
-						tprint("}\n");
-
-						tprint("SFMM_PREFIX expansion%s%s& operator+=(expansion%s%s other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
-						indent();
-						if (scaled) {
-							tprint("if( r != other.r ) {\n");
-							indent();
-							tprint("other.rescale(r);\n");
-							deindent();
-							tprint("}\n");
-						}
-						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-						indent();
-						tprint("o[n] += other.o[n];\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("t += other.t;\n");
-						}
-						if (scaled) {
-							tprint("r = other.r;\n");
-						}
-						tprint("return *this;\n");
-						deindent();
-						tprint("}\n");
-
-						tprint("SFMM_PREFIX expansion%s%s(T r0 = T(1)) {\n", period_name(), scaled_name());
-						indent();
-						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-						indent();
-						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-						}
-						fprintf(fp, "#endif\n");
-						if (scaled) {
-							tprint("r = r0;\n");
-						}
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
-						indent();
-						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
-						indent();
-						tprint("o[n] = T(0);\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("t = T(0);\n");
-						}
-						if (scaled) {
-							tprint("r = r0;\n");
-						}
-						deindent();
-						tprint("}\n");
-
-						tprint("SFMM_PREFIX void rescale(T r0) {\n");
-						indent();
-						if (scaled) {
-							tprint("const T a = r0 / r;\n");
-							tprint("T b = a;\n");
-							tprint("r = r0;\n");
-							for (int n = 0; n <= P; n++) {
-								for (int m = -n; m <= n; m++) {
-									tprint("o[%i] *= b;\n", lindex(n, m));
-								}
-								if (periodic && P > 1 && n == 2) {
-									tprint("t *= b;\n", exp_sz(P));
-								}
-								if (n != P) {
-									tprint("b *= a;\n");
-								}
-							}
-						}
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX T scale() const {\n");
-						indent();
-						if (scaled) {
-							tprint("return r;\n");
-						} else {
-							tprint("return T(1);\n");
-						}
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("SFMM_PREFIX T& trace2() {\n");
-							indent();
-							tprint("return t;\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX T trace2() const {\n");
-							indent();
-							tprint("return t;\n");
-							deindent();
-							tprint("}\n");
-						}
-
-						if (scaled && periodic && P >= pmin) {
-							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>, int);\n", P, P);
-							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>);\n", pot_name(), P,
-									P);
-							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, vec3<T>, int);\n", P,
-									P);
-							tprint("friend void M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, vec3<T>);\n",
-									pot_name(), P, P);
-						}
-						if (scaled && P >= pmin) {
-							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, vec3<T>, int);\n", period_name(), P, period_name(),
-									P);
-							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, vec3<T>);\n", pot_name(), period_name(), P,
-									period_name(), P);
-							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, vec3<T>, int);\n", period_name(), P,
-									period_name(), P);
-							tprint("friend void M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, vec3<T>);\n", pot_name(), period_name(),
-									P, period_name(), P);
-						}
-						deindent();
-						tprint("};\n");
-					}
-					tprint("\n");
-
-					if (P > pmin - 1) {
-						tprint("\n");
-						tprint("template<>\n");
-						tprint("class multipole%s%s%s<%s,%i> {\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
-						indent();
-						tprint("typedef %s T;\n", type.c_str());
-						tprint("T o[%i];\n", mul_sz(P));
-						if (periodic && P > 2) {
-							tprint("T t;\n");
-						}
-						if (scaled) {
-							tprint("T r;\n");
-						}
-						deindent();
-						tprint("public:\n");
-						indent();
-						if (nodip && P > 1) {
-							tprint("SFMM_EXPANSION_MEMBERS_WO_DIPOLE(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
-						} else {
-							tprint("SFMM_EXPANSION_MEMBERS(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
-						}
-						tprint("SFMM_PREFIX multipole%s%s%s& operator=(const multipole%s%s%s& other) {\n", period_name(), scaled_name(), dip_name(), period_name(),
-								scaled_name(), dip_name());
-						indent();
-						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-						indent();
-						tprint("o[n] = other.o[n];\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 2) {
-							tprint("t = other.t;\n");
-						}
-						if (scaled) {
-							tprint("r = other.r;\n");
-						}
-						tprint("return *this;\n");
-						deindent();
-						tprint("}\n");
-
-						tprint("SFMM_PREFIX multipole%s%s%s& operator+=(multipole%s%s%s other) {\n", period_name(), scaled_name(), dip_name(), period_name(),
-								scaled_name(), dip_name());
-						indent();
-						if (scaled) {
-							tprint("if( r != other.r ) {\n");
-							indent();
-							tprint("other.rescale(r);\n");
-							deindent();
-							tprint("}\n");
-						}
-						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-						indent();
-						tprint("o[n] += other.o[n];\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 2) {
-							tprint("t += other.t;\n");
-						}
-						if (scaled) {
-							tprint("r = other.r;\n");
-						}
-						tprint("return *this;\n");
-						deindent();
-						tprint("}\n");
-
-						tprint("SFMM_PREFIX multipole%s%s%s(T r0 = T(1)) {\n", period_name(), scaled_name(), dip_name());
-						indent();
-						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-						indent();
-						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 2) {
-							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-						}
-						fprintf(fp, "#endif\n");
-						if (scaled) {
-							tprint("r = r0;\n");
-						}
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
-						indent();
-						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-						indent();
-						tprint("o[n] = T(0);\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 2) {
-							tprint("t = T(0);\n");
-						}
-						if (scaled) {
-							tprint("r = r0;\n");
-						}
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX void rescale(T r0) {\n");
-						indent();
-						if (scaled) {
-							tprint("const T a = r / r0;\n");
-							tprint("T b = a;\n");
-							tprint("r = r0;\n");
-							for (int n = 1; n < P; n++) {
-								if (!(nodip && n == 1)) {
-									for (int m = -n; m <= n; m++) {
-										tprint("o[%i] *= b;\n", mindex(n, m));
-									}
-									if (periodic && P > 2 && n == 2) {
-										tprint("t *= b;\n");
-									}
-								}
-								if (n != P - 1) {
-									tprint("b *= a;\n");
-								}
-							}
-						}
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX T scale() const {\n");
-						indent();
-						if (scaled) {
-							tprint("return r;\n");
-						} else {
-							tprint("return T(1);\n");
-						}
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 2 && P > 1) {
-							tprint("SFMM_PREFIX T& trace2() {\n");
-							indent();
-							tprint("return t;\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX T trace2() const {\n");
-							indent();
-							tprint("return t;\n");
-							deindent();
-							tprint("}\n");
-						}
-						if (periodic) {
-							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>, int);\n", scaled_name(), P,
-									scaled_name(), dip_name(), P);
-							tprint("friend void M2L_ewald%s(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>);\n", pot_name(),
-									scaled_name(), P, scaled_name(), dip_name(), P);
-						}
-						tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", period_name(), scaled_name(), P,
-								period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2L%s(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>);\n", pot_name(), period_name(), scaled_name(), P,
-								period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2P(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", period_name(), scaled_name(), dip_name(), P);
-						tprint("friend void M2P%s(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>);\n", pot_name(), period_name(), scaled_name(), dip_name(),
-								P);
-						deindent();
-						tprint("};\n");
-						tprint("\n");
-					}
-					if (!scaled && !nodip) {
-						tprint("\n");
-						tprint("namespace detail {\n");
-						tprint("template<>\n");
-						tprint("class expansion_xz%s%s<%s,%i> {\n", period_name(), scaled_name(), type.c_str(), P);
-						indent();
-						tprint("typedef %s T;\n", type.c_str());
-						tprint("T o[%i];\n", half_exp_sz(P));
-						if (periodic && P > 1) {
-							tprint("T t;\n");
-						}
-						deindent();
-						tprint("public:\n");
-						indent();
-						tprint("SFMM_PREFIX expansion_xz%s%s() {\n", period_name(), scaled_name());
-						indent();
-						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-						tprint("for( int n = 0; n < %i; n++ ) {\n", half_exp_sz(P));
-						indent();
-						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-						}
-						fprintf(fp, "#endif\n");
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX T* data() {\n");
-						indent();
-						tprint("return o;\n");
-						deindent();
-						tprint("}\n");
-						tprint("SFMM_PREFIX const T* data() const {\n");
-						indent();
-						tprint("return o;\n");
-						deindent();
-						tprint("}\n");
-						if (periodic && P > 1) {
-							tprint("SFMM_PREFIX T& trace2() {\n");
-							indent();
-							tprint("return t;\n");
-							deindent();
-							tprint("}\n");
-							tprint("SFMM_PREFIX T trace2() const {\n");
-							indent();
-							tprint("return t;\n");
-							deindent();
-							tprint("}\n");
-						}
-						deindent();
-						tprint("};\n");
-						tprint("}\n");
-					}
-				}
-			}
-		}
-	}
 	nopot = 0;
 	typecast_functions();
 
@@ -5995,8 +5686,8 @@ int main() {
 		type = rtypenames[ti];
 		sitype = sitypenames[ti];
 		uitype = uitypenames[ti];
-		tprint("\n#ifndef SFMM_FUNCS%i42\n", funcnum);
-		tprint("#define SFMM_FUNCS%i42\n", funcnum);
+		tprint("\n#ifndef SFMM_FUNCS_%i_42\n", funcnum);
+		tprint("#define SFMM_FUNCS_%i_42\n", funcnum);
 #if defined(FLOAT)
 		math_float(false);
 #endif
@@ -6333,17 +6024,15 @@ int main() {
 	fflush(stdout);
 	periodic = 1;
 	set_file(full_header.c_str());
+	tprint("\n#endif\n");
+	tprint("\n");
+	set_file(full_header.c_str());
 	tprint("namespace detail {\n");
+	tprint("\n");
 	tprint("%s", detail_header.c_str());
 	tprint("#ifndef __CUDACC__\n");
 	tprint("%s", detail_header_vec.c_str());
-	tprint("#endif\n");
-	tprint("\n");
-	tprint("#else\n", funcnum);
-	tprint("namespace detail {\n");
-	tprint("#endif\n\n", funcnum);
-	tprint("#ifndef SFMM_GREEN_EWALD_REAL42\n");
-	tprint("#define SFMM_GREEN_EWALD_REAL42\n");
+	tprint("#endif\n\n");
 	for (scaled = 0; scaled <= enable_scaled; scaled++) {
 		tprint("\n");
 		tprint("template<class T, int P, int ALPHA100>\n");
@@ -6382,8 +6071,389 @@ int main() {
 		tprint("}\n");
 	}
 	tprint("\n");
-	tprint("#endif\n");
 	tprint("}\n");
+
+	set_file(full_header.c_str());
+
+	nopot = 1;
+	for (scaled = 0; scaled <= enable_scaled; scaled++) {
+		for (periodic = 0; periodic <= 1; periodic++) {
+			for (nodip = 0; nodip <= 1; nodip++) {
+
+				for (int P = pmin - 1; P <= pmax; P++) {
+					if (!nodip) {
+						tprint("\n");
+						tprint("template<>\n");
+						tprint("class expansion%s%s<%s,%i> {\n", period_name(), scaled_name(), type.c_str(), P);
+						indent();
+						tprint("typedef %s T;\n", type.c_str());
+						tprint("T o[%i];\n", exp_sz(P));
+						if (periodic && P > 1) {
+							tprint("T t;\n");
+						}
+						if (scaled) {
+							tprint("T r;\n");
+						}
+
+						deindent();
+						tprint("public:\n");
+						indent();
+						tprint("SFMM_EXPANSION_MEMBERS(expansion%s%s, %s, %i);\n", period_name(), scaled_name(), type.c_str(), P);
+						tprint("SFMM_PREFIX expansion%s%s& operator=(const expansion%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
+						indent();
+						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+						indent();
+						tprint("o[n] = other.o[n];\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = other.t;\n");
+						}
+						if (scaled) {
+							tprint("r = other.r;\n");
+						}
+						tprint("return *this;\n");
+						deindent();
+						tprint("}\n");
+
+						tprint("SFMM_PREFIX expansion%s%s& operator+=(expansion%s%s other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
+						indent();
+						if (scaled) {
+							tprint("if( r != other.r ) {\n");
+							indent();
+							tprint("other.rescale(r);\n");
+							deindent();
+							tprint("}\n");
+						}
+						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+						indent();
+						tprint("o[n] += other.o[n];\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t += other.t;\n");
+						}
+						if (scaled) {
+							tprint("r = other.r;\n");
+						}
+						tprint("return *this;\n");
+						deindent();
+						tprint("}\n");
+
+						tprint("SFMM_PREFIX expansion%s%s(T r0 = T(1)) {\n", period_name(), scaled_name());
+						indent();
+						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
+						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+						indent();
+						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+						}
+						fprintf(fp, "#endif\n");
+						if (scaled) {
+							tprint("r = r0;\n");
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
+						indent();
+						tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+						indent();
+						tprint("o[n] = T(0);\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = T(0);\n");
+						}
+						if (scaled) {
+							tprint("r = r0;\n");
+						}
+						deindent();
+						tprint("}\n");
+
+						tprint("SFMM_PREFIX void rescale(T r0) {\n");
+						indent();
+						if (scaled) {
+							tprint("const T a = r0 / r;\n");
+							tprint("T b = a;\n");
+							tprint("r = r0;\n");
+							for (int n = 0; n <= P; n++) {
+								for (int m = -n; m <= n; m++) {
+									tprint("o[%i] *= b;\n", lindex(n, m));
+								}
+								if (periodic && P > 1 && n == 2) {
+									tprint("t *= b;\n", exp_sz(P));
+								}
+								if (n != P) {
+									tprint("b *= a;\n");
+								}
+							}
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T scale() const {\n");
+						indent();
+						if (scaled) {
+							tprint("return r;\n");
+						} else {
+							tprint("return T(1);\n");
+						}
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("SFMM_PREFIX T& trace2() {\n");
+							indent();
+							tprint("return t;\n");
+							deindent();
+							tprint("}\n");
+							tprint("SFMM_PREFIX T trace2() const {\n");
+							indent();
+							tprint("return t;\n");
+							deindent();
+							tprint("}\n");
+						}
+
+						if (scaled && periodic && P >= pmin) {
+							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>, int);\n", P, P);
+							tprint("friend void detail::M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled<T, %i>&, vec3<T>);\n",
+									pot_name(), P, P);
+							tprint("friend void M2L_ewald(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, vec3<T>, int);\n", P,
+									P);
+							tprint("friend void detail::M2L_ewald%s(expansion_periodic_scaled<T, %i>&, const multipole_periodic_scaled_wo_dipole<T, %i>&, vec3<T>);\n",
+									pot_name(), P, P);
+						}
+						if (scaled && P >= pmin) {
+							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, vec3<T>, int);\n", period_name(), P, period_name(),
+									P);
+							tprint("friend void detail::M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled<T, %i>&, vec3<T>);\n", pot_name(), period_name(), P,
+									period_name(), P);
+							tprint("friend void M2L(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, vec3<T>, int);\n", period_name(), P,
+									period_name(), P);
+							tprint("friend void detail::M2L%s(expansion%s_scaled<T, %i>&, const multipole%s_scaled_wo_dipole<T, %i>&, vec3<T>);\n", pot_name(),
+									period_name(), P, period_name(), P);
+						}
+						deindent();
+						tprint("};\n");
+					}
+					tprint("\n");
+
+					if (P > pmin - 1) {
+						tprint("\n");
+						tprint("template<>\n");
+						tprint("class multipole%s%s%s<%s,%i> {\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
+						indent();
+						tprint("typedef %s T;\n", type.c_str());
+						tprint("T o[%i];\n", mul_sz(P));
+						if (periodic && P > 2) {
+							tprint("T t;\n");
+						}
+						if (scaled) {
+							tprint("T r;\n");
+						}
+						deindent();
+						tprint("public:\n");
+						indent();
+						if (nodip && P > 1) {
+							tprint("SFMM_EXPANSION_MEMBERS_WO_DIPOLE(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
+						} else {
+							tprint("SFMM_EXPANSION_MEMBERS(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
+						}
+						tprint("SFMM_PREFIX multipole%s%s%s& operator=(const multipole%s%s%s& other) {\n", period_name(), scaled_name(), dip_name(), period_name(),
+								scaled_name(), dip_name());
+						indent();
+						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+						indent();
+						tprint("o[n] = other.o[n];\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2) {
+							tprint("t = other.t;\n");
+						}
+						if (scaled) {
+							tprint("r = other.r;\n");
+						}
+						tprint("return *this;\n");
+						deindent();
+						tprint("}\n");
+
+						tprint("SFMM_PREFIX multipole%s%s%s& operator+=(multipole%s%s%s other) {\n", period_name(), scaled_name(), dip_name(), period_name(),
+								scaled_name(), dip_name());
+						indent();
+						if (scaled) {
+							tprint("if( r != other.r ) {\n");
+							indent();
+							tprint("other.rescale(r);\n");
+							deindent();
+							tprint("}\n");
+						}
+						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+						indent();
+						tprint("o[n] += other.o[n];\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2) {
+							tprint("t += other.t;\n");
+						}
+						if (scaled) {
+							tprint("r = other.r;\n");
+						}
+						tprint("return *this;\n");
+						deindent();
+						tprint("}\n");
+
+						tprint("SFMM_PREFIX multipole%s%s%s(T r0 = T(1)) {\n", period_name(), scaled_name(), dip_name());
+						indent();
+						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
+						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+						indent();
+						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2) {
+							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+						}
+						fprintf(fp, "#endif\n");
+						if (scaled) {
+							tprint("r = r0;\n");
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX void init(T r0 = T(1)) {\n");
+						indent();
+						tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+						indent();
+						tprint("o[n] = T(0);\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2) {
+							tprint("t = T(0);\n");
+						}
+						if (scaled) {
+							tprint("r = r0;\n");
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX void rescale(T r0) {\n");
+						indent();
+						if (scaled) {
+							tprint("const T a = r / r0;\n");
+							tprint("T b = a;\n");
+							tprint("r = r0;\n");
+							for (int n = 1; n < P; n++) {
+								if (!(nodip && n == 1)) {
+									for (int m = -n; m <= n; m++) {
+										tprint("o[%i] *= b;\n", mindex(n, m));
+									}
+									if (periodic && P > 2 && n == 2) {
+										tprint("t *= b;\n");
+									}
+								}
+								if (n != P - 1) {
+									tprint("b *= a;\n");
+								}
+							}
+						}
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T scale() const {\n");
+						indent();
+						if (scaled) {
+							tprint("return r;\n");
+						} else {
+							tprint("return T(1);\n");
+						}
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 2 && P > 1) {
+							tprint("SFMM_PREFIX T& trace2() {\n");
+							indent();
+							tprint("return t;\n");
+							deindent();
+							tprint("}\n");
+							tprint("SFMM_PREFIX T trace2() const {\n");
+							indent();
+							tprint("return t;\n");
+							deindent();
+							tprint("}\n");
+						}
+						if (periodic) {
+							tprint("friend void M2L_ewald(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>, int);\n", scaled_name(), P,
+									scaled_name(), dip_name(), P);
+							tprint("friend void detail::M2L_ewald%s(expansion_periodic%s<T, %i>&, const multipole_periodic%s%s<T, %i>&, vec3<T>);\n", pot_name(),
+									scaled_name(), P, scaled_name(), dip_name(), P);
+						}
+						tprint("friend void M2L(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", period_name(), scaled_name(), P,
+								period_name(), scaled_name(), dip_name(), P);
+						tprint("friend void detail::M2L%s(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>);\n", pot_name(), period_name(),
+								scaled_name(), P, period_name(), scaled_name(), dip_name(), P);
+						tprint("friend void M2P(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", period_name(), scaled_name(), dip_name(), P);
+						tprint("friend void detail::M2P%s(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>);\n", pot_name(), period_name(), scaled_name(),
+								dip_name(), P);
+						deindent();
+						tprint("};\n");
+						tprint("\n");
+					}
+					if (!scaled && !nodip) {
+						tprint("\n");
+						tprint("namespace detail {\n");
+						tprint("template<>\n");
+						tprint("class expansion_xz%s%s<%s,%i> {\n", period_name(), scaled_name(), type.c_str(), P);
+						indent();
+						tprint("typedef %s T;\n", type.c_str());
+						tprint("T o[%i];\n", half_exp_sz(P));
+						if (periodic && P > 1) {
+							tprint("T t;\n");
+						}
+						deindent();
+						tprint("public:\n");
+						indent();
+						tprint("SFMM_PREFIX expansion_xz%s%s() {\n", period_name(), scaled_name());
+						indent();
+						fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
+						tprint("for( int n = 0; n < %i; n++ ) {\n", half_exp_sz(P));
+						indent();
+						tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+						}
+						fprintf(fp, "#endif\n");
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX T* data() {\n");
+						indent();
+						tprint("return o;\n");
+						deindent();
+						tprint("}\n");
+						tprint("SFMM_PREFIX const T* data() const {\n");
+						indent();
+						tprint("return o;\n");
+						deindent();
+						tprint("}\n");
+						if (periodic && P > 1) {
+							tprint("SFMM_PREFIX T& trace2() {\n");
+							indent();
+							tprint("return t;\n");
+							deindent();
+							tprint("}\n");
+							tprint("SFMM_PREFIX T trace2() const {\n");
+							indent();
+							tprint("return t;\n");
+							deindent();
+							tprint("}\n");
+						}
+						deindent();
+						tprint("};\n");
+						tprint("}\n");
+					}
+				}
+			}
+		}
+	}
+	nopot = 0;
 	fprintf(fp, "%s\n", complex_defs.c_str());
 	tprint("}\n");
 	return 0;
