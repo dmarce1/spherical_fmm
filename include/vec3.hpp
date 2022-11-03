@@ -102,9 +102,14 @@ struct has_trace2 {
 template<class T>
 struct force_type {
 	T potential;
-	vec3<T> force;SFMM_PREFIX
-	inline void init() {
+	vec3<T> force;
+	SFMM_PREFIX inline void init() {
 		potential = force[0] = force[1] = force[2] = T(0);
+	}
+	force_type& operator+=(const force_type<T>& other) {
+		potential += other.potential;
+		force += other.force;
+		return *this;
 	}
 };
 

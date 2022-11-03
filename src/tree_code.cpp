@@ -28,15 +28,18 @@ void P2P(sfmm::force_type<T>& f, T m, sfmm::vec3<T> dx) {
 	static const T h2 = hsoft * hsoft;
 	static const T hinv = T(1) / hsoft;
 	static const T hinv3 = sfmm::sqr(hinv) * hinv;
-	if (r2 > h2) {
-		const T rinv = sfmm::rsqrt(r2);
-		T rinv3 = sfmm::sqr(rinv) * rinv;
-		f.potential += m * rinv;
-		f.force -= dx * m * rinv3;
-	} else if (r2 > 0.0) {
-		f.potential += m * (T(1.5) * hinv - T(0.5) * r2 * hinv3);
-		f.force -= dx * m * hinv3;
-	}
+	const T wn(m * (r2 < h2));
+	const T wf(m * (r2 >= h2));
+	sfmm::vec3<T> fn, ff;
+	T pn, pf;
+	const T rinv = sfmm::rsqrt(r2 + 1e-38);
+	T rinv3 = sfmm::sqr(rinv) * rinv;
+	pf = rinv;
+	ff = dx * rinv3;
+	pn = (T(1.5) * hinv - T(0.5) * r2 * hinv3);
+	fn = dx * hinv3;
+	f.potential += pn * wn + pf * wf;
+	f.force -= fn * wn + ff * wf;
 }
 
 template<class T, class V, class MV, int ORDER>
@@ -217,11 +220,16 @@ public:
 			apply_mask(L, end);
 			expansion += reduce_sum(L);
 		}
-		for (auto src : Plist) {
-			sfmm::vec3<T> dx;
-			for (const auto& part : src->parts) {
-				dx = part.x - center;
-				sfmm::P2L(expansion, T(1), dx);
+		for (int i = 0; i < Plist.size(); i++) {
+			for (int j = 0; j < Plist[i]->parts.size(); j += V::size()) {
+				L.init();
+				const int end = std::min(V::size(), Plist[i]->parts.size() - j);
+				for (int k = 0; k < end; k++) {
+					load(dx, Plist[i]->parts[j + k].x - center, k);
+				}
+				apply_padding(dx, end);
+				sfmm::P2L(L, V::mask(end), dx);
+				expansion += reduce_sum(L);
 			}
 		}
 		if (children.size()) {
@@ -272,6 +280,21 @@ public:
 					for (const auto& src_part : src->parts) {
 						sfmm::vec3<T> dx = src_part.x - snk_part.x;
 						P2P<T>(snk_part.f, T(1), dx);
+					}
+				}
+			}
+			for (int i = 0; i < Plist.size(); i++) {
+				for (int j = 0; j < Plist[i]->parts.size(); j += V::size()) {
+					const int end = std::min(V::size(), Plist[i]->parts.size() - j);
+					for (auto& snk_part : parts) {
+						for (int k = 0; k < end; k++) {
+							const auto& src_part = Plist[i]->parts[j + k];
+							load(dx, src_part.x - snk_part.x, k);
+						}
+						apply_padding(dx, end);
+						F.init();
+						P2P(F, V::mask(end), dx);
+						snk_part.f += reduce_sum(F);
 					}
 				}
 			}

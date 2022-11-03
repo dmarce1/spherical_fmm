@@ -64,7 +64,7 @@ multipole_periodic<typename type_traits<T>::type, P> reduce_sum(const multipole_
 template<class T, int P, typename std::enable_if<type_traits<T>::is_simd, T>* = nullptr>
 multipole_scaled<typename type_traits<T>::type, P> reduce_sum(const multipole_scaled<T, P>& A) {
 	constexpr int end = multipole_scaled<T, P>::size();
-	multipole_scaled<typename type_traits<T>::type, P>  B;
+	multipole_scaled<typename type_traits<T>::type, P> B;
 	for (int i = 0; i < end; i++) {
 		B[i] = reduce_sum(A[i]);
 	}
@@ -125,109 +125,109 @@ multipole_periodic_scaled_wo_dipole<typename type_traits<T>::type, P> reduce_sum
 }
 
 template<class T, int P>
-struct is_compound_type<expansion<T,P>> {
+struct is_compound_type<expansion<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<expansion_periodic<T,P>> {
+struct is_compound_type<expansion_periodic<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<expansion_scaled<T,P>> {
+struct is_compound_type<expansion_scaled<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<expansion_periodic_scaled<T,P>> {
+struct is_compound_type<expansion_periodic_scaled<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole<T,P>> {
+struct is_compound_type<multipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_periodic<T,P>> {
+struct is_compound_type<multipole_periodic<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_scaled<T,P>> {
+struct is_compound_type<multipole_scaled<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_periodic_scaled<T,P>> {
+struct is_compound_type<multipole_periodic_scaled<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_wo_dipole<T,P>> {
+struct is_compound_type<multipole_wo_dipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_periodic_wo_dipole<T,P>> {
+struct is_compound_type<multipole_periodic_wo_dipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_scaled_wo_dipole<T,P>> {
+struct is_compound_type<multipole_scaled_wo_dipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct is_compound_type<multipole_periodic_scaled_wo_dipole<T,P>> {
+struct is_compound_type<multipole_periodic_scaled_wo_dipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct has_trace2<expansion_periodic<T,P>> {
+struct has_trace2<expansion_periodic<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct has_trace2<expansion_periodic_scaled<T,P>> {
+struct has_trace2<expansion_periodic_scaled<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct has_trace2<multipole_periodic<T,P>> {
+struct has_trace2<multipole_periodic<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct has_trace2<multipole_periodic_scaled<T,P>> {
+struct has_trace2<multipole_periodic_scaled<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct has_trace2<multipole_periodic_wo_dipole<T,P>> {
+struct has_trace2<multipole_periodic_wo_dipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, int P>
-struct has_trace2<multipole_periodic_scaled_wo_dipole<T,P>> {
+struct has_trace2<multipole_periodic_scaled_wo_dipole<T, P>> {
 	static constexpr bool value = true;
 };
 
 template<class T, class V, typename std::enable_if<!is_compound_type<V>::value>::type* = nullptr>
-void load(V& dest, const T& src, int index = - 1) {
+void load(V& dest, const T& src, int index = -1) {
 	dest = src;
 }
 
 template<class T, class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>
 void load(V& dest, const T& src, int index = -1) {
-	dest.load(src,index);
+	dest.load(src, index);
 }
 
 template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
 void accumulate(force_type<typename type_traits<T>::type>& dest, const force_type<T>& src, int index) {
 	dest.potential += src.potential[index];
-	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+	for (int dim = 0; dim < SFMM_NDIM; dim++) {
 		dest.force[dim] += src.force[dim][index];
 	}
 }
@@ -235,7 +235,7 @@ void accumulate(force_type<typename type_traits<T>::type>& dest, const force_typ
 template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
 void accumulate(force_type<T>& dest, const force_type<T>& src, int index) {
 	dest.potential += src.potential;
-	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+	for (int dim = 0; dim < SFMM_NDIM; dim++) {
 		dest.force[dim] += src.force[dim];
 	}
 }
@@ -243,7 +243,7 @@ void accumulate(force_type<T>& dest, const force_type<T>& src, int index) {
 template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
 void store(force_type<typename type_traits<T>::type>& dest, const force_type<T>& src, int index) {
 	dest.potential += src.potential[index];
-	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+	for (int dim = 0; dim < SFMM_NDIM; dim++) {
 		dest.force[dim] += src.force[dim][index];
 	}
 }
@@ -251,7 +251,7 @@ void store(force_type<typename type_traits<T>::type>& dest, const force_type<T>&
 template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
 void store(force_type<T>& dest, const force_type<T>& src, int index) {
 	dest.potential = src.potential;
-	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+	for (int dim = 0; dim < SFMM_NDIM; dim++) {
 		dest.force[dim] = src.force[dim];
 	}
 }
@@ -262,14 +262,14 @@ void apply_padding(V& A, int n) {
 
 template<class V, typename std::enable_if<is_compound_type<V>::value && !has_trace2<V>::value>::type* = nullptr>
 void apply_padding(V& A, int n) {
-	for( int i = 0; i < V::size(); i++) {
+	for (int i = 0; i < V::size(); i++) {
 		A[i].pad(n);
 	}
 }
 
 template<class V, typename std::enable_if<is_compound_type<V>::value && has_trace2<V>::value>::type* = nullptr>
 void apply_padding(V& A, int n) {
-	for( int i = 0; i < V::size(); i++) {
+	for (int i = 0; i < V::size(); i++) {
 		A[i].pad(n);
 	}
 	A.trace2().pad(n);
@@ -282,7 +282,7 @@ void apply_mask(V& A, int n) {
 template<class V, typename std::enable_if<is_compound_type<V>::value && !has_trace2<V>::value>::type* = nullptr>
 void apply_mask(V& A, int n) {
 	const auto mask = A[0].mask(n);
-	for( int i = 0; i < V::size(); i++) {
+	for (int i = 0; i < V::size(); i++) {
 		A[i] *= mask;
 	}
 }
@@ -290,9 +290,23 @@ void apply_mask(V& A, int n) {
 template<class V, typename std::enable_if<is_compound_type<V>::value && has_trace2<V>::value>::type* = nullptr>
 void apply_mask(V& A, int n) {
 	const auto mask = A[0].mask(n);
-	for( int i = 0; i < V::size(); i++) {
+	for (int i = 0; i < V::size(); i++) {
 		A[i] *= mask;
 	}
 	A.trace2() *= mask;
 }
 
+template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
+force_type<typename type_traits<T>::type> reduce_sum(const force_type<T>& f) {
+	force_type<typename type_traits<T>::type> result;
+	result.potential = reduce_sum(f.potential);
+	for (int dim = 0; dim < SFMM_NDIM; dim++) {
+		result.force[dim] = reduce_sum(f.force[dim]);
+	}
+	return result;
+}
+
+template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
+force_type<T> reduce_sum(const force_type<T>& f) {
+	return f;
+}
