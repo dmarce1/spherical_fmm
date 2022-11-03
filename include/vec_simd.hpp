@@ -39,22 +39,18 @@
 	     return *this; \
    } \
    inline vtype& pad(int n) { \
-   	int b = size() - n; \
-   	b = b < 0 ? 0 : b; \
 		const int& e = size(); \
-		for(int i = b; i < e; i++) { \
+		for(int i = n; i < e; i++) { \
 			v[i] = v[0]; \
 		} \
 		return *this; \
    } \
    static inline vtype mask(int n) { \
    	vtype mk; \
-   	int b = size() - n; \
-   	b = b < 0 ? 0 : b; \
-   	for( int i = 0; i < b; i++) { \
+   	for( int i = 0; i < n; i++) { \
    		mk[i] = type(1); \
    	} \
-   	for( int i = 0; i < b; i++) { \
+   	for( int i = n; i < size(); i++) { \
    		mk[i] = type(0); \
    	} \
    	return mk; \

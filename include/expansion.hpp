@@ -124,3 +124,144 @@ multipole_periodic_scaled_wo_dipole<typename type_traits<T>::type, P> reduce_sum
 	return B;
 }
 
+template<class T, int P>
+struct is_compound_type<expansion<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<expansion_periodic<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<expansion_scaled<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<expansion_periodic_scaled<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_periodic<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_scaled<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_periodic_scaled<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_wo_dipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_periodic_wo_dipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_scaled_wo_dipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct is_compound_type<multipole_periodic_scaled_wo_dipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct has_trace2<expansion_periodic<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct has_trace2<expansion_periodic_scaled<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct has_trace2<multipole_periodic<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct has_trace2<multipole_periodic_scaled<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct has_trace2<multipole_periodic_wo_dipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, int P>
+struct has_trace2<multipole_periodic_scaled_wo_dipole<T,P>> {
+	static constexpr bool value = true;
+};
+
+template<class T, class V, typename std::enable_if<!is_compound_type<V>::value>::type* = nullptr>
+void load(V& dest, const T& src, int index) {
+	dest = src;
+}
+
+template<class T, class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>
+void load(V& dest, const T& src, int index) {
+	dest.load(src,index);
+}
+
+
+template<class V, typename std::enable_if<!is_compound_type<V>::value>::type* = nullptr>
+void apply_padding(V& A, int n) {
+}
+
+template<class V, typename std::enable_if<is_compound_type<V>::value && !has_trace2<V>::value>::type* = nullptr>
+void apply_padding(V& A, int n) {
+	for( int i = 0; i < V::size(); i++) {
+		A[i].pad(n);
+	}
+}
+
+template<class V, typename std::enable_if<is_compound_type<V>::value && has_trace2<V>::value>::type* = nullptr>
+void apply_padding(V& A, int n) {
+	for( int i = 0; i < V::size(); i++) {
+		A[i].pad(n);
+	}
+	A.trace2().pad(n);
+}
+
+template<class V, typename std::enable_if<!is_compound_type<V>::value>::type* = nullptr>
+void apply_mask(V& A, int n) {
+}
+
+template<class V, typename std::enable_if<is_compound_type<V>::value && !has_trace2<V>::value>::type* = nullptr>
+void apply_mask(V& A, int n) {
+	const auto mask = A[0].mask(n);
+	for( int i = 0; i < V::size(); i++) {
+		A[i] *= mask;
+	}
+}
+
+template<class V, typename std::enable_if<is_compound_type<V>::value && has_trace2<V>::value>::type* = nullptr>
+void apply_mask(V& A, int n) {
+	const auto mask = A[0].mask(n);
+	for( int i = 0; i < V::size(); i++) {
+		A[i] *= mask;
+	}
+	A.trace2() *= mask;
+}
+

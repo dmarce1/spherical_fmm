@@ -39,6 +39,9 @@ struct vec3: public std::array<T, SFMM_NDIM> {
 	SFMM_VEC3_OP2( * )
 	SFMM_VEC3_OP2( / )
 	SFMM_PREFIX
+	static size_t constexpr size() {
+		return SFMM_NDIM;
+	}
 	vec3 inline operator-() const {
 		vec3 result;
 		for (int dim = 0; dim < SFMM_NDIM; dim++) {
@@ -80,4 +83,29 @@ template<class T>
 SFMM_PREFIX inline T abs(vec3<T> vec) {
 	return sqrt(sqr(vec[0])+sqr(vec[1])+sqr(vec[2]));
 }
+
+template<class T>
+struct is_compound_type {
+	static constexpr bool value = false;
+};
+
+template<class T>
+struct is_compound_type<vec3<T>> {
+	static constexpr bool value = true;
+};
+
+template<class T>
+struct has_trace2 {
+	static constexpr bool value = false;
+};
+
+template<class T>
+struct force_type {
+	T potential;
+	vec3<T> force;
+	SFMM_PREFIX inline void init() {
+		potential = force[0] = force[1] = force[2] = T(0);
+	}
+};
+
 

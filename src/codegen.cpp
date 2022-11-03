@@ -4701,19 +4701,6 @@ int main() {
 #endif
 	tprint(str.c_str());
 	include("vec3.hpp");
-	tprint("template<class T>\n");
-	tprint("struct force_type {\n");
-	indent();
-	tprint("T potential;\n");
-	tprint("vec3<T> force;\n");
-	tprint("SFMM_PREFIX inline void init() {\n");
-	indent();
-	tprint("potential = force[0] = force[1] = force[2] = T(0);\n");
-	deindent();
-	tprint("}\n");
-	deindent();
-	tprint("};\n");
-	tprint("\n");
 
 	std::string str1 = "\n#define SFMM_EXPANSION_MEMBERS(classname, type, ppp) \\\n"
 			"\tclass reference { \\\n"
