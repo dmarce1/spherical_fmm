@@ -66,9 +66,9 @@
 
 #define SFMM_SIMD_CMP_OP_DEF(vtype,vstype,sitype,op) \
    inline vstype vtype::operator op (const vtype& other) const { \
-	     vtype w; \
+	     vstype w; \
       w.v = -(v op other.v); \
-      return vstype(w); \
+      return w; \
    }
 
 #define SFMM_SIMD_FWD(vtype)              \

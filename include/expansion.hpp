@@ -310,3 +310,35 @@ template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nul
 force_type<T> reduce_sum(const force_type<T>& f) {
 	return f;
 }
+
+template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
+constexpr size_t simd_size() {
+	return T::size();
+}
+
+template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
+constexpr size_t simd_size() {
+	return 1;
+}
+
+template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
+typename type_traits<T>::type& access(T& A, int index) {
+	return A[index];
+}
+
+template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
+T& access(T& A, int index) {
+	return A;
+}
+
+template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
+typename type_traits<T>::type access(const T& A, int index) {
+	return A[index];
+}
+
+template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
+T& access(const T& A, int index) {
+	return A;
+}
+
+
