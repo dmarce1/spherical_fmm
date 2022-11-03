@@ -1,6 +1,5 @@
 #include <stdio.h>
-#include <sfmmd.hpp>
-#include <sfmmv4df.hpp>
+#include <sfmm.hpp>
 
 #include <array>
 #include <vector>
@@ -40,24 +39,26 @@ void P2P(sfmm::force_type<T>& f, T m, sfmm::vec3<T> dx) {
 	}
 }
 
-
-template<class T, int ORDER>
+template<int ORDER>
 class tree {
 
-	using multipole_type = sfmm::multipole<T,ORDER>;
-	using expansion_type = sfmm::expansion<T,ORDER>;
-	using force_type = sfmm::force_type<T>;
+	template<class V>
+	using multipole_type = sfmm::multipole<V,ORDER>;
+	template<class V>
+	using expansion_type = sfmm::expansion<V,ORDER>;
+	template<class V>
+	using force_type = sfmm::force_type<V>;
 	struct particle {
-		sfmm::vec3<T> x;
-		force_type f;
+		sfmm::vec3<double> x;
+		force_type<double> f;
 	};
 
-	multipole_type multipole;
+	multipole_type<double> multipole;
 	std::vector<tree> children;
 	std::vector<particle> parts;
-	sfmm::vec3<T> begin;
-	sfmm::vec3<T> end;
-	sfmm::vec3<T> center;
+	sfmm::vec3<double> begin;
+	sfmm::vec3<double> end;
+	sfmm::vec3<double> center;
 	tree* parent;
 	double radius;
 
@@ -73,7 +74,7 @@ class tree {
 		for (auto& check : checklist) {
 			bool far = leaf && check.opened;
 			if (!far) {
-				const sfmm::vec3<T> dx = center - check.ptr->center;
+				const sfmm::vec3<double> dx = center - check.ptr->center;
 				const double d = abs(dx);
 				far = radius + check.ptr->radius < theta_max * d;
 			}
@@ -113,7 +114,7 @@ public:
 		children = decltype(children)();
 	}
 
-	void add_particle(sfmm::vec3<T> p, int depth = 0) {
+	void add_particle(sfmm::vec3<double> p, int depth = 0) {
 		const int xdim = depth % NDIM;
 		if (children.size()) {
 			if (p[xdim] < children[LEFT].end[xdim]) {
@@ -148,17 +149,17 @@ public:
 		double scale = end[0] - begin[0];
 		multipole.init(scale);
 		if (parts.size()) {
-			center = T(0);
+			center = double(0);
 			for (const auto& part : parts) {
 				center += part.x;
 			}
 			center /= parts.size();
 			radius = 0.0;
 			for (const auto& part : parts) {
-				multipole_type M;
-				sfmm::vec3<T> dx = part.x - center;
+				multipole_type<double> M;
+				sfmm::vec3<double> dx = part.x - center;
 				radius = std::max(radius, (double) abs(dx));
-				sfmm::P2M(M, T(1), dx);
+				sfmm::P2M(M, double(1), dx);
 				multipole += M;
 			}
 		} else if (children.size()) {
@@ -168,22 +169,26 @@ public:
 			const double total = left.multipole(0, 0).real() + right.multipole(0, 0).real();
 			center /= total;
 			radius = 0.0;
+			sfmm::vec3<sfmm::m2m_simd_f64> dx;
+			multipole_type<sfmm::m2m_simd_f64> M;
+			sfmm::m2m_simd_f64 cr;
 			for (int ci = 0; ci < NCHILD; ci++) {
-				sfmm::vec3<T> dx = children[ci].center - center;
-				radius = std::max(radius, ((double) abs(dx) + children[ci].radius));
-				auto M = children[ci].multipole;
-				sfmm::M2M(M, dx);
-				multipole += M;
+				dx.load(children[ci].center - center, ci);
+				cr[ci] = children[ci].radius;
+				M.load(children[ci].multipole, ci);
 			}
+			radius = sfmm::reduce_max(abs(dx) + cr);
+			sfmm::M2M(M, dx);
+			multipole += sfmm::reduce_sum(M);
 		} else {
 			center = (begin + end) * 0.5;
 		}
 		multipole.rescale(radius);
 	}
 
-	void compute_gravity_field(expansion_type expansion = expansion_type(), std::vector<check_type> checklist = std::vector<check_type>()) {
+	void compute_gravity_field(expansion_type<double> expansion = expansion_type<double>(), std::vector<check_type> checklist = std::vector<check_type>()) {
 		std::vector<tree*> Clist, Plist;
-		sfmm::vec3<T> dx;
+		sfmm::vec3<double> dx;
 		if (parent) {
 			expansion.rescale(radius);
 			dx = parent->center - center;
@@ -203,7 +208,7 @@ public:
 		for (auto src : Plist) {
 			for (const auto& part : src->parts) {
 				dx = part.x - center;
-				sfmm::P2L(expansion, T(1), dx);
+				sfmm::P2L(expansion, double(1), dx);
 			}
 		}
 		if (children.size()) {
@@ -233,7 +238,7 @@ public:
 				for (auto& snk_part : parts) {
 					for (const auto& src_part : src->parts) {
 						dx = src_part.x - snk_part.x;
-						P2P<T>(snk_part.f, T(1), dx);
+						P2P<double>(snk_part.f, double(1), dx);
 					}
 				}
 			}
@@ -248,12 +253,12 @@ public:
 				if (rand1() > sample_odds) {
 					continue;
 				}
-				force_type fa;
+				force_type<double> fa;
 				fa.init();
 				for (const auto& src_node : nodes) {
 					for (const auto& src_part : src_node->parts) {
-						const sfmm::vec3<T> dx = src_part.x - snk_part.x;
-						P2P<T>(fa, T(1), dx);
+						const sfmm::vec3<double> dx = src_part.x - snk_part.x;
+						P2P<double>(fa, double(1), dx);
 					}
 				}
 				double famag = 0.0;
@@ -274,7 +279,7 @@ public:
 	}
 	void initialize() {
 		for (int i = 0; i < TEST_SIZE; i++) {
-			sfmm::vec3<T> x;
+			sfmm::vec3<double> x;
 			for (int dim = 0; dim < NDIM; dim++) {
 				x[dim] = rand1();
 			}
@@ -284,40 +289,38 @@ public:
 
 };
 
-template<class T, int ORDER>
-std::vector<tree<T, ORDER>*> tree<T, ORDER>::nodes;
+template<int ORDER>
+std::vector<tree<ORDER>*> tree<ORDER>::nodes;
 
-template<class T, int ORDER = PMIN>
+template<int ORDER = PMIN>
 struct run_tests {
 	void operator()() const {
-		tree<T, ORDER> root;
+		tree<ORDER> root;
 		root.set_root();
 		root.initialize();
 		root.compute_multipoles();
 		root.compute_gravity_field();
 		printf("%i %e\n", ORDER, root.compare_analytic(0.1));
-		run_tests<T, ORDER + 1> run;
+		run_tests<ORDER + 1> run;
 		run();
 	}
 };
 
-template<class T>
-struct run_tests<T, PMAX + 1> {
+template<>
+struct run_tests<PMAX + 1> {
 	void operator()() const {
 	}
 };
 
 int main(int argc, char **argv) {
-	sfmm::vec3<sfmm::v4df> vec;
-	sfmm::vaccess(vec,3) = 2.4;
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
 	printf("\ndouble\n");
-	run_tests<double> run2;
+	run_tests<> run2;
 	run2();
 	/*printf("float\n");
-	run_tests<float> run1;
-	run1();*/
+	 run_tests<float> run1;
+	 run1();*/
 	return 0;
 }

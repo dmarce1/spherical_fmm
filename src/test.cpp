@@ -7,22 +7,19 @@
 #include <math.h>
 #include <climits>
 #include <functional>
-#ifdef TEST_TYPE_FLOAT
 #include "sfmmf.hpp"
+#ifdef TEST_TYPE_FLOAT
 bool scaled = true;
 #define SCALED
 #endif
 #ifdef TEST_TYPE_DOUBLE
-#include "sfmmd.hpp"
 bool scaled = false;
 #endif
 #ifdef TEST_TYPE_VEC_FLOAT
-#include "sfmmvf.hpp"
 bool scaled = true;
 #define SCALED
 #endif
 #ifdef TEST_TYPE_VEC_DOUBLE
-#include "sfmmvd.hpp"
 bool scaled = false;
 #endif
 

@@ -30,90 +30,84 @@
 	     return *this; \
    }
 
-#define SFMM_SIMD_BROADCAST_OP(vtype,type) \
+#define SFMM_SIMD_MEMBERS(vtype,type) \
    inline vtype(const type& other) { \
 	     v = other - simd_t{}; \
    } \
    inline vtype& operator=(const type& other) { \
 	     v = other - simd_t{}; \
 	     return *this; \
-   }
+   } \
+   inline vtype& pad(int n) { \
+   	int b = size() - n; \
+   	b = b < 0 ? 0 : b; \
+		const int& e = size(); \
+		for(int i = b; i < e; i++) { \
+			v[i] = v[0]; \
+		} \
+		return *this; \
+   } \
+   static inline vtype mask(int n) { \
+   	vtype mk; \
+   	int b = size() - n; \
+   	b = b < 0 ? 0 : b; \
+   	for( int i = 0; i < b; i++) { \
+   		mk[i] = type(1); \
+   	} \
+   	for( int i = 0; i < b; i++) { \
+   		mk[i] = type(0); \
+   	} \
+   	return mk; \
+   } \
+	inline void set_NaN() { \
+		for( int i = 0; i < size(); i++) { \
+			v[i] = std::numeric_limits<type>::signaling_NaN(); \
+		} \
+	}
 
 #define SFMM_SIMD_CMP_OP_PROT(vtype,vstype,stype,op) \
    inline vstype operator op (const vtype&) const
 
 #define SFMM_SIMD_CMP_OP_DEF(vtype,vstype,sitype,op) \
    inline vstype vtype::operator op (const vtype& other) const { \
-	     vstype w; \
-      w.v = (-(v op other.v)); \
-      return w; \
+	     vtype w; \
+      w.v = -(v op other.v); \
+      return vstype(w); \
    }
 
 #define SFMM_SIMD_FWD(vtype)              \
-class vtype;
+class vtype
 
 #define SFMM_SIMD_SIZE(sz) \
-   inline static size_t size() { \
+   inline static constexpr size_t size() { \
       return sz; \
-   } \
-
-#ifdef NDEBUG
-#define SFMM_SIMD_PADDING(type, sz)  \
-   inline void pad(int) { \
    }
-#else
-#define SFMM_SIMD_PADDING(type, sz)  \
-   inline void pad(int n) { \
-      for( int i = sz - n; i < sz; i++ ) { \
-         v[i] = v[0]; \
-      } \
-   }
-#endif
 
-#define SFMM_SIMD_MASK_PROT(vtype, type, sz) \
-	inline static vtype mask(int)
-
-#define SFMM_SIMD_MASK_DEF(vtype, type, sz) \
-	inline vtype vtype::mask(int tailcnt) { \
-		vtype result; \
-		const int mid = sz - tailcnt; \
-		for( int i = 0; i < mid; i++) { \
-			result[i] = type(1); \
-		} \
-		for( int i = mid; i < sz; i++) { \
-			result[i] = type(0); \
-		} \
+#define SFMM_SIMD_FUNCTIONS(vtype, type, size) \
+	inline type reduce_max(const vtype& v) { \
+   	type result = v[0]; \
+   	for(int i = 1; i < size; i++) { \
+   		result = std::max(result, v[i]); \
+   	} \
 		return result; \
+	} \
+	inline type reduce_min(const vtype& v) { \
+   	type result = v[0]; \
+   	for(int i = 1; i < size; i++) { \
+   		result = std::min(result, v[i]); \
+   	} \
+		return result; \
+	} \
+	inline vtype max(const vtype& A, const vtype& B) { \
+		const vtype wa = A >= B; \
+		const vtype wb = vtype(1) - wa; \
+		return wa * A + wb * B; \
+	} \
+	inline vtype min(const vtype& A, const vtype& B) { \
+		const vtype wa = A < B; \
+		const vtype wb = vtype(1) - wa; \
+		return wa * A + wb * B; \
 	}
-
-#define SFMM_SIMD_LOADSTORE_PROT(vtype, type, size) \
-	inline vtype load(const type*, const type*); \
-   inline vtype load_padded(const type*, const type*); \
-   inline void store_zmask(type*, vtype) const
-
-#define SFMM_SIMD_LOADSTORE_DEF(vtype, type, size) \
-	inline vtype vtype::load(const type* ptr, const type* end) { \
-		const int iend = end - ptr > size ? end - ptr : size; \
-		const int tailcnt = size - iend; \
-		for( int i = 0; i < iend; i++) { \
-			v[i] = ptr[i]; \
-		} \
-		return mask(tailcnt); \
-   } \
-   inline vtype vtype::load_padded(const type* ptr, const type* end) { \
-   	const vtype m = load(ptr, end); \
-   	pad(end - ptr > size ? 0 : end - (ptr + size)); \
-   	return m; \
-   } \
-   inline void vtype::store_zmask(type* ptr, vtype zmask) const { \
-	   for( int i = 0; i < size; i++) { \
-	   	if( zmask[i] ) { \
-	   		ptr[i] = v[i]; \
-	   	} else { \
-	   		break; \
-	   	} \
-	   } \
-   }
 
 #define SFMM_SIMD_REAL_TYPE(vtype, type, vstype, stype, vutype, utype, size)              \
    class vtype {                                           \
@@ -135,17 +129,14 @@ class vtype;
       SFMM_SIMD_UNARY_OP(vtype, type, -); \
       SFMM_SIMD_CVT_OP_PROT(vtype, type, vstype, stype); \
       SFMM_SIMD_CVT_OP_PROT(vtype, type, vutype, utype); \
-      SFMM_SIMD_BROADCAST_OP(vtype, type); \
+      SFMM_SIMD_MEMBERS(vtype, type); \
       SFMM_SIMD_CMP_OP_PROT(vtype,  vstype, stype, <); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, >); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, <=); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, >=); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, ==); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, !=); \
-      SFMM_SIMD_PADDING(type, size);\
       SFMM_SIMD_SIZE(size);\
-      SFMM_SIMD_MASK_PROT(vtype, type, size); \
-      SFMM_SIMD_LOADSTORE_PROT(vtype, type, size); \
       friend class vstype; \
       friend class vutype; \
    }
@@ -174,7 +165,7 @@ class vtype;
       SFMM_SIMD_UNARY_OP(vtype, type, +); \
       SFMM_SIMD_UNARY_OP(vtype, type, -); \
       SFMM_SIMD_UNARY_OP(vtype, type, ~); \
-      SFMM_SIMD_BROADCAST_OP(vtype,type); \
+      SFMM_SIMD_MEMBERS(vtype,type); \
       SFMM_SIMD_CVT_OP_PROT(vtype, type, vrtype, rtype); \
       SFMM_SIMD_CVT_OP_PROT(vtype, type, votype, otype); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, <); \
@@ -183,10 +174,7 @@ class vtype;
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, >=); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, ==); \
       SFMM_SIMD_CMP_OP_PROT(vtype, vstype, stype, !=); \
-      SFMM_SIMD_PADDING(type, size);\
       SFMM_SIMD_SIZE(size);\
-      SFMM_SIMD_MASK_PROT(vtype, type, size); \
-      SFMM_SIMD_LOADSTORE_PROT(vtype, type, size); \
       friend class vrtype; \
       friend class votype; \
    }
@@ -227,10 +215,5 @@ class vtype;
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, >=); \
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, ==); \
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, !=); \
-   SFMM_SIMD_MASK_DEF(vrtype, rtype, size); \
-   SFMM_SIMD_MASK_DEF(vstype, stype, size); \
-   SFMM_SIMD_MASK_DEF(vutype, utype, size); \
-   SFMM_SIMD_LOADSTORE_DEF(vrtype, rtype, size); \
-   SFMM_SIMD_LOADSTORE_DEF(vstype, stype, size); \
-   SFMM_SIMD_LOADSTORE_DEF(vutype, utype, size)
+   SFMM_SIMD_FUNCTIONS(vrtype, rtype, size)
 
