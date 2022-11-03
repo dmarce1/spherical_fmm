@@ -215,15 +215,46 @@ struct has_trace2<multipole_periodic_scaled_wo_dipole<T,P>> {
 };
 
 template<class T, class V, typename std::enable_if<!is_compound_type<V>::value>::type* = nullptr>
-void load(V& dest, const T& src, int index) {
+void load(V& dest, const T& src, int index = - 1) {
 	dest = src;
 }
 
 template<class T, class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>
-void load(V& dest, const T& src, int index) {
+void load(V& dest, const T& src, int index = -1) {
 	dest.load(src,index);
 }
 
+template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
+void accumulate(force_type<typename type_traits<T>::type>& dest, const force_type<T>& src, int index) {
+	dest.potential += src.potential[index];
+	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+		dest.force[dim] += src.force[dim][index];
+	}
+}
+
+template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
+void accumulate(force_type<T>& dest, const force_type<T>& src, int index) {
+	dest.potential += src.potential;
+	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+		dest.force[dim] += src.force[dim];
+	}
+}
+
+template<class T, typename std::enable_if<type_traits<T>::is_simd>::type* = nullptr>
+void store(force_type<typename type_traits<T>::type>& dest, const force_type<T>& src, int index) {
+	dest.potential += src.potential[index];
+	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+		dest.force[dim] += src.force[dim][index];
+	}
+}
+
+template<class T, typename std::enable_if<!type_traits<T>::is_simd>::type* = nullptr>
+void store(force_type<T>& dest, const force_type<T>& src, int index) {
+	dest.potential = src.potential;
+	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+		dest.force[dim] = src.force[dim];
+	}
+}
 
 template<class V, typename std::enable_if<!is_compound_type<V>::value>::type* = nullptr>
 void apply_padding(V& A, int n) {

@@ -5282,15 +5282,28 @@ int main() {
 								tprint("public:\n");
 								indent();
 								if (scaled) {
-									tprint("expansion%s%s& load( expansion%s%s<base_type,%i> other, int index ) {\n", period_name(), scaled_name(), period_name(),
+									tprint("expansion%s%s& load( expansion%s%s<base_type,%i> other, int index = -1) {\n", period_name(), scaled_name(), period_name(),
 											scaled_name(), P);
 									indent();
 									tprint("other.rescale(r);\n");
 								} else {
-									tprint("expansion%s%s& load( const expansion%s%s<base_type,%i>& other, int index ) {\n", period_name(), scaled_name(), period_name(),
+									tprint("expansion%s%s& load( const expansion%s%s<base_type,%i>& other, int index = -1) {\n", period_name(), scaled_name(), period_name(),
 											scaled_name(), P);
 									indent();
 								}
+								tprint("if( index == -1 ) {\n");
+								indent();
+								tprint("for( int i = 0; i < %i; i++ ) {\n", exp_sz(P));
+								indent();
+								tprint("o[i] = other[i];\n");
+								deindent();
+								tprint("}\n");
+								if (periodic) {
+									tprint("t = other.trace2();\n");
+								}
+								deindent();
+								tprint("} else {\n");
+								indent();
 								tprint("for( int i = 0; i < %i; i++ ) {\n", exp_sz(P));
 								indent();
 								tprint("o[i][index] = other[i];\n");
@@ -5299,6 +5312,8 @@ int main() {
 								if (periodic) {
 									tprint("t[index] = other.trace2();\n");
 								}
+								deindent();
+								tprint("}");
 								tprint("return *this;\n");
 								deindent();
 								tprint("}\n");
@@ -5490,14 +5505,29 @@ int main() {
 											dip_name(), period_name(), scaled_name(), dip_name(), P);
 									indent();
 								}
+								tprint("if( index == -1 ) {\n");
+								indent();
+								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
+								indent();
+								tprint("o[i] = other[i];\n");
+								deindent();
+								tprint("}\n");
+								if (periodic && P > 2) {
+									tprint("t = other.trace2();\n");
+								}
+								deindent();
+								tprint("} else {\n");
+								indent();
 								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
 								indent();
 								tprint("o[i][index] = other[i];\n");
 								deindent();
-								if (periodic) {
+								tprint("}\n");
+								if (periodic && P > 2) {
 									tprint("t[index] = other.trace2();\n");
 								}
-								tprint("}\n");
+								deindent();
+								tprint("}");
 								tprint("return *this;\n");
 								deindent();
 								tprint("}\n");

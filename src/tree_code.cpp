@@ -188,11 +188,13 @@ public:
 
 	void compute_gravity_field(expansion_type<T> expansion = expansion_type<T>(), std::vector<check_type> checklist = std::vector<check_type>()) {
 		std::vector<tree*> Clist, Plist;
-		sfmm::vec3<T> dx;
+		expansion_type<V> L;
+		multipole_type<V> M;
+		force_type<V> F;
+		sfmm::vec3<V> dx;
 		if (parent) {
 			expansion.rescale(radius);
-			dx = parent->center - center;
-			sfmm::L2L(expansion, dx);
+			sfmm::L2L(expansion, parent->center - center);
 		} else {
 			check_type ck;
 			ck.ptr = this;
@@ -201,11 +203,8 @@ public:
 			expansion.init(radius);
 		}
 		list_iterate(checklist, Plist, Clist, false);
-		expansion_type<V> L;
 		for (int i = 0; i < Clist.size(); i += V::size()) {
 			L.init();
-			sfmm::vec3<V> dx;
-			multipole_type<V> M;
 			const int end = std::min(V::size(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
@@ -219,6 +218,7 @@ public:
 			expansion += reduce_sum(L);
 		}
 		for (auto src : Plist) {
+			sfmm::vec3<T> dx;
 			for (const auto& part : src->parts) {
 				dx = part.x - center;
 				sfmm::P2L(expansion, T(1), dx);
@@ -236,21 +236,41 @@ public:
 			while (checklist.size()) {
 				list_iterate(checklist, Plist, Clist, true);
 			}
-			for (auto& part : parts) {
-				part.f.init();
-				dx = center - part.x;
-				sfmm::L2P(part.f, expansion, dx);
+			load(L, expansion);
+			for (int i = 0; i < parts.size(); i += V::size()) {
+				sfmm::vec3<V> part_x;
+				force_type<V> F;
+				F.init();
+				const int end = std::min(V::size(), parts.size() - i);
+				for (int j = 0; j < end; j++) {
+					load(dx, center - parts[i + j].x, j);
+				}
+				sfmm::L2P(F, L, dx);
+				for (int j = 0; j < end; j++) {
+					store(parts[i + j].f, F, j);
+				}
 			}
-			for (auto src : Clist) {
+			for (int i = 0; i < Clist.size(); i += V::size()) {
 				for (auto& part : parts) {
-					dx = src->center - part.x;
-					sfmm::M2P(part.f, src->multipole, dx);
+					F.init();
+					const int end = std::min(V::size(), Clist.size() - i);
+					for (int j = 0; j < end; j++) {
+						const auto& src = Clist[i + j];
+						load(dx, src->center - part.x, j);
+						load(M, src->multipole, j);
+					}
+					apply_padding(dx, end);
+					apply_padding(M, end);
+					sfmm::M2P(F, M, dx);
+					for (int j = 0; j < end; j++) {
+						accumulate(part.f, F, j);
+					}
 				}
 			}
 			for (auto src : Plist) {
 				for (auto& snk_part : parts) {
 					for (const auto& src_part : src->parts) {
-						dx = src_part.x - snk_part.x;
+						sfmm::vec3<T> dx = src_part.x - snk_part.x;
 						P2P<T>(snk_part.f, T(1), dx);
 					}
 				}
