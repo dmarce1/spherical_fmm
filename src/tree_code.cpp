@@ -25,14 +25,15 @@ double rand1() {
 template<class T>
 void P2P(sfmm::force_type<T>& f, T m, sfmm::vec3<T> dx) {
 	const T r2 = sfmm::sqr(dx[0]) + sfmm::sqr(dx[1]) + sfmm::sqr(dx[2]);
-	static const T h2 = hsoft * hsoft;
-	static const T hinv = T(1) / hsoft;
-	static const T hinv3 = sfmm::sqr(hinv) * hinv;
+	const T h2(hsoft * hsoft);
+	const T hinv(T(1) / hsoft);
+	const T hinv3(sfmm::sqr(hinv) * hinv);
 	const T wn(m * (r2 < h2));
 	const T wf(m * (r2 >= h2));
 	sfmm::vec3<T> fn, ff;
+	T rzero(r2 < T(1e-30));
 	T pn, pf;
-	const T rinv = sfmm::rsqrt(r2 + 1e-38);
+	const T rinv = sfmm::rsqrt(r2 + rzero);
 	T rinv3 = sfmm::sqr(rinv) * rinv;
 	pf = rinv;
 	ff = dx * rinv3;
@@ -74,30 +75,38 @@ class tree {
 
 	void list_iterate(std::vector<check_type>& checklist, std::vector<tree*>& Plist, std::vector<tree*>& Clist, bool leaf) {
 		std::vector<check_type> nextlist;
-		for (auto& check : checklist) {
-			bool far = leaf && check.opened;
-			if (!far) {
-				const sfmm::vec3<T> dx = center - check.ptr->center;
-				const T d = abs(dx);
-				far = radius + check.ptr->radius < theta_max * d;
+		for (int i = 0; i < checklist.size(); i += sfmm::simd_size<V>()) {
+			sfmm::vec3<V> dx;
+			V rsum;
+			const int end = std::min(sfmm::simd_size<V>(), checklist.size() - i);
+			for (int j = 0; j < end; j++) {
+				const auto& check = checklist[i + j];
+				load(dx, center - check.ptr->center, j);
+				load(rsum, radius + check.ptr->radius, j);
 			}
-			if (far) {
-				if (check.opened) {
-					Plist.push_back(check.ptr);
-				} else {
-					Clist.push_back(check.ptr);
-				}
-			} else {
-				if (check.ptr->children.size()) {
-					for (int ci = 0; ci < NCHILD; ci++) {
-						check_type chk;
-						chk.ptr = &(check.ptr->children[ci]);
-						chk.opened = false;
-						nextlist.push_back(chk);
+			apply_padding(dx, end);
+			apply_padding(rsum, end);
+			V far(rsum < V(theta_max) * abs(dx));
+			for (int j = 0; j < end; j++) {
+				auto& check = checklist[i + j];
+				if (far[j] || (leaf && check.opened)) {
+					if (check.opened) {
+						Plist.push_back(check.ptr);
+					} else {
+						Clist.push_back(check.ptr);
 					}
 				} else {
-					check.opened = true;
-					nextlist.push_back(check);
+					if (check.ptr->children.size()) {
+						for (int ci = 0; ci < NCHILD; ci++) {
+							check_type chk;
+							chk.ptr = &(check.ptr->children[ci]);
+							chk.opened = false;
+							nextlist.push_back(chk);
+						}
+					} else {
+						check.opened = true;
+						nextlist.push_back(check);
+					}
 				}
 			}
 		}
@@ -272,14 +281,6 @@ public:
 					sfmm::M2P(F, M, dx);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
-					}
-				}
-			}
-			for (auto src : Plist) {
-				for (auto& snk_part : parts) {
-					for (const auto& src_part : src->parts) {
-						sfmm::vec3<T> dx = src_part.x - snk_part.x;
-						P2P<T>(snk_part.f, T(1), dx);
 					}
 				}
 			}
