@@ -173,14 +173,18 @@ public:
 			const T total = cleft.multipole(0, 0).real() + cright.multipole(0, 0).real();
 			center /= total;
 			radius = 0.0;
-			for (int ci = 0; ci < NCHILD; ci++) {
-				dx.load(children[ci].center - center, ci);
-				load(cr, children[ci].radius, ci);
-				M.load(children[ci].multipole, ci);
+			for (int i = 0; i < NCHILD; i += sfmm::simd_size<MV>()) {
+				const int end = std::min((int) sfmm::simd_size<MV>(), NCHILD - i);
+				for (int j = 0; j < end; j++) {
+					const int ci = i + j;
+					load(dx, children[ci].center - center, j);
+					load(cr, children[ci].radius, j);
+					M.load(children[ci].multipole, j);
+				}
+				radius = std::max(radius, sfmm::reduce_max(abs(dx) + cr));
+				sfmm::M2M(M, dx);
+				multipole += sfmm::reduce_sum(M);
 			}
-			radius = sfmm::reduce_max(abs(dx) + cr);
-			sfmm::M2M(M, dx);
-			multipole += sfmm::reduce_sum(M);
 		} else {
 			if (nparts) {
 				center = T(0);
@@ -189,13 +193,17 @@ public:
 				}
 				center /= nparts;
 				radius = 0.0;
-				for (int i = part_range.first; i < part_range.second; i++) {
-					const auto& part = parts[i];
-					multipole_type<T> M;
-					sfmm::vec3<T> dx = part.x - center;
-					radius = std::max(radius, (T) abs(dx));
-					sfmm::P2M(M, T(1), dx);
-					multipole += M;
+				for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
+					sfmm::vec3<V> dx;
+					const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
+					for (int j = 0; j < end; j++) {
+						const auto& part = parts[i + j];
+						load(dx, part.x - center, j);
+					}
+					multipole_type<V> M;
+					radius = std::max(radius, reduce_max(abs(dx)));
+					sfmm::P2M(M, V::mask(end), dx);
+					multipole += reduce_sum(M);
 				}
 				radius = std::max(hsoft, radius);
 			} else {
