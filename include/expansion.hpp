@@ -341,4 +341,3 @@ T& access(const T& A, int index) {
 	return A;
 }
 
-

@@ -14,7 +14,7 @@ constexpr double hsoft = 0.01;
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
-#define TEST_SIZE 10000
+#define TEST_SIZE 1000
 
 using rtype = double;
 
@@ -59,13 +59,14 @@ class tree {
 
 	multipole_type<T> multipole;
 	std::vector<tree> children;
-	std::vector<particle> parts;
+	std::pair<int, int> part_range;
 	sfmm::vec3<T> begin;
 	sfmm::vec3<T> end;
 	sfmm::vec3<T> center;
 	tree* parent;
 	T radius;
 
+	static std::vector<particle> parts;
 	static std::vector<tree*> nodes;
 
 	struct check_type {
@@ -126,64 +127,52 @@ public:
 		children = decltype(children)();
 	}
 
-	void add_particle(sfmm::vec3<T> p, int depth = 0) {
-		const int xdim = depth % NDIM;
-		if (children.size()) {
-			if (p[xdim] < children[LEFT].end[xdim]) {
-				children[LEFT].add_particle(p, depth + 1);
-			} else {
-				children[RIGHT].add_particle(p, depth + 1);
-			}
-		} else if (parts.size() >= BUCKET_SIZE) {
-			children.resize(NCHILD);
-			children[LEFT].begin = children[RIGHT].begin = begin;
-			children[LEFT].end = children[RIGHT].end = end;
-			children[LEFT].end[xdim] = children[RIGHT].begin[xdim] = 0.5 * (begin[xdim] + end[xdim]);
-			for (auto& par : parts) {
-				add_particle(par.x, depth);
-			}
-			parts = decltype(parts)();
-			add_particle(p, depth);
-		} else {
-			particle part;
-			part.x = p;
-			parts.push_back(part);
+	void form_tree(tree* par = nullptr, int depth = 0) {
+		const int xdim = depth % SFMM_NDIM;
+		if (par == nullptr) {
+			part_range.first = 0;
+			part_range.second = parts.size();
 		}
-	}
-
-	void compute_multipoles(tree* par = nullptr, int depth = 0) {
 		parent = par;
-		if (children.size()) {
-			for (int ci = 0; ci < NCHILD; ci++) {
-				children[ci].compute_multipoles(this, depth + 1);
-			}
-		}
+		const T xmid = T(0.5) * (begin[xdim] + end[xdim]);
+		const int nparts = part_range.second - part_range.first;
 		T scale = end[0] - begin[0];
 		multipole.init(scale);
-		if (parts.size()) {
-			center = T(0);
-			for (const auto& part : parts) {
-				center += part.x;
-			}
-			center /= parts.size();
-			radius = 0.0;
-			for (const auto& part : parts) {
-				multipole_type<T> M;
-				sfmm::vec3<T> dx = part.x - center;
-				radius = std::max(radius, (T) abs(dx));
-				sfmm::P2M(M, T(1), dx);
-				multipole += M;
-			}
-		} else if (children.size()) {
-			const auto& left = children[LEFT];
-			const auto& right = children[RIGHT];
-			center = left.center * left.multipole(0, 0).real() + right.center * right.multipole(0, 0).real();
-			const T total = left.multipole(0, 0).real() + right.multipole(0, 0).real();
-			center /= total;
-			radius = 0.0;
+		if (nparts > BUCKET_SIZE) {
 			sfmm::vec3<MV> dx;
 			multipole_type<MV> M;
 			MV cr;
+			children.resize(NCHILD);
+			int lo = part_range.first;
+			int hi = part_range.second;
+			while (lo < hi) {
+				if (parts[lo].x[xdim] >= xmid) {
+					while (lo != hi) {
+						hi--;
+						if (parts[hi].x[xdim] < xmid) {
+							std::swap(parts[lo], parts[hi]);
+							break;
+						}
+					}
+				}
+				lo++;
+			}
+			auto& left = children[LEFT];
+			auto& right = children[RIGHT];
+			left.part_range = right.part_range = part_range;
+			left.part_range.second = right.part_range.first = hi;
+			right.begin = left.begin = begin;
+			left.end = right.end = end;
+			left.end[xdim] = right.begin[xdim] = 0.5 * (begin[xdim] + end[xdim]);
+			for (int ci = 0; ci < NCHILD; ci++) {
+				children[ci].form_tree(this, depth + 1);
+			}
+			const auto& cleft = children[LEFT];
+			const auto& cright = children[RIGHT];
+			center = left.center * cleft.multipole(0, 0).real() + right.center * cright.multipole(0, 0).real();
+			const T total = cleft.multipole(0, 0).real() + cright.multipole(0, 0).real();
+			center /= total;
+			radius = 0.0;
 			for (int ci = 0; ci < NCHILD; ci++) {
 				dx.load(children[ci].center - center, ci);
 				load(cr, children[ci].radius, ci);
@@ -193,7 +182,26 @@ public:
 			sfmm::M2M(M, dx);
 			multipole += sfmm::reduce_sum(M);
 		} else {
-			center = (begin + end) * 0.5;
+			if (nparts) {
+				center = T(0);
+				for (int i = part_range.first; i < part_range.second; i++) {
+					center += parts[i].x;
+				}
+				center /= nparts;
+				radius = 0.0;
+				for (int i = part_range.first; i < part_range.second; i++) {
+					const auto& part = parts[i];
+					multipole_type<T> M;
+					sfmm::vec3<T> dx = part.x - center;
+					radius = std::max(radius, (T) abs(dx));
+					sfmm::P2M(M, T(1), dx);
+					multipole += M;
+				}
+				radius = std::max(hsoft, radius);
+			} else {
+				center = (begin + end) * 0.5;
+				radius = hsoft;
+			}
 		}
 		multipole.rescale(radius);
 	}
@@ -204,6 +212,7 @@ public:
 		multipole_type<V> M;
 		force_type<V> F;
 		sfmm::vec3<V> dx;
+
 		if (parent) {
 			expansion.rescale(radius);
 			sfmm::L2L(expansion, parent->center - center);
@@ -215,9 +224,9 @@ public:
 			expansion.init(radius);
 		}
 		list_iterate(checklist, Plist, Clist, false);
-		for (int i = 0; i < Clist.size(); i += V::size()) {
+		for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
 			L.init();
-			const int end = std::min(V::size(), Clist.size() - i);
+			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
 				load(dx, src->center - center, j);
@@ -230,11 +239,11 @@ public:
 			expansion += reduce_sum(L);
 		}
 		for (int i = 0; i < Plist.size(); i++) {
-			for (int j = 0; j < Plist[i]->parts.size(); j += V::size()) {
+			for (int j = Plist[i]->part_range.first; j < Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
+				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
-				const int end = std::min(V::size(), Plist[i]->parts.size() - j);
 				for (int k = 0; k < end; k++) {
-					load(dx, Plist[i]->parts[j + k].x - center, k);
+					load(dx, parts[j + k].x - center, k);
 				}
 				apply_padding(dx, end);
 				sfmm::P2L(L, V::mask(end), dx);
@@ -254,11 +263,11 @@ public:
 				list_iterate(checklist, Plist, Clist, true);
 			}
 			load(L, expansion);
-			for (int i = 0; i < parts.size(); i += V::size()) {
+			for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 				sfmm::vec3<V> part_x;
 				force_type<V> F;
 				F.init();
-				const int end = std::min(V::size(), parts.size() - i);
+				const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 				for (int j = 0; j < end; j++) {
 					load(dx, center - parts[i + j].x, j);
 				}
@@ -267,10 +276,11 @@ public:
 					store(parts[i + j].f, F, j);
 				}
 			}
-			for (int i = 0; i < Clist.size(); i += V::size()) {
-				for (auto& part : parts) {
+			for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
+				for (int k = part_range.first; k < part_range.second; k++) {
+					auto& part = parts[k];
 					F.init();
-					const int end = std::min(V::size(), Clist.size() - i);
+					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
 						load(dx, src->center - part.x, j);
@@ -285,17 +295,18 @@ public:
 				}
 			}
 			for (int i = 0; i < Plist.size(); i++) {
-				for (int j = 0; j < Plist[i]->parts.size(); j += V::size()) {
-					const int end = std::min(V::size(), Plist[i]->parts.size() - j);
-					for (auto& snk_part : parts) {
+				for (int j = Plist[i]->part_range.first; j < Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
+					const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
+					for (int l = part_range.first; l < part_range.second; l++) {
+						auto& part = parts[l];
 						for (int k = 0; k < end; k++) {
-							const auto& src_part = Plist[i]->parts[j + k];
-							load(dx, src_part.x - snk_part.x, k);
+							const auto& src_part = parts[j + k];
+							load(dx, parts[j + k].x - part.x, k);
 						}
 						apply_padding(dx, end);
 						F.init();
 						P2P(F, V::mask(end), dx);
-						snk_part.f += reduce_sum(F);
+						part.f += reduce_sum(F);
 					}
 				}
 			}
@@ -305,46 +316,53 @@ public:
 	T compare_analytic(T sample_odds) {
 		T err = 0.0;
 		T norm = 0.0;
-		for (const auto& snk_node : nodes) {
-			for (const auto& snk_part : snk_node->parts) {
-				if (rand1() > sample_odds) {
+		for (int i = 0; i < parts.size(); i++) {
+			if (rand1() > sample_odds) {
+				continue;
+			}
+			const auto& snk_part = parts[i];
+			force_type<T> fa;
+			fa.init();
+			for (int j = 0; j < parts.size(); j++) {
+				if (i == j) {
 					continue;
 				}
-				force_type<T> fa;
-				fa.init();
-				for (const auto& src_node : nodes) {
-					for (const auto& src_part : src_node->parts) {
-						const sfmm::vec3<T> dx = src_part.x - snk_part.x;
-						P2P<T>(fa, T(1), dx);
-					}
-				}
-				T famag = 0.0;
-				T fnmag = 0.0;
-				for (int dim = 0; dim < NDIM; dim++) {
-					famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
-					fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
-				}
-				//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
-				famag = sqrt(famag);
-				fnmag = sqrt(fnmag);
-				norm += sfmm::sqr(famag);
-				err += sfmm::sqr(famag - fnmag);
+				const auto& src_part = parts[j];
+				const sfmm::vec3<T> dx = src_part.x - snk_part.x;
+				P2P<T>(fa, T(1), dx);
 			}
+			T famag = 0.0;
+			T fnmag = 0.0;
+			for (int dim = 0; dim < NDIM; dim++) {
+				famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
+				fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
+			}
+			//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
+			famag = sqrt(famag);
+			fnmag = sqrt(fnmag);
+			norm += sfmm::sqr(famag);
+			err += sfmm::sqr(famag - fnmag);
 		}
 		err = sqrt(err / norm);
 		return err;
 	}
 	void initialize() {
+		parts.resize(0);
 		for (int i = 0; i < TEST_SIZE; i++) {
 			sfmm::vec3<T> x;
 			for (int dim = 0; dim < NDIM; dim++) {
 				x[dim] = rand1();
 			}
-			add_particle(x);
+			particle p;
+			p.x = x;
+			parts.push_back(p);
 		}
 	}
 
 };
+
+template<class T, class V, class M, int ORDER>
+std::vector<typename tree<T, V, M, ORDER>::particle> tree<T, V, M, ORDER>::parts;
 
 template<class T, class V, class M, int ORDER>
 std::vector<tree<T, V, M, ORDER>*> tree<T, V, M, ORDER>::nodes;
@@ -355,7 +373,7 @@ struct run_tests {
 		tree<T, V, M, ORDER> root;
 		root.set_root();
 		root.initialize();
-		root.compute_multipoles();
+		root.form_tree();
 		root.compute_gravity_field();
 		printf("%i %e\n", ORDER, root.compare_analytic(0.1));
 		run_tests<T, V, M, ORDER + 1> run;

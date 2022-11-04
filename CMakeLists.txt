@@ -46,6 +46,8 @@ if(NOT RESULT EQUAL 0)
 endif()
 
 message(STATUS "Code generation complete")
+add_compile_options(-D_GLIBCXX_DEBUG)
+add_link_options(-D_GLIBCXX_DEBUG)
 	
 FILE(GLOB GENERATED_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/*)
 FILE(GLOB SRC1_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*/*.cpp )
@@ -56,5 +58,5 @@ target_compile_options(sfmm PUBLIC -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SF
 
 add_executable(sfmm_treecode ${CMAKE_CURRENT_SOURCE_DIR}/src/tree_code.cpp )
 target_include_directories(sfmm_treecode PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
-target_link_libraries(sfmm_treecode PUBLIC sfmm)
-target_compile_options(sfmm_treecode PUBLIC -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} )
+target_link_libraries(sfmm_treecode PUBLIC sfmm pthread)
+target_compile_options(sfmm_treecode PUBLIC -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX})
