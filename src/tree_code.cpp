@@ -4,17 +4,19 @@
 #include <array>
 #include <vector>
 #include <fenv.h>
+#include <future>
+#include <atomic>
 
-constexpr double theta_max = 0.6;
-constexpr double hsoft = 0.01;
+#include "timer.hpp"
 
 #define NDIM 3
-#define BUCKET_SIZE 16
+#define BUCKET_SIZE 32
 #define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
-#define TEST_SIZE 1000
+#define MIN_THREAD 256
+#define TEST_SIZE 40000
 
 using rtype = double;
 
@@ -22,34 +24,13 @@ double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
 }
 
-template<class T>
-void P2P(sfmm::force_type<T>& f, T m, sfmm::vec3<T> dx) {
-	const T r2 = sfmm::sqr(dx[0]) + sfmm::sqr(dx[1]) + sfmm::sqr(dx[2]);
-	const T h2(hsoft * hsoft);
-	const T hinv(T(1) / hsoft);
-	const T hinv3(sfmm::sqr(hinv) * hinv);
-	const T wn(m * (r2 < h2));
-	const T wf(m * (r2 >= h2));
-	sfmm::vec3<T> fn, ff;
-	T rzero(r2 < T(1e-30));
-	T pn, pf;
-	const T rinv = sfmm::rsqrt(r2 + rzero);
-	T rinv3 = sfmm::sqr(rinv) * rinv;
-	pf = rinv;
-	ff = dx * rinv3;
-	pn = (T(1.5) * hinv - T(0.5) * r2 * hinv3);
-	fn = dx * hinv3;
-	f.potential += pn * wn + pf * wf;
-	f.force -= fn * wn + ff * wf;
-}
-
 template<class T, class V, class MV, int ORDER>
 class tree {
 
 	template<class W>
-	using multipole_type = sfmm::multipole<W,ORDER>;
+	using multipole_type = sfmm::multipole_scaled<W,ORDER>;
 	template<class W>
-	using expansion_type = sfmm::expansion<W,ORDER>;
+	using expansion_type = sfmm::expansion_scaled<W,ORDER>;
 	template<class W>
 	using force_type = sfmm::force_type<W>;
 	struct particle {
@@ -66,16 +47,41 @@ class tree {
 	tree* parent;
 	T radius;
 
+	static const T theta_max;
+	static const T hsoft;
+
 	static std::vector<particle> parts;
-	static std::vector<tree*> nodes;
+	static std::atomic<int> nthread_avail;
 
 	struct check_type {
 		tree* ptr;
 		bool opened;
 	};
 
+	template<class W>
+	void P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
+		static const W h2(hsoft * hsoft);
+		static const W hinv(W(1) / hsoft);
+		static const W hinv3(sfmm::sqr(hinv) * hinv);
+		const W r2 = sfmm::sqr(dx[0]) + sfmm::sqr(dx[1]) + sfmm::sqr(dx[2]);
+		const W wn(m * (r2 < h2));
+		const W wf(m * (r2 >= h2));
+		sfmm::vec3<W> fn, ff;
+		W rzero(r2 < W(1e-30));
+		W pn, pf;
+		const W rinv = sfmm::rsqrt(r2 + rzero);
+		W rinv3 = sfmm::sqr(rinv) * rinv;
+		pf = rinv;
+		ff = dx * rinv3;
+		pn = (W(1.5) * hinv - W(0.5) * r2 * hinv3);
+		fn = dx * hinv3;
+		f.potential += pn * wn + pf * wf;
+		f.force -= fn * wn + ff * wf;
+	}
+
 	void list_iterate(std::vector<check_type>& checklist, std::vector<tree*>& Plist, std::vector<tree*>& Clist, bool leaf) {
-		std::vector<check_type> nextlist;
+		static thread_local std::vector<check_type> nextlist;
+		nextlist.resize(0);
 		for (int i = 0; i < checklist.size(); i += sfmm::simd_size<V>()) {
 			sfmm::vec3<V> dx;
 			V rsum;
@@ -90,7 +96,7 @@ class tree {
 			V far(rsum < V(theta_max) * abs(dx));
 			for (int j = 0; j < end; j++) {
 				auto& check = checklist[i + j];
-				if (sfmm::access(far,j) || (leaf && check.opened)) {
+				if (sfmm::access(far, j) || (leaf && check.opened)) {
 					if (check.opened) {
 						Plist.push_back(check.ptr);
 					} else {
@@ -117,7 +123,6 @@ class tree {
 public:
 
 	tree() {
-		nodes.push_back(this);
 	}
 
 	void set_root() {
@@ -164,8 +169,18 @@ public:
 			right.begin = left.begin = begin;
 			left.end = right.end = end;
 			left.end[xdim] = right.begin[xdim] = 0.5 * (begin[xdim] + end[xdim]);
-			for (int ci = 0; ci < NCHILD; ci++) {
-				children[ci].form_tree(this, depth + 1);
+			if (nthread_avail-- >= 0 && part_range.second - part_range.first > MIN_THREAD) {
+				auto fut = std::async([this,depth]() {
+					children[LEFT].form_tree(this, depth + 1);
+					nthread_avail++;
+				});
+				children[RIGHT].form_tree(this, depth + 1);
+				fut.get();
+			} else {
+				nthread_avail++;
+				for (int ci = 0; ci < NCHILD; ci++) {
+					children[ci].form_tree(this, depth + 1);
+				}
 			}
 			const auto& cleft = children[LEFT];
 			const auto& cright = children[RIGHT];
@@ -215,7 +230,10 @@ public:
 	}
 
 	void compute_gravity_field(expansion_type<T> expansion = expansion_type<T>(), std::vector<check_type> checklist = std::vector<check_type>()) {
-		std::vector<tree*> Clist, Plist;
+		static thread_local std::vector<tree*> Clist;
+		static thread_local std::vector<tree*> Plist;
+		Clist.resize(0);
+		Plist.resize(0);
 		expansion_type<V> L;
 		multipole_type<V> M;
 		force_type<V> F;
@@ -260,8 +278,17 @@ public:
 		}
 		if (children.size()) {
 			if (checklist.size()) {
-				for (int ci = 0; ci < NCHILD; ci++) {
-					children[ci].compute_gravity_field(expansion, checklist);
+				if (nthread_avail-- >= 0 && part_range.second - part_range.first > MIN_THREAD) {
+					auto fut = std::async([this,&expansion](decltype(checklist) checklist) {
+						children[LEFT].compute_gravity_field(expansion, std::move(checklist));
+						nthread_avail++;
+					}, checklist);
+					children[RIGHT].compute_gravity_field(expansion, std::move(checklist));
+					fut.get();
+				} else {
+					nthread_avail++;
+					children[LEFT].compute_gravity_field(expansion, checklist);
+					children[RIGHT].compute_gravity_field(expansion, std::move(checklist));
 				}
 			}
 		} else {
@@ -322,25 +349,28 @@ public:
 	}
 
 	T compare_analytic(T sample_odds) {
-		T err = 0.0;
-		T norm = 0.0;
+		double err = 0.0;
+		double norm = 0.0;
 		for (int i = 0; i < parts.size(); i++) {
 			if (rand1() > sample_odds) {
 				continue;
 			}
 			const auto& snk_part = parts[i];
-			force_type<T> fa;
+			force_type<double> fa;
 			fa.init();
 			for (int j = 0; j < parts.size(); j++) {
 				if (i == j) {
 					continue;
 				}
 				const auto& src_part = parts[j];
-				const sfmm::vec3<T> dx = src_part.x - snk_part.x;
-				P2P<T>(fa, T(1), dx);
+				sfmm::vec3<double> dx;
+				for (int dim = 0; dim < NDIM; dim++) {
+					dx[dim] = src_part.x[dim] - snk_part.x[dim];
+				}
+				P2P<double>(fa, double(1), dx);
 			}
-			T famag = 0.0;
-			T fnmag = 0.0;
+			double famag = 0.0;
+			double fnmag = 0.0;
 			for (int dim = 0; dim < NDIM; dim++) {
 				famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
 				fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
@@ -373,17 +403,36 @@ template<class T, class V, class M, int ORDER>
 std::vector<typename tree<T, V, M, ORDER>::particle> tree<T, V, M, ORDER>::parts;
 
 template<class T, class V, class M, int ORDER>
-std::vector<tree<T, V, M, ORDER>*> tree<T, V, M, ORDER>::nodes;
+std::atomic<int> tree<T, V, M, ORDER>::nthread_avail(std::thread::hardware_concurrency() * 2 - 1);
+
+template<class T, class V, class M, int ORDER>
+const T tree<T, V, M, ORDER>::theta_max = 0.6;
+
+template<class T, class V, class M, int ORDER>
+const T tree<T, V, M, ORDER>::hsoft = 0.01;
 
 template<class T, class V, class M, int ORDER = PMIN>
 struct run_tests {
 	void operator()() const {
+		timer tm;
+		double tree_time, force_time;
 		tree<T, V, M, ORDER> root;
 		root.set_root();
 		root.initialize();
+		tm.start();
 		root.form_tree();
+		tm.stop();
+		tree_time = tm.read();
+		tm.reset();
+		tm.start();
 		root.compute_gravity_field();
-		printf("%i %e\n", ORDER, root.compare_analytic(0.1));
+		tm.stop();
+		force_time = tm.read();
+		tm.reset();
+		tm.start();
+		const auto error = root.compare_analytic(100.0 / TEST_SIZE);
+		tm.stop();
+		printf("%i %e %e %e %e\n", ORDER, tree_time, force_time, tm.read(), error);
 		run_tests<T, V, M, ORDER + 1> run;
 		run();
 	}
@@ -399,11 +448,14 @@ int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-	printf("\ndouble\n");
-	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64> run2;
-	run_tests<double, double, double> run1;
-	run1();
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
+	//run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64> run1;
+//	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
+//	run_tests<float, float, float> run1;
+	printf("\nfloat\n");
 	run2();
+//	printf("\ndouble\n");
+//	run1();
 	/*printf("float\n");
 	 run_tests<float> run1;
 	 run1();*/

@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.12.4)
 cmake_policy(VERSION 3.12.4)
 project(sfmm CXX C Fortran)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-set(SFMM_USE_DOUBLE "1" CACHE STRING "Enable Double Precision" )
-set(SFMM_USE_FLOAT "0" CACHE STRING "Enable Single Precision")
+set(SFMM_USE_DOUBLE "0" CACHE STRING "Enable Double Precision" )
+set(SFMM_USE_FLOAT "1" CACHE STRING "Enable Single Precision")
 set(SFMM_USE_SIMD "1" CACHE STRING "Enable SIMD")
 set(SFMM_PMIN "7" CACHE STRING "pmin")
 set(SFMM_PMAX "7" CACHE STRING "pmax")
@@ -24,6 +24,9 @@ execute_process(
   	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} 
   	RESULT_VARIABLE RESULT
 )
+
+#add_compile_options(-D_GLIBCXX_DEBUG -fsanitize=address)
+#add_link_options(-D_GLIBCXX_DEBUG -fsanitize=address)
 
 if(NOT RESULT EQUAL 0)
 	message(STATUS "error in compilng code generator")
@@ -46,8 +49,6 @@ if(NOT RESULT EQUAL 0)
 endif()
 
 message(STATUS "Code generation complete")
-add_compile_options(-D_GLIBCXX_DEBUG)
-add_link_options(-D_GLIBCXX_DEBUG)
 	
 FILE(GLOB GENERATED_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/*)
 FILE(GLOB SRC1_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*/*.cpp )
