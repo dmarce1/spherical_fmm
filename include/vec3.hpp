@@ -32,7 +32,13 @@
 
 template<class T>
 struct vec3: public std::array<T, SFMM_NDIM> {
-	SFMM_VEC3_OP1( + )SFMM_VEC3_OP1( - )SFMM_VEC3_OP1( * )SFMM_VEC3_OP1( / )SFMM_VEC3_OP2( * )SFMM_VEC3_OP2( / )SFMM_PREFIX
+	SFMM_VEC3_OP1( + );
+	SFMM_VEC3_OP1( - );
+	SFMM_VEC3_OP1( * );
+	SFMM_VEC3_OP1( / );
+	SFMM_VEC3_OP2( * );
+	SFMM_VEC3_OP2( / );
+	SFMM_PREFIX
 	static size_t constexpr size() {
 		return SFMM_NDIM;
 	}
@@ -43,8 +49,7 @@ struct vec3: public std::array<T, SFMM_NDIM> {
 		}
 		return result;
 	}
-	SFMM_PREFIX
-	inline vec3& operator=(T a) {
+	SFMM_PREFIX inline vec3& operator=(T a) {
 		for (int dim = 0; dim < SFMM_NDIM; dim++) {
 			(*this)[dim] = a;
 		}
@@ -55,22 +60,9 @@ struct vec3: public std::array<T, SFMM_NDIM> {
 		(*this)[1] = y;
 		(*this)[2] = z;
 	}
-	inline vec3<T>& load(const vec3<typename type_traits<T>::type>& other, int index = -1) {
-		if (index == -1) {
-			for (int dim = 0; dim < SFMM_NDIM; dim++) {
-				(*this)[dim] = other[dim];
-			}
-		} else {
-			for (int dim = 0; dim < SFMM_NDIM; dim++) {
-				(*this)[dim][index] = other[dim];
-			}
-		}
-		return *this;
-	}
+	inline vec3<T>& load(const vec3<typename type_traits<T>::type>& other, int index = -1);
 	vec3() = default;
-
 	vec3(const vec3&) = default;
-
 	vec3& operator=(const vec3&) = default;
 };
 

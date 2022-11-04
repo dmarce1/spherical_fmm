@@ -80,20 +80,6 @@ class vtype
    }
 
 #define SFMM_SIMD_FUNCTIONS(vtype, type, size) \
-	inline type reduce_max(const vtype& v) { \
-   	type result = v[0]; \
-   	for(int i = 1; i < size; i++) { \
-   		result = std::max(result, v[i]); \
-   	} \
-		return result; \
-	} \
-	inline type reduce_min(const vtype& v) { \
-   	type result = v[0]; \
-   	for(int i = 1; i < size; i++) { \
-   		result = std::min(result, v[i]); \
-   	} \
-		return result; \
-	} \
 	inline vtype max(const vtype& A, const vtype& B) { \
 		const vtype wa = A >= B; \
 		const vtype wb = vtype(1) - wa; \
@@ -212,4 +198,3 @@ class vtype
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, ==); \
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, !=); \
    SFMM_SIMD_FUNCTIONS(vrtype, rtype, size)
-

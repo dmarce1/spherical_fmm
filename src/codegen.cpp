@@ -821,7 +821,7 @@ enum arg_type {
 
 void init_real(std::string var) {
 	fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-	if( simd[typenum]) {
+	if (simd[typenum]) {
 		tprint("T %s;\n", var.c_str());
 		tprint("%s.set_NaN();\n", var.c_str());
 	} else {
@@ -5277,51 +5277,60 @@ int main() {
 							if (scaled) {
 								tprint("base_type r;\n");
 							}
-							if (simd[typenum]) {
-								deindent();
-								tprint("public:\n");
+							deindent();
+							tprint("public:\n");
+							indent();
+							tprint("typedef T type;\n");
+
+							if (scaled) {
+								tprint("expansion%s%s& load( expansion%s%s<base_type,%i> other, int index = -1) {\n", period_name(), scaled_name(), period_name(),
+										scaled_name(), P);
 								indent();
-								if (scaled) {
-									tprint("expansion%s%s& load( expansion%s%s<base_type,%i> other, int index = -1) {\n", period_name(), scaled_name(), period_name(),
-											scaled_name(), P);
-									indent();
-									tprint("other.rescale(r);\n");
-								} else {
-									tprint("expansion%s%s& load( const expansion%s%s<base_type,%i>& other, int index = -1) {\n", period_name(), scaled_name(), period_name(),
-											scaled_name(), P);
-									indent();
-								}
+								tprint("other.rescale(r);\n");
+							} else {
+								tprint("expansion%s%s& load( const expansion%s%s<base_type,%i>& other, int index = -1) {\n", period_name(), scaled_name(),
+										period_name(), scaled_name(), P);
+								indent();
+							}
+							if (simd[typenum]) {
 								tprint("if( index == -1 ) {\n");
 								indent();
-								tprint("for( int i = 0; i < %i; i++ ) {\n", exp_sz(P));
+								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
 								indent();
 								tprint("o[i] = other[i];\n");
 								deindent();
 								tprint("}\n");
-								if (periodic) {
+								if (periodic && P > 2) {
 									tprint("t = other.trace2();\n");
 								}
 								deindent();
 								tprint("} else {\n");
 								indent();
-								tprint("for( int i = 0; i < %i; i++ ) {\n", exp_sz(P));
+								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
 								indent();
 								tprint("o[i][index] = other[i];\n");
 								deindent();
 								tprint("}\n");
-								if (periodic) {
+								if (periodic && P > 2) {
 									tprint("t[index] = other.trace2();\n");
 								}
 								deindent();
-								tprint("}");
-								tprint("return *this;\n");
-								deindent();
 								tprint("}\n");
 							} else {
-								deindent();
-								tprint("public:\n");
+								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
 								indent();
+								tprint("o[i] = other[i];\n");
+								deindent();
+								tprint("}\n");
+								if (periodic && P > 2) {
+									tprint("t = other.trace2();\n");
+								}
+
 							}
+							tprint("return *this;\n");
+							deindent();
+							tprint("}\n");
+
 							tprint("SFMM_EXPANSION_MEMBERS(expansion%s%s, %s, %i);\n", period_name(), scaled_name(), type.c_str(), P);
 							tprint("SFMM_PREFIX expansion%s%s& operator=(const expansion%s%s& other) {\n", period_name(), scaled_name(), period_name(), scaled_name());
 							indent();
@@ -5491,20 +5500,21 @@ int main() {
 							if (scaled) {
 								tprint("base_type r;\n");
 							}
-							if (simd[typenum]) {
-								deindent();
-								tprint("public:\n");
+							deindent();
+							tprint("public:\n");
+							indent();
+							tprint("typedef T type;\n");
+							if (scaled) {
+								tprint("multipole%s%s%s& load( multipole%s%s%s<base_type,%i> other, int index ) {\n", period_name(), scaled_name(), dip_name(),
+										period_name(), scaled_name(), dip_name(), P);
 								indent();
-								if (scaled) {
-									tprint("multipole%s%s%s& load( multipole%s%s%s<base_type,%i> other, int index ) {\n", period_name(), scaled_name(), dip_name(),
-											period_name(), scaled_name(), dip_name(), P);
-									indent();
-									tprint("other.rescale(r);\n");
-								} else {
-									tprint("multipole%s%s%s& load( const multipole%s%s%s<base_type,%i>& other, int index ) {\n", period_name(), scaled_name(),
-											dip_name(), period_name(), scaled_name(), dip_name(), P);
-									indent();
-								}
+								tprint("other.rescale(r);\n");
+							} else {
+								tprint("multipole%s%s%s& load( const multipole%s%s%s<base_type,%i>& other, int index ) {\n", period_name(), scaled_name(), dip_name(),
+										period_name(), scaled_name(), dip_name(), P);
+								indent();
+							}
+							if (simd[typenum]) {
 								tprint("if( index == -1 ) {\n");
 								indent();
 								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
@@ -5521,21 +5531,27 @@ int main() {
 								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
 								indent();
 								tprint("o[i][index] = other[i];\n");
-								deindent();
-								tprint("}\n");
 								if (periodic && P > 2) {
 									tprint("t[index] = other.trace2();\n");
 								}
 								deindent();
-								tprint("}");
-								tprint("return *this;\n");
+								tprint("}\n");
 								deindent();
 								tprint("}\n");
 							} else {
-								deindent();
-								tprint("public:\n");
+								tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
 								indent();
+								tprint("o[i] = other[i];\n");
+								deindent();
+								tprint("}\n");
+								if (periodic && P > 2) {
+									tprint("t = other.trace2();\n");
+								}
 							}
+							tprint("return *this;\n");
+							deindent();
+							tprint("}\n");
+
 							if (nodip && P > 1) {
 								tprint("SFMM_EXPANSION_MEMBERS_WO_DIPOLE(multipole%s%s%s, %s, %i);\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
 							} else {

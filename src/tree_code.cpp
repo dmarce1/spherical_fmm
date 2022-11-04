@@ -82,15 +82,15 @@ class tree {
 			const int end = std::min(sfmm::simd_size<V>(), checklist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& check = checklist[i + j];
-				load(dx, center - check.ptr->center, j);
-				load(rsum, radius + check.ptr->radius, j);
+				sfmm::load(dx, center - check.ptr->center, j);
+				sfmm::load(rsum, radius + check.ptr->radius, j);
 			}
-			apply_padding(dx, end);
-			apply_padding(rsum, end);
+			sfmm::apply_padding(dx, end);
+			sfmm::apply_padding(rsum, end);
 			V far(rsum < V(theta_max) * abs(dx));
 			for (int j = 0; j < end; j++) {
 				auto& check = checklist[i + j];
-				if (far[j] || (leaf && check.opened)) {
+				if (sfmm::access(far,j) || (leaf && check.opened)) {
 					if (check.opened) {
 						Plist.push_back(check.ptr);
 					} else {
@@ -177,9 +177,9 @@ public:
 				const int end = std::min((int) sfmm::simd_size<MV>(), NCHILD - i);
 				for (int j = 0; j < end; j++) {
 					const int ci = i + j;
-					load(dx, children[ci].center - center, j);
-					load(cr, children[ci].radius, j);
-					M.load(children[ci].multipole, j);
+					sfmm::load(dx, children[ci].center - center, j);
+					sfmm::load(cr, children[ci].radius, j);
+					sfmm::load(M, children[ci].multipole, j);
 				}
 				radius = std::max(radius, sfmm::reduce_max(abs(dx) + cr));
 				sfmm::M2M(M, dx);
@@ -201,9 +201,9 @@ public:
 						load(dx, part.x - center, j);
 					}
 					multipole_type<V> M;
-					radius = std::max(radius, reduce_max(abs(dx)));
-					sfmm::P2M(M, V::mask(end), dx);
-					multipole += reduce_sum(M);
+					radius = std::max(radius, sfmm::reduce_max(abs(dx)));
+					sfmm::P2M(M, sfmm::create_mask<V>(end), dx);
+					multipole += sfmm::reduce_sum(M);
 				}
 				radius = std::max(hsoft, radius);
 			} else {
@@ -254,7 +254,7 @@ public:
 					load(dx, parts[j + k].x - center, k);
 				}
 				apply_padding(dx, end);
-				sfmm::P2L(L, V::mask(end), dx);
+				sfmm::P2L(L, sfmm::create_mask<V>(end), dx);
 				expansion += reduce_sum(L);
 			}
 		}
@@ -313,8 +313,8 @@ public:
 						}
 						apply_padding(dx, end);
 						F.init();
-						P2P(F, V::mask(end), dx);
-						part.f += reduce_sum(F);
+						P2P(F, sfmm::create_mask<V>(end), dx);
+						part.f += sfmm::reduce_sum(F);
 					}
 				}
 			}
@@ -401,6 +401,8 @@ int main(int argc, char **argv) {
 	feenableexcept(FE_INVALID);
 	printf("\ndouble\n");
 	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64> run2;
+	run_tests<double, double, double> run1;
+	run1();
 	run2();
 	/*printf("float\n");
 	 run_tests<float> run1;
