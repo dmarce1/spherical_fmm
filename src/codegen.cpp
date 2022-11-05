@@ -75,8 +75,8 @@ struct flops_t {
 		return *this;
 	}
 	int load() const {
-//		return r + 2 * fma + 4 * rdiv + con + rcmp;
-		return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
+		return r + 2 * fma + 4 * rdiv + con + rcmp;
+//		return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
 	}
 };
 
@@ -417,6 +417,91 @@ flops_t erfcexp_flops() {
 
 //#define COUNT_POT_FLOPS
 
+flops_t parse_flops(const char* line) {
+	flops_t fps0;
+	int j = 0;
+	while (j < strlen(line)) {
+		if (strncmp(line + j, " += ", 4) == 0) {
+			fps0.r++;
+			j += 4;
+		} else if (strncmp(line + j, " -= ", 4) == 0) {
+			fps0.r++;
+			j += 4;
+		} else if (strncmp(line + j, " = ", 3) == 0) {
+			fps0.asgn++;
+			j += 2;
+		} else if (strncmp(line + j, " *= ", 4) == 0) {
+			fps0.r++;
+			j += 4;
+		} else if (strncmp(line + j, " /= ", 4) == 0) {
+			fps0.rdiv++;
+			j += 4;
+		} else if (strncmp(line + j, " + ", 3) == 0) {
+			fps0.r++;
+			j += 3;
+		} else if (strncmp(line + j, " - ", 3) == 0) {
+			fps0.r++;
+			j += 3;
+		} else if (strncmp(line + j, " -", 2) == 0) {
+			fps0.r++;
+			j += 2;
+		} else if (strncmp(line + j, " * ", 3) == 0) {
+			fps0.r++;
+			j += 3;
+		} else if (strncmp(line + j, " / ", 3) == 0) {
+			fps0.rdiv++;
+			j += 3;
+		} else if (strncmp(line + j, " < ", 3) == 0) {
+			fps0.rcmp++;
+			j += 3;
+		} else if (strncmp(line + j, " > ", 3) == 0) {
+			fps0.rcmp++;
+			j += 3;
+		} else if (strncmp(line + j, "CONVERT", 7) == 0) {
+			fps0.con++;
+			j += 7;
+		} else if (strncmp(line + j, "fma", 3) == 0) {
+			fps0.fma++;
+			j += 3;
+		} else if (strncmp(line + j, "rsqrt", 5) == 0) {
+			fps0 += rsqrt_flops();
+			j += 5;
+		} else if (strncmp(line + j, "sqrt", 4) == 0) {
+			fps0 += sqrt_flops();
+			j += 4;
+		} else if (strncmp(line + j, "erfcexp", 7) == 0) {
+			fps0 += erfcexp_flops();
+			j += 7;
+		} else if (strncmp(line + j, "sincos", 6) == 0) {
+			fps0 += sincos_flops();
+			j += 6;
+		} else if (strncmp(line + j, "safe_mul", 8) == 0) {
+			fps0.i += 5;
+			fps0.icmp++;
+			fps0.con++;
+			fps0.r += 2;
+			j += 8;
+		} else if (strncmp(line + j, "safe_add", 8) == 0) {
+			fps0.i += 4;
+			fps0.icmp += 2;
+			fps0.con += 2;
+			fps0.fma++;
+			j += 8;
+		} else if (strncmp(line + j, "greens_ewald_real", 17) == 0) {
+			fps0 += greens_ewald_real_flops;
+			j += 17;
+		} else {
+			j++;
+		}
+	}
+	if (fps0.asgn) {
+		if (fps0.con || fps0.fma || fps0.i || fps0.icmp || fps0.idiv || fps0.r || fps0.rcmp || fps0.rdiv) {
+			fps0.asgn--;
+		}
+	}
+	return fps0;
+}
+
 flops_t count_flops(std::string fname) {
 	FILE* fp = fopen(fname.c_str(), "rt");
 	if (!fp) {
@@ -434,87 +519,7 @@ flops_t count_flops(std::string fname) {
 #endif
 		if (line[0] != '#') {
 			int j = 0;
-			flops_t fps0;
-			while (j < strlen(line)) {
-				if (strncmp(line + j, " += ", 4) == 0) {
-					fps0.r++;
-					j += 4;
-				} else if (strncmp(line + j, " -= ", 4) == 0) {
-					fps0.r++;
-					j += 4;
-				} else if (strncmp(line + j, " = ", 3) == 0) {
-					fps0.asgn++;
-					j += 2;
-				} else if (strncmp(line + j, " *= ", 4) == 0) {
-					fps0.r++;
-					j += 4;
-				} else if (strncmp(line + j, " /= ", 4) == 0) {
-					fps0.rdiv++;
-					j += 4;
-				} else if (strncmp(line + j, " + ", 3) == 0) {
-					fps0.r++;
-					j += 3;
-				} else if (strncmp(line + j, " - ", 3) == 0) {
-					fps0.r++;
-					j += 3;
-				} else if (strncmp(line + j, " -", 2) == 0) {
-					fps0.r++;
-					j += 2;
-				} else if (strncmp(line + j, " * ", 3) == 0) {
-					fps0.r++;
-					j += 3;
-				} else if (strncmp(line + j, " / ", 3) == 0) {
-					fps0.rdiv++;
-					j += 3;
-				} else if (strncmp(line + j, " < ", 3) == 0) {
-					fps0.rcmp++;
-					j += 3;
-				} else if (strncmp(line + j, " > ", 3) == 0) {
-					fps0.rcmp++;
-					j += 3;
-				} else if (strncmp(line + j, "CONVERT", 7) == 0) {
-					fps0.con++;
-					j += 7;
-				} else if (strncmp(line + j, "fma", 3) == 0) {
-					fps0.fma++;
-					j += 3;
-				} else if (strncmp(line + j, "rsqrt", 5) == 0) {
-					fps0 += rsqrt_flops();
-					j += 5;
-				} else if (strncmp(line + j, "sqrt", 4) == 0) {
-					fps0 += sqrt_flops();
-					j += 4;
-				} else if (strncmp(line + j, "erfcexp", 7) == 0) {
-					fps0 += erfcexp_flops();
-					j += 7;
-				} else if (strncmp(line + j, "sincos", 6) == 0) {
-					fps0 += sincos_flops();
-					j += 6;
-				} else if (strncmp(line + j, "safe_mul", 8) == 0) {
-					fps0.i += 5;
-					fps0.icmp++;
-					fps0.con++;
-					fps0.r += 2;
-					j += 8;
-				} else if (strncmp(line + j, "safe_add", 8) == 0) {
-					fps0.i += 4;
-					fps0.icmp += 2;
-					fps0.con += 2;
-					fps0.fma++;
-					j += 8;
-				} else if (strncmp(line + j, "greens_ewald_real", 17) == 0) {
-					fps0 += greens_ewald_real_flops;
-					j += 17;
-				} else {
-					j++;
-				}
-			}
-			if (fps0.asgn) {
-				if (fps0.con || fps0.fma || fps0.i || fps0.icmp || fps0.idiv || fps0.r || fps0.rcmp || fps0.rdiv) {
-					fps0.asgn--;
-				}
-			}
-			fps += fps0;
+			fps += parse_flops(line);
 		}
 //		printf( "%i, %i : %s", fps.r, cnt, line);
 	}
@@ -560,18 +565,18 @@ constexpr double dfactorial(int n) {
 	}
 }
 
-static std::stack<std::string> block_stack;
-
 template<class ...Args>
 void tprint(const char* str, Args&&...args) {
 	if (fp == nullptr) {
 		return;
 	}
+	auto line = print2str(str, std::forward<Args>(args)...);
+//	tprint_flops += parse_flops(line.c_str());
 	if (tprint_on) {
 		for (int i = 0; i < ntab; i++) {
 			fprintf(fp, "\t");
 		}
-		fprintf(fp, str, std::forward<Args>(args)...);
+		fprintf(fp, "%s", line.c_str());
 	}
 }
 
@@ -904,6 +909,42 @@ std::string func_args(int P, const char* arg, arg_type atype, Args&& ...args) {
 	str += func_args(P, std::forward<Args>(args)...);
 	return str;
 }
+template<class ...Args>
+std::string func_args_sig(int P, const char* arg, arg_type atype, int term) {
+	std::string str;
+	if (atype == VEC3) {
+		str += std::string("vec3<") + type + ">";
+	} else if (atype == EXP) {
+		str += std::string("expansion") + period_name() + scaled_name() + "<" + type + ", " + std::to_string(P) + ">&";
+	} else if (atype == HEXP) {
+		str += std::string("detail::expansion_xz") + period_name() + "<" + type + ", " + std::to_string(P) + ">&";
+	} else if (atype == MUL) {
+		str += std::string("multipole") + period_name() + scaled_name() + dip_name() + "<" + type + ", " + std::to_string(P) + ">&";
+	} else if (atype == CEXP) {
+		str += std::string("const expansion") + period_name() + scaled_name() + "<" + type + ", " + std::to_string(P) + ">&";
+	} else if (atype == CMUL) {
+		str += std::string("const multipole") + period_name() + scaled_name() + dip_name() + "<" + type + ", " + std::to_string(P) + ">&";
+	} else if (atype == FORCE) {
+		str += std::string("force_type<") + type + ">&";
+	} else {
+		if (atype == CPTR) {
+			str += std::string("const ");
+		}
+		str += type + "";
+		if (atype == PTR || atype == CPTR) {
+			str += "*";
+		}
+	}
+	return str;
+}
+
+template<class ...Args>
+std::string func_args_sig(int P, const char* arg, arg_type atype, Args&& ...args) {
+	auto str = func_args_sig(P, arg, atype, 1);
+	str += std::string(", ");
+	str += func_args_sig(P, std::forward<Args>(args)...);
+	return str;
+}
 
 template<class ...Args>
 std::string func_args_call(int P, const char* arg, arg_type atype, int term) {
@@ -974,13 +1015,31 @@ void include(std::string filename) {
 	fclose(fp0);
 }
 
+std::string timing_body;
+std::string current_sig;
+int timing_cnt = 0;
+
 template<class ... Args>
-std::string func_header(const char* func, int P, bool pub, bool calcpot, bool scale, bool flags, bool vec, std::string head, Args&& ...args) {
+std::string func_header(const char* func, int P, bool pub, bool calcpot, bool timing, bool flags, bool vec, std::string head, Args&& ...args) {
 	static std::set<std::string> igen;
 	pub = pub && !nopot;
 	std::string func_name = std::string(func);
 	if (nopot && calcpot) {
 		func_name += "_wo_potential";
+	}
+	std::string func_ptr = print2str("void(*)(");
+	func_ptr += func_args_sig(P, std::forward<Args>(args)..., 0);
+	if (flags) {
+		func_ptr += ", int";
+	}
+	func_ptr += ")";
+	current_sig = func_ptr;
+	if (timing) {
+		if (timing_body != "") {
+			timing_body += ",\n";
+		}
+		timing_body += print2str("\t{(void*)((%s) &%s), \"%s\", ", func_ptr.c_str(), func_name.c_str(), type.c_str());
+		timing_cnt++;
 	}
 	std::string file_name = func_name + ((strncmp("greens_ewald", func_name.c_str(), 12) == 0) ? "" : period_name()) + scaled_name() + dip_name()
 			+ (cuda ? ".cu" : ".cpp");
@@ -1072,6 +1131,17 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool sc
 		tprint("T& z=dx[2];\n");
 	}
 	return file_name;
+}
+
+void open_timer(std::string fname) {
+	tprint("static auto* const func_data_ptr = detail::operator_initialize((void*)((%s) &%s));\n", current_sig.c_str(), fname.c_str());
+	tprint("timer tm;\n");
+	tprint("tm.start();\n");
+}
+
+void close_timer() {
+	tprint("tm.stop();\n");
+	tprint("detail::operator_update_timing(func_data_ptr, tm.read());\n");
 }
 
 void set_tprint(bool c) {
@@ -1764,7 +1834,7 @@ bool close2zero(double a) {
 }
 
 std::string P2L(int P) {
-	auto fname = func_header("P2L", P, true, true, true, true, true, "", "L", EXP, "M", LIT, "dx", VEC3);
+	auto fname = func_header("P2L", P, true, true, false, true, true, "", "L", EXP, "M", LIT, "dx", VEC3);
 	init_reals("O", exp_sz(P));
 	init_real("tmp1");
 	init_real("r2");
@@ -2236,6 +2306,10 @@ std::string greens_ewald(int P, double alpha) {
 
 }
 
+const char* boolstr(bool b) {
+	return b ? "true" : "false";
+}
+
 std::string M2L_rot0(int P, int Q) {
 	std::string fname;
 	if (Q > 1) {
@@ -2243,6 +2317,7 @@ std::string M2L_rot0(int P, int Q) {
 	} else {
 		fname = func_header("M2P0", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
+	open_timer(P == Q ? "M2L0" : "M2P0");
 	tprint("/* algorithm= no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (Q == 1) {
@@ -2321,6 +2396,7 @@ std::string M2L_rot0(int P, int Q) {
 			tprint("f.force[2] -= L[2];\n");
 		}
 	}
+	close_timer();
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -2329,6 +2405,7 @@ std::string M2L_rot0(int P, int Q) {
 	if (nopot) {
 		tprint("}\n");
 	}
+	timing_body += print2str("\"M2%c\", %i, %i, %i, %i, %i, 0, 0, 0.0, 0}", Q == P ? 'L' : 'P', P, periodic, scaled, nodip, nopot);
 	return fname;
 }
 
@@ -2339,6 +2416,7 @@ std::string M2L_rot1(int P, int Q) {
 	} else {
 		fname = func_header("M2P1", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
+	open_timer(P == Q ? "M2L1" : "M2P1");
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	init_real("R2");
 	init_real("Rzero");
@@ -2557,7 +2635,7 @@ std::string M2L_rot1(int P, int Q) {
 			tprint("f.force[2] -= L[2];\n");
 		}
 	}
-
+	close_timer();
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -2566,6 +2644,7 @@ std::string M2L_rot1(int P, int Q) {
 	if (nopot) {
 		tprint("}\n");
 	}
+	timing_body += print2str("\"M2%c\", %i, %i, %i, %i, %i, 1, 0, 0.0, 0}", Q == P ? 'L' : 'P', P, periodic, scaled, nodip, nopot);
 	return fname;
 }
 
@@ -2576,6 +2655,7 @@ std::string M2L_rot2(int P, int Q) {
 	} else {
 		fname = func_header("M2P2", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
+	open_timer(P == Q ? "M2L2" : "M2P2");
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	tprint("multipole%s%s%s<%s, %i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
 	tprint("T* M(M_st.data());\n");
@@ -2701,6 +2781,7 @@ std::string M2L_rot2(int P, int Q) {
 			tprint("f.force[2] -= L[2];\n");
 		}
 	}
+	close_timer();
 	deindent();
 	tprint("}");
 	tprint("\n");
@@ -2709,39 +2790,60 @@ std::string M2L_rot2(int P, int Q) {
 	if (nopot) {
 		tprint("}\n");
 	}
+	timing_body += print2str("\"M2%c\", %i, %i, %i, %i, %i, 2, 0, 0.0, 0}", Q == P ? 'L' : 'P', P, periodic, scaled, nodip, nopot);
 	return fname;
 }
 
+std::string flags_header(int P) {
+	std::string str;
+	str += print2str("\t\tstatic const int best_rot = detail::operator_best_rotation(%i, %i, %i, %i, %i, \"%s\", \"M2L\");\n", P, periodic, scaled, nodip, nopot,
+			type.c_str());
+	str += "if( flags & sfmmWithRandomOptimization ) {\n";
+	str += "\t\tflags &= ~sfmmWithRandomOptimization;\n";
+	str += "\t\tconstexpr unsigned a = 1664525;\n";
+	str += "\t\tconstexpr unsigned c = 1013904223;\n";
+	str += "\t\tstatic thread_local unsigned num = 1;\n";
+	str += "\t\tnum = a * num + c;\n";
+	str += "\t\tflags |= (sfmmWithoutOptimization << (num % 3));\n";
+	str += "\t} else if( flags & sfmmWithBestOptimization ) {\n";
+	str += "\t\tflags &= ~sfmmWithBestOptimization;\n";
+	str += "\t\tflags |= (sfmmWithoutOptimization << best_rot);\n";
+	str += "\t}\n";
+	return str;
+}
+
+std::string flags_choose3(std::string name, std::string name2) {
+	std::string str;
+	str += "\tif( flags & sfmmWithoutOptimization ) {\n";
+	str += print2str("\t\t%s0(%s, M0_st, dx, flags);\n", name.c_str(), name2.c_str());
+	str += "\t} else if( flags & sfmmWithSingleRotationOptimization ) {\n";
+	str += print2str("\t\t%s1(%s, M0_st, dx, flags);\n", name.c_str(), name2.c_str());
+	str += "\t} else /*if( flags & sfmmWithDoubleRotationOptimization )*/ {\n";
+	str += print2str("\t\t%s2(%s, M0_st, dx, flags);\n", name.c_str(), name2.c_str());
+	str += "\t}\n";
+	return str;
+}
+std::string flags_choose2(std::string name, std::string name2) {
+	std::string str;
+	str += "\tif( flags & sfmmWithoutOptimization ) {\n";
+	str += print2str("\t\t%s0(%s, M0_st, dx, flags);\n", name.c_str(), name2.c_str());
+	str += "\t} else /*if( flags & sfmmWithSingleRotationOptimization )*/ {\n";
+	str += print2str("\t\t%s1(%s, M0_st, dx, flags);\n", name.c_str(), name2.c_str());
+	str += "\t}\n";
+	return str;
+}
+
 std::string M2L(int P, int Q) {
-	M2L_rot0(P, Q);
-	M2L_rot1(P, Q);
-	M2L_rot2(P, Q);
 	std::string fname;
 	std::string str;
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
-		str += "\tif( flags & sfmmRandomRotation ) {\n";
-		str += "\t\tflags &= ~sfmmRandomRotation;\n";
-		str += "\t\tflags |= (sfmmNoRotation << (rand() % 3));\n";
-		str += "\t}\n";
-		str += "\tif( flags & sfmmNoRotation ) {\n";
-		str += print2str("\t\tM2L0(L0_st, M0_st, dx, flags);\n");
-		str += "\t} else if( flags & sfmmSingleRotation ) {\n";
-		str += print2str("\t\tM2L1(L0_st, M0_st, dx, flags);\n");
-		str += "\t} else /*if( flags & sfmmDoubleRotation )*/ {\n";
-		str += print2str("\t\tM2L2(L0_st, M0_st, dx, flags);\n");
-		str += "\t}\n";
+		fname = func_header("M2L", P, true, true, false, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+		str = flags_header(P);
+		str += flags_choose3("M2L", "L0_st");
 	} else {
-		fname = func_header("M2P", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
-		str += "\tif( flags & sfmmRandomRotation ) {\n";
-		str += "\t\tflags &= ~sfmmRandomRotation;\n";
-		str += "\t\tflags |= (sfmmNoRotation << (rand() % 2));\n";
-		str += "\t}\n";
-		str += "\tif( flags & sfmmNoRotation ) {\n";
-		str += print2str("\t\tM2P0(f, M0_st, dx, flags);\n");
-		str += "\t} else /*if( flags & sfmmSingleRotation )*/ {\n";
-		str += print2str("\t\tM2P1(f, M0_st, dx, flags);\n");
-		str += "\t}\n";
+		fname = func_header("M2P", P, true, true, false, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
+		str = flags_header(P);
+		str += flags_choose2("M2P", "f");
 	}
 	tprint(str.c_str());
 	deindent();
@@ -2756,7 +2858,7 @@ std::string M2L(int P, int Q) {
 }
 
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+	auto fname = func_header("M2L_ewald", P, true, true, false, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
 	tprint("expansion%s%s<%s, %i> G_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("expansion%s%s<%s,%i> L_st;\n", period_name(), scaled_name(), type.c_str(), P);
 	tprint("multipole%s%s%s<%s,%i> M_st;\n", period_name(), scaled_name(), dip_name(), type.c_str(), P);
@@ -2962,13 +3064,17 @@ std::string regular_harmonic_xz(int P) {
 }
 
 std::string M2M_rot0(int P) {
-	auto fname = func_header("M2M", P + 1, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
+	auto fname = func_header("M2M", P + 1, true, true, false, true, true, "", "M", MUL, "dx", VEC3);
 	if (P < 2 && nodip || P < 1) {
 		deindent();
 		tprint("}\n");
 		tprint("\n");
 		tprint("}\n");
 		tprint("\n");
+		if (nopot) {
+			tprint("}\n");
+			tprint("\n");
+		}
 		return fname;
 	}
 	tprint("/* algorithm= no rotation, full l^4 */\n");
@@ -3138,7 +3244,7 @@ std::string M2M_rot0(int P) {
 
 std::string M2M_rot1(int P) {
 	auto index = mindex;
-	auto fname = func_header("M2M", P + 1, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
+	auto fname = func_header("M2M", P + 1, true, true, false, true, true, "", "M", MUL, "dx", VEC3);
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	if (P < 2 && nodip || P < 1) {
 		deindent();
@@ -3146,6 +3252,10 @@ std::string M2M_rot1(int P) {
 		tprint("\n");
 		tprint("}\n");
 		tprint("\n");
+		if (nopot) {
+			tprint("}\n");
+			tprint("\n");
+		}
 		return fname;
 	}
 	tprint("detail::expansion_xz%s<%s, %i> Y_st;\n", period_name(), type.c_str(), P);
@@ -3312,7 +3422,7 @@ std::string M2M_rot1(int P) {
 
 std::string M2M_rot2(int P) {
 	auto index = mindex;
-	auto fname = func_header("M2M", P + 1, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
+	auto fname = func_header("M2M", P + 1, true, true, false, true, true, "", "M", MUL, "dx", VEC3);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	if (P < 2 && nodip || P < 1) {
 		deindent();
@@ -3320,6 +3430,10 @@ std::string M2M_rot2(int P) {
 		tprint("\n");
 		tprint("}\n");
 		tprint("\n");
+		if (nopot) {
+			tprint("}\n");
+			tprint("\n");
+		}
 		return fname;
 	}
 	init_reals("A", 2 * P + 1);
@@ -3420,7 +3534,7 @@ std::string M2M_rot2(int P) {
 
 std::string P2M(int P) {
 	tprint("\n");
-	auto fname = func_header("P2M", P + 1, true, true, true, true, true, "", "M", MUL, "m", LIT, "dx", VEC3);
+	auto fname = func_header("P2M", P + 1, true, true, false, true, true, "", "M", MUL, "m", LIT, "dx", VEC3);
 	init_real("ax0");
 	init_real("ay0");
 	init_real("ax1");
@@ -3540,7 +3654,7 @@ std::string P2M(int P) {
 
 std::string L2L_rot0(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2L", P, true, true, true, true, true, "", "L", EXP, "dx", VEC3);
+	auto fname = func_header("L2L", P, true, true, false, true, true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (scaled) {
@@ -3706,7 +3820,7 @@ std::string L2L_rot0(int P) {
 std::string L2L_rot1(int P) {
 	auto index = lindex;
 
-	auto fname = func_header("L2L", P, true, true, true, true, true, "", "L", EXP, "dx", VEC3);
+	auto fname = func_header("L2L", P, true, true, false, true, true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	init_reals("rx", P + 1);
 	init_reals("ry", P + 1);
@@ -3867,7 +3981,7 @@ std::string L2L_rot1(int P) {
 
 std::string L2L_rot2(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2L", P, true, true, true, true, true, "", "L", EXP, "dx", VEC3);
+	auto fname = func_header("L2L", P, true, true, false, true, true, "", "L", EXP, "dx", VEC3);
 	tprint("/* algorithm= z rotation and x/z swap, l^3 */\n");
 	init_reals("A", 2 * P + 1);
 	init_reals("rx", P + 1);
@@ -3964,7 +4078,7 @@ std::string L2L_rot2(int P) {
 
 std::string L2P(int P) {
 	auto index = lindex;
-	auto fname = func_header("L2P", P, true, true, true, true, true, "", "f", FORCE, "L", CEXP, "dx", VEC3);
+	auto fname = func_header("L2P", P, true, true, false, true, true, "", "f", FORCE, "L", CEXP, "dx", VEC3);
 	tprint("/* algorithm= no rotation, full l^4 */\n");
 	init_real("tmp1");
 	if (scaled) {
@@ -4665,19 +4779,22 @@ int main() {
 	tprint("#define SFMM_PREFIX\n");
 	tprint("#endif /* __CUDA_ARCH__ */\n");
 	tprint("\n");
+	tprint("#include <atomic>\n");
 	tprint("#include <array>\n");
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("#include <limits>\n");
+	tprint("#include <time.h>\n");
 	tprint("#include <utility>\n");
 	tprint("\n");
 	tprint("#define sfmmCalculateWithPotential    1\n");
 	tprint("#define sfmmCalculateWithoutPotential 2\n");
-	tprint("#define sfmmNoRotation 4\n");
-	tprint("#define sfmmSingleRotation 8\n");
-	tprint("#define sfmmDoubleRotation 16\n");
-	tprint("#define sfmmRandomRotation 32\n");
-	tprint("#define sfmmDefaultFlags (sfmmCalculateWithPotential | sfmmRandomRotation)\n");
+	tprint("#define sfmmWithoutOptimization 4\n");
+	tprint("#define sfmmWithSingleRotationOptimization 8\n");
+	tprint("#define sfmmWithDoubleRotationOptimization 16\n");
+	tprint("#define sfmmWithRandomOptimization 32\n");
+	tprint("#define sfmmWithBestOptimization 64\n");
+	tprint("#define sfmmDefaultFlags (sfmmCalculateWithPotential | sfmmWithBestOptimization)\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("\n");
@@ -4926,6 +5043,7 @@ int main() {
 	typecast_functions();
 
 	set_file(full_header.c_str());
+	std::unordered_map<std::string, std::unordered_map<std::string, int>> allflops[PMAX + 1][2][2][2][2][3];
 
 	for (int ti = 0; ti < ntypenames; ti++) {
 		typenum = ti;
@@ -5088,7 +5206,28 @@ int main() {
 							flops2.reset();
 
 							M2L(P, P);
+							fname = M2L_rot0(P, P);
+							fclose(fp);
+							fp = nullptr;
+							allflops[P][periodic][scaled][nodip][nopot][0][type]["M2L"] = count_flops(fname).load() + greens_flops[P].load();
+							fname = M2L_rot1(P, P);
+							fclose(fp);
+							fp = nullptr;
+							allflops[P][periodic][scaled][nodip][nopot][1][type]["M2L"] = count_flops(fname).load() + greens_xz_flops[P].load();
+							fname = M2L_rot2(P, P);
+							fclose(fp);
+							fp = nullptr;
+							allflops[P][periodic][scaled][nodip][nopot][2][type]["M2L"] = count_flops(fname).load();
+
 							M2L(P, 1);
+							fname = M2L_rot0(P, 1);
+							fclose(fp);
+							fp = nullptr;
+							allflops[P][periodic][scaled][nodip][nopot][0][type]["M2P"] = count_flops(fname).load() + greens_flops[P].load();
+							fname = M2L_rot1(P, 1);
+							fclose(fp);
+							fp = nullptr;
+							allflops[P][periodic][scaled][nodip][nopot][1][type]["M2P"] = count_flops(fname).load() + greens_xz_flops[P].load();
 
 							if (!nodip) {
 								fname = P2L(P);
@@ -5678,10 +5817,12 @@ int main() {
 											P, period_name(), scaled_name(), dip_name(), P);
 									tprint("friend void detail::M2L%i%s(expansion%s%s<T, %i>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", rot, pot_name(),
 											period_name(), scaled_name(), P, period_name(), scaled_name(), dip_name(), P);
-									tprint("friend void M2P%i(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", rot, period_name(), scaled_name(),
-											dip_name(), P);
-									tprint("friend void detail::M2P%i%s(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", rot, pot_name(), period_name(),
-											scaled_name(), dip_name(), P);
+									if (rot < 2) {
+										tprint("friend void M2P%i(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", rot, period_name(), scaled_name(),
+												dip_name(), P);
+										tprint("friend void detail::M2P%i%s(force_type<T>&, const multipole%s%s%s<T, %i>&, vec3<T>, int);\n", rot, pot_name(),
+												period_name(), scaled_name(), dip_name(), P);
+									}
 								}
 							}
 							deindent();
@@ -5754,6 +5895,212 @@ int main() {
 	nopot = 0;
 	include("complex_impl.hpp");
 	include("expansion.hpp");
+	include("timer.hpp");
 	tprint("}\n");
+	tprint("extern \"C\" {\n");
+	tprint("void sfmm_detail_atomic_inc_dbl(double* num, double val);\n");
+	tprint("void sfmm_detail_atomic_inc_int(unsigned long long* num, unsigned long long val);\n");
+	tprint("}\n\n");
+	set_file("./generated_code/src/database.cpp");
+	timing_body = std::string("#include \"sfmm.hpp\"\n\nnamespace sfmm {\nnamespace detail {\nstatic func_data_t function_data[] = {") + timing_body;
+	timing_body += "\n};\n";
+	timing_body += "\nint operator_count() {\n";
+	timing_body += print2str("\treturn %i;\n", timing_cnt);
+	timing_body += print2str("}\n\n", timing_cnt);
+	timing_body += "\nfunc_data_t* operator_data(int index) {\n";
+	timing_body += print2str("\treturn function_data + index;\n");
+	timing_body += print2str("}\n\n", timing_cnt);
+	timing_body += "\n}\n}\n";
+	tprint("%s\n", timing_body.c_str());
+	set_file("./generated_code/src/timing.cpp");
+	include("timing.cpp");
+	set_file("./generated_code/src/atomic.c");
+	include("atomic.c");
+
+	set_file("./generated_code/src/flops.cpp");
+	tprint("#include \"sfmm.hpp\"\n");
+	tprint("#include <unordered_map>\n");
+	tprint("#include <mutex>\n");
+	tprint("\n");
+	tprint("namespace sfmm {\n");
+	tprint("namespace detail {\n");
+	tprint("static void initialize() { \n");
+	indent();
+	tprint("std::array<std::array<std::array<std::array<std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,3>,2>,2>,2>,2>,%i> flops;\n", PMAX + 1);
+	for (int ti = 0; ti < ntypenames; ti++) {
+		typenum = ti;
+		type = rtype[ti];
+		int nops = 7;
+		const char* opnames[nops] = { "M2L", "M2P", "P2L", "P2M", "M2M", "L2L", "L2P" };
+		for (scaled = 0; scaled <= 1; scaled++) {
+			for (nopot = 0; nopot <= 1; nopot++) {
+				for (periodic = 0; periodic <= 1; periodic++) {
+					for (nodip = 0; nodip <= 1; nodip++) {
+						for (int rot = 0; rot < 3; rot++) {
+							for (int P = pmin; P <= pmax; P++) {
+								for (int op = 0; op < nops; op++) {
+									auto& map = allflops[P][periodic][scaled][nodip][nopot][rot][rtype[ti]];
+									auto iter = map.find(opnames[op]);
+									if (iter != map.end()) {
+										tprint("flops[%i][%i][%i][%i][%i][%i][\"%s\"][\"%s\"] = %i;\n", P, periodic, scaled, nodip, nopot, rot, rtype[ti].c_str(),
+												opnames[op], iter->second);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	str2 = "";
+	str2 += "\tfor( int i = 0; i < operator_count(); i++) {\n";
+	str2 += "\t\tauto& entry = *operator_data(i);\n";
+	str2 += "\t\tentry.flops = flops[entry.P][entry.periodic][entry.scaled][entry.nodip][entry.nopot][entry.nrot][entry.type][entry.name];\n";
+	str2 += "\t}\n";
+	fprintf(fp, "%s", str2.c_str());
+	deindent();
+	tprint("}\n\n");
+	tprint("void operator_flops_initialize() {\n");
+	indent();
+	tprint("static std::once_flag flag;\n");
+	tprint("std::call_once(flag, []() {detail::initialize();});\n");
+	deindent();
+	tprint("}\n\n");
+	tprint("}\n\n");
+	tprint("}\n");
+
+	set_file("./generated_code/src/best_flops.cpp");
+	str = print2str("#include \"sfmm.hpp\"\n");
+	str += print2str("#include <unordered_map>\n");
+	str += print2str("#include <mutex>\n");
+	str += print2str("\n");
+	str += print2str("namespace sfmm {\n");
+	str += print2str("namespace detail {\n");
+	str += print2str("\n");
+	str += print2str("static constexpr int pmax = %i;\n", PMAX);
+	str += print2str("static std::array<std::array<std::array<std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,2>,2>,2>,2>,%i> best_rotation;\n", PMAX + 1);
+	str += print2str("\n");
+	str += print2str("static void initialize() { \n");
+	for (int ti = 0; ti < ntypenames; ti++) {
+		typenum = ti;
+		type = rtype[ti];
+		int nops = 7;
+		const char* opnames[nops] = { "M2L", "M2P", "P2L", "P2M", "M2M", "L2L", "L2P" };
+		for (scaled = 0; scaled <= 1; scaled++) {
+			for (nopot = 0; nopot <= 1; nopot++) {
+				for (periodic = 0; periodic <= 1; periodic++) {
+					for (nodip = 0; nodip <= 1; nodip++) {
+						for (int P = pmin; P <= pmax; P++) {
+							for (int op = 0; op < nops; op++) {
+								auto& map = allflops[P][periodic][scaled][nodip][nopot];
+								int smallest = 100000000;
+								int best = 99;
+								for (int rot = 0; rot < 3; rot++) {
+									if (map[rot][rtype[ti]].find(opnames[op]) != map[rot][rtype[ti]].end()) {
+										const int cnt = map[rot][rtype[ti]][opnames[op]];
+										if (cnt < smallest) {
+											best = rot;
+											smallest = cnt;
+										}
+									}
+								}
+								if (best != 99) {
+									str += print2str("\tbest_rotation[%i][%i][%i][%i][%i][\"%s\"][\"%s\"] = %i;\n", P, periodic, scaled, nodip, nopot, rtype[ti].c_str(),
+											opnames[op], best);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	str += print2str("}\n\n");
+	str += print2str("int operator_best_rotation(int P, int periodic, int scaled, int nodip, int nopot, const char* type, const char* name ) {\n");
+	str += print2str("\tstatic std::once_flag flag;\n");
+	str += print2str("\tstd::call_once(flag, []() {initialize();});\n");
+	str += print2str("\tstatic std::mutex mutex;\n");
+	str += print2str("\tstd::lock_guard<std::mutex>  lock(mutex);\n");
+	str += print2str("\tconst auto rot = best_rotation[periodic][P][scaled][nodip][nopot][type][name];\n");
+	str += print2str("\treturn rot;\n");
+	str += print2str("}\n\n");
+	str += print2str("}\n");
+	str += print2str("}\n");
+
+	str += print2str("namespace sfmm {\n");
+	str += print2str("namespace detail {\n");
+	str += "void operator_write_new_bestops_source() {\n"
+			"\tsystem(\"tail -n 72 ./generated_code/src/best_flops.cpp > tmp.cpp\\n\");\n"
+			"\tFILE* fp = fopen( \"./generated_code/src/best_flops.cpp\", \"wt\");\n"
+			"\tif (!fp) {\n"
+			"\t\tprintf(\"Unable to open %s for reading in ./generated_code/src/best_flops.cpp on line %i.\\n\", __FILE__, __LINE__);\n"
+			"\t\tabort();\n"
+			"\t}\n"
+			"\tstd::string str = print2str(\"#include \\\"sfmm.hpp\\\"\\n\");\n"
+			"\tstr += print2str(\"#include <unordered_map>\\n\");\n"
+			"\tstr += print2str(\"#include <mutex>\\n\");\n"
+			"\tstr += print2str(\"\\n\");\n"
+			"\tstr += print2str(\"static constexpr int pmax = %i;\\n\", pmax);\n"
+			"\tstr += print2str(\"\\n\");\n"
+			"\tstr += print2str(\"namespace sfmm {\\n\");\n"
+			"\tstr += print2str(\"namespace detail {\\n\");\n"
+			"\tstr += print2str(\"\\n\");\n"
+			"\tstr += print2str(\"static std::array<std::array<std::array<std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,2>,2>,2>,2>,pmax + 1> best_rotation;\\n\");\n"
+			"\tstr += print2str(\"\\n\");\n"
+			"\tstr += print2str(\"static void initialize() { \\n\");\n"
+			"\tauto old_rotation = best_rotation;\n"
+			"\tstd::unordered_map<std::string, std::unordered_map<std::string, double>> best_speed[pmax + 1][2][2][2][2];\n"
+			"\tfor (int i = 0; i < operator_count(); i++) {\n"
+			"\t\tauto* ptr = operator_data(i);\n"
+			"\t\tbest_rotation[ptr->P][ptr->periodic][ptr->scaled][ptr->nodip][ptr->nopot][ptr->type][ptr->name] = -1;\n"
+			"\t\tbest_speed[ptr->P][ptr->periodic][ptr->scaled][ptr->nodip][ptr->nopot][ptr->type][ptr->name] = -1;\n"
+			"\t}\n"
+			"\tfor (int i = 0; i < operator_count(); i++) {\n"
+			"\t\tauto* ptr = operator_data(i);\n"
+			"\t\tif (ptr->ncalls) {\n"
+			"\t\t\tauto& current_best_speed = best_speed[ptr->P][ptr->periodic][ptr->scaled][ptr->nodip][ptr->nopot][ptr->type][ptr->name];\n"
+			"\t\t\tconst auto this_speed = ptr->ncalls / ptr->time;\n"
+			"\t\t\tif (current_best_speed < this_speed) {\n"
+			"\t\t\t\tcurrent_best_speed = this_speed;\n"
+			"\t\t\t\tbest_rotation[ptr->P][ptr->periodic][ptr->scaled][ptr->nodip][ptr->nopot][ptr->type][ptr->name] = ptr->nrot;\n"
+			"\t\t\t}\n"
+			"\t\t}\n"
+			"\t}\n"
+			"\tfor (int i = 0; i < operator_count(); i++) {\n"
+			"\t\tauto* ptr = operator_data(i);\n"
+			"\t\tint best_rot = best_rotation[ptr->P][ptr->periodic][ptr->scaled][ptr->nodip][ptr->nopot][ptr->type][ptr->name];\n"
+			"\t\tconst int old_rot = old_rotation[ptr->P][ptr->periodic][ptr->scaled][ptr->nodip][ptr->nopot][ptr->type][ptr->name];\n"
+			"\t\tif (best_rot == -1) {\n"
+			"\t\t\tbest_rot = old_rot;\n"
+			"\t\t}\n"
+			"\t\tif (ptr->nrot == best_rot) {\n"
+			"\t\t\tif (best_rot != old_rot) {\n"
+			"\t\t\t\tprintf(\"Changing from %i to %i for %s %s %i %i %i %i %i based on execution speed\\n\", old_rot, best_rot, ptr->name.c_str(), ptr->type.c_str(),\n"
+			"\t\t\t\t\t\tptr->P, ptr->periodic, ptr->scaled, ptr->nodip, ptr->nopot);\n"
+			"\t\t\t}\n"
+			"\t\t\tstr += print2str(\"\\tbest_rotation[%i][%i][%i][%i][%i][\\\"%s\\\"][\\\"%s\\\"] = %i;\\n\", ptr->P, ptr->periodic, ptr->scaled, ptr->nodip, ptr->nopot,\n"
+			"\t\t\t\t\tptr->type.c_str(), ptr->name.c_str(), best_rot);\n"
+			"\t\t}\n"
+			"\t}\n"
+			"\tstr += print2str(\"}\\n\\n\");\n"
+			"\tstr += print2str(\"int operator_best_rotation(int P, int periodic, int scaled, int nodip, int nopot, const char* type, const char* name ) {\\n\");\n"
+			"\tstr += print2str(\"\\tstatic std::once_flag flag;\\n\");\n"
+			"\tstr += print2str(\"\\tstd::call_once(flag, []() {initialize();});\\n\");\n"
+			"\tstr += print2str(\"\\treturn best_rotation[periodic][P][scaled][nodip][nopot][type][name];\\n\");\n"
+			"\tstr += print2str(\"}\\n\\n\");\n"
+			"\tstr += print2str(\"}\\n\\n\");\n"
+			"\tstr += print2str(\"}\\n\");\n"
+			"\tfprintf(fp, \"%s\", str.c_str());\n"
+			"\tfclose(fp);\n"
+			"\tsystem(\"cat ./generated_code/src/best_flops.cpp tmp.cpp > tmp2.cpp\\n\");\n"
+			"\tsystem(\"mv tmp2.cpp ./generated_code/src/best_flops.cpp\\n\");\n"
+			"}\n"
+			"";
+
+	str += print2str("}\n\n");
+	str += print2str("}\n");
+
+	tprint("%s\n", str.c_str());
 	return 0;
 }

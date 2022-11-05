@@ -7,8 +7,6 @@
 #include <future>
 #include <atomic>
 
-#include "timer.hpp"
-
 #define NDIM 3
 #define BUCKET_SIZE 32
 #define MIN_CLOUD 4
@@ -16,7 +14,7 @@
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 256
-#define TEST_SIZE 40000
+#define TEST_SIZE 1000000
 
 using rtype = double;
 
@@ -260,7 +258,7 @@ public:
 			}
 			apply_padding(dx, end);
 			apply_padding(M, end);
-			sfmm::M2L(L, M, dx);
+			sfmm::M2L(L, M, dx, sfmmWithRandomOptimization);
 			apply_mask(L, end);
 			expansion += reduce_sum(L);
 		}
@@ -323,7 +321,7 @@ public:
 					}
 					apply_padding(dx, end);
 					apply_padding(M, end);
-					sfmm::M2P(F, M, dx);
+					sfmm::M2P(F, M, dx, sfmmWithRandomOptimization);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
 					}
@@ -414,7 +412,7 @@ const T tree<T, V, M, ORDER>::hsoft = 0.01;
 template<class T, class V, class M, int ORDER = PMIN>
 struct run_tests {
 	void operator()() const {
-		timer tm;
+		sfmm::timer tm;
 		double tree_time, force_time;
 		tree<T, V, M, ORDER> root;
 		root.set_root();
@@ -451,13 +449,14 @@ int main(int argc, char **argv) {
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
 	//run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64> run1;
 //	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
-//	run_tests<float, float, float> run1;
-	printf("\nfloat\n");
+	run_tests<float, float, float> run1;
 	run2();
-//	printf("\ndouble\n");
-//	run1();
+	run1();
+	auto prof = sfmm::operator_profiling_results();
+	printf( "%s\n", prof.c_str());
 	/*printf("float\n");
 	 run_tests<float> run1;
 	 run1();*/
+	sfmm::detail::operator_write_new_bestops_source();
 	return 0;
 }

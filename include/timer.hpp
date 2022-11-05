@@ -1,22 +1,21 @@
 
-#pragma once
-
-#include <chrono>
-
 class timer {
-   std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+   double start_time;
    double time;
 public:
    inline timer() {
       time = 0.0;
    }
    inline void stop() {
-      std::chrono::time_point<std::chrono::high_resolution_clock> stop_time = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> dur = stop_time - start_time;
-      time += dur.count();
+   	struct timespec res;
+   	clock_gettime(CLOCK_MONOTONIC,  &res);
+   	const double stop_time = res.tv_sec + res.tv_nsec / 1e9;
+      time += stop_time - start_time;
    }
    inline void start() {
-      start_time = std::chrono::high_resolution_clock::now();
+   	struct timespec res;
+   	clock_gettime(CLOCK_MONOTONIC,  &res);
+   	start_time = res.tv_sec + res.tv_nsec / 1e9;
    }
    inline void reset() {
       time = 0.0;

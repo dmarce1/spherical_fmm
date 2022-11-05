@@ -414,3 +414,45 @@ inline vec3<T>& vec3<T>::load(const vec3<typename type_traits<T>::type>& other, 
 	}
 	return *this;
 }
+
+namespace detail {
+
+template<class ...Args>
+std::string print2str(const char* fstr, Args&&...args) {
+	std::string result;
+	char* str;
+	if (!asprintf(&str, fstr, std::forward<Args>(args)...)) {
+		printf("Error in %s on line %i\n", __FILE__, __LINE__);
+		abort();
+	}
+	result = str;
+	free(str);
+	return result;
+}
+
+struct func_data_t {
+	void* func_ptr;
+	std::string type;
+	std::string name;
+	int P;
+	int periodic;
+	int scaled;
+	int nodip;
+	int nopot;
+	int nrot;
+	int flops;
+	double time;
+	unsigned long long ncalls;
+};
+
+func_data_t* operator_initialize(void*);
+void operator_update_timing(func_data_t*, double);
+int operator_count();
+func_data_t* operator_data(int index);
+void operator_flops_initialize();
+int operator_best_rotation(int, int, int, int, int, const char*, const char*);
+void operator_write_new_bestops_source();
+}
+
+std::string operator_profiling_results();
+
