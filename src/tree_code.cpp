@@ -26,9 +26,9 @@ template<class T, class V, class MV, int ORDER>
 class tree {
 
 	template<class W>
-	using multipole_type = sfmm::multipole_scaled<W,ORDER>;
+	using multipole_type = sfmm::multipole<W,ORDER>;
 	template<class W>
-	using expansion_type = sfmm::expansion_scaled<W,ORDER>;
+	using expansion_type = sfmm::expansion<W,ORDER>;
 	template<class W>
 	using force_type = sfmm::force_type<W>;
 	struct particle {
