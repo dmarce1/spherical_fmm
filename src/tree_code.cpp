@@ -15,7 +15,7 @@
 #define NCHILD 2
 #define MIN_THREAD 256
 #define TEST_SIZE 100000
-#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn | sfmmCalculateWithoutPotential)
+#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
 
@@ -305,7 +305,7 @@ public:
 				for (int j = 0; j < end; j++) {
 					load(dx, center - parts[i + j].x, j);
 				}
-				sfmm::L2P(F, L, dx);
+				sfmm::L2P(F, L, dx, FLAGS);
 				for (int j = 0; j < end; j++) {
 					store(parts[i + j].f, F, j);
 				}
