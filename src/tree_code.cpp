@@ -14,7 +14,8 @@
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 256
-#define TEST_SIZE 1000000
+#define TEST_SIZE 100000
+#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn | sfmmCalculateWithoutPotential)
 
 using rtype = double;
 
@@ -195,7 +196,7 @@ public:
 					sfmm::load(M, children[ci].multipole, j);
 				}
 				radius = std::max(radius, sfmm::reduce_max(abs(dx) + cr));
-				sfmm::M2M(M, dx);
+				sfmm::M2M(M, dx, FLAGS);
 				multipole += sfmm::reduce_sum(M);
 			}
 		} else {
@@ -239,7 +240,7 @@ public:
 
 		if (parent) {
 			expansion.rescale(radius);
-			sfmm::L2L(expansion, parent->center - center);
+			sfmm::L2L(expansion, parent->center - center, FLAGS);
 		} else {
 			check_type ck;
 			ck.ptr = this;
@@ -258,7 +259,7 @@ public:
 			}
 			apply_padding(dx, end);
 			apply_padding(M, end);
-			sfmm::M2L(L, M, dx, sfmmWithRandomOptimization);
+			sfmm::M2L(L, M, dx, FLAGS);
 			apply_mask(L, end);
 			expansion += reduce_sum(L);
 		}
@@ -321,7 +322,7 @@ public:
 					}
 					apply_padding(dx, end);
 					apply_padding(M, end);
-					sfmm::M2P(F, M, dx, sfmmWithRandomOptimization);
+					sfmm::M2P(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
 					}
@@ -401,7 +402,7 @@ template<class T, class V, class M, int ORDER>
 std::vector<typename tree<T, V, M, ORDER>::particle> tree<T, V, M, ORDER>::parts;
 
 template<class T, class V, class M, int ORDER>
-std::atomic<int> tree<T, V, M, ORDER>::nthread_avail(std::thread::hardware_concurrency() * 2 - 1);
+std::atomic<int> tree<T, V, M, ORDER>::nthread_avail(std::thread::hardware_concurrency() - 1);
 
 template<class T, class V, class M, int ORDER>
 const T tree<T, V, M, ORDER>::theta_max = 0.6;
@@ -446,14 +447,14 @@ int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
+	//run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
 	//run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64> run1;
-//	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
 	run_tests<float, float, float> run1;
 	run2();
 	run1();
 	auto prof = sfmm::operator_profiling_results();
-	printf( "%s\n", prof.c_str());
+	printf("%s\n", prof.c_str());
 	/*printf("float\n");
 	 run_tests<float> run1;
 	 run1();*/

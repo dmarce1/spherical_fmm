@@ -197,9 +197,6 @@ struct func_data_t {
 	std::string type;
 	std::string name;
 	int P;
-	int periodic;
-	int scaled;
-	int nodip;
 	int nopot;
 	int nrot;
 	int flops;
@@ -212,7 +209,7 @@ void operator_update_timing(func_data_t*, double);
 int operator_count();
 func_data_t* operator_data(int index);
 void operator_flops_initialize();
-int operator_best_rotation(int, int, int, int, int, const char*, const char*);
+int operator_best_rotation(int, int, const char*, const char*);
 void operator_write_new_bestops_source();
 }
 
