@@ -312,7 +312,7 @@ public:
 				for (int j = 0; j < end; j++) {
 					load(dx, center - parts[i + j].x, j);
 				}
-				flops += printf( "%i\n", sfmm::L2P(F, L, dx, FLAGS));
+				flops += sfmm::L2P(F, L, dx, FLAGS);
 				for (int j = 0; j < end; j++) {
 					store(parts[i + j].f, F, j);
 				}
