@@ -1262,7 +1262,7 @@ bool close21(double a) {
 	return std::abs(1.0 - a) < 1.0e-20;
 }
 
-void z_rot(int P, const char* name, stage_t stage) {
+void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 	tprint("rx[0] = cosphi;\n");
 	tprint("ry[0] = sinphi;\n");
 	for (int m = 1; m <= P; m++) {
@@ -1310,7 +1310,7 @@ void z_rot(int P, const char* name, stage_t stage) {
 					read_ronly = !(m % 2);
 				}
 			} else if (stage == PRE2) {
-				if (l == P) {
+				if (l == P || opname == "M2P") {
 					write_ronly = m % 2 != l % 2;
 				}
 			}
@@ -1395,8 +1395,11 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opnam
 		}
 		std::vector<std::vector<std::pair<double, int>>>ops(2 * n + 1);
 		int mmax = n;
-		if (stage == PRE2 && mmax > (P) - n) {
-			mmax = (P + 1) - n;
+		if (stage == PRE2) {
+			mmax = std::min((P + 1) - n, n);
+			if (opname == "M2P") {
+				mmax = std::min(1, mmax);
+			}
 		}
 		for (int m = 0; m <= n; m++) {
 			if (m <= mmax) {
@@ -2799,8 +2802,8 @@ std::string M2L_rot2(int P, int Q) {
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = fma(z, rinv, rzero);\n");
 	tprint("sinphi = -R * rinv;\n");
-	z_rot(P - 1, "M", PRE2);
-	xz_swap(P - 1, "M", false, PRE2, "M2P");
+	z_rot(P - 1, "M", PRE2, P != Q ? "M2P" : "M2L");
+	xz_swap(P - 1, "M", false, PRE2, P != Q ? "M2P" : "M2L");
 	for (int i = 0; i < exp_sz(Q); i++) {
 //		tprint("L[%i] = TCAST(0);\n", i);
 	}
