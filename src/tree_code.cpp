@@ -13,9 +13,9 @@
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
-#define MIN_THREAD 256
-#define TEST_SIZE 100000
-#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
+#define MIN_THREAD 1024
+#define TEST_SIZE 1000000
+//#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
 
@@ -23,7 +23,7 @@ double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
 }
 
-template<class T, class V, class MV, int ORDER>
+template<class T, class V, class MV, int ORDER, int FLAGS>
 class tree {
 
 	template<class W>
@@ -58,7 +58,7 @@ class tree {
 	};
 
 	template<class W>
-	void P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
+	size_t P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
 		static const W h2(hsoft * hsoft);
 		static const W hinv(W(1) / hsoft);
 		static const W hinv3(sfmm::sqr(hinv) * hinv);
@@ -76,11 +76,13 @@ class tree {
 		fn = dx * hinv3;
 		f.potential += pn * wn + pf * wf;
 		f.force -= fn * wn + ff * wf;
+		return 8 * 41;
 	}
 
 	void list_iterate(std::vector<check_type>& checklist, std::vector<tree*>& Plist, std::vector<tree*>& Clist, bool leaf) {
 		static thread_local std::vector<check_type> nextlist;
 		nextlist.resize(0);
+		auto c0 = V(theta_max*theta_max);
 		for (int i = 0; i < checklist.size(); i += sfmm::simd_size<V>()) {
 			sfmm::vec3<V> dx;
 			V rsum;
@@ -92,7 +94,7 @@ class tree {
 			}
 			sfmm::apply_padding(dx, end);
 			sfmm::apply_padding(rsum, end);
-			V far(rsum < V(theta_max) * abs(dx));
+			V far(sqr(rsum) < c0 * sqr(dx));
 			for (int j = 0; j < end; j++) {
 				auto& check = checklist[i + j];
 				if (sfmm::access(far, j) || (leaf && check.opened)) {
@@ -131,7 +133,8 @@ public:
 		children = decltype(children)();
 	}
 
-	void form_tree(tree* par = nullptr, int depth = 0) {
+	size_t form_tree(tree* par = nullptr, int depth = 0) {
+		size_t flops = 0;
 		const int xdim = depth % SFMM_NDIM;
 		if (par == nullptr) {
 			part_range.first = 0;
@@ -170,15 +173,16 @@ public:
 			left.end[xdim] = right.begin[xdim] = 0.5 * (begin[xdim] + end[xdim]);
 			if (nthread_avail-- >= 0 && part_range.second - part_range.first > MIN_THREAD) {
 				auto fut = std::async([this,depth]() {
-					children[LEFT].form_tree(this, depth + 1);
+					const auto flops = children[LEFT].form_tree(this, depth + 1);
 					nthread_avail++;
+					return flops;
 				});
-				children[RIGHT].form_tree(this, depth + 1);
-				fut.get();
+				flops += children[RIGHT].form_tree(this, depth + 1);
+				flops += fut.get();
 			} else {
 				nthread_avail++;
 				for (int ci = 0; ci < NCHILD; ci++) {
-					children[ci].form_tree(this, depth + 1);
+					flops += children[ci].form_tree(this, depth + 1);
 				}
 			}
 			const auto& cleft = children[LEFT];
@@ -196,7 +200,7 @@ public:
 					sfmm::load(M, children[ci].multipole, j);
 				}
 				radius = std::max(radius, sfmm::reduce_max(abs(dx) + cr));
-				sfmm::M2M(M, dx, FLAGS);
+				flops += sfmm::M2M(M, dx, FLAGS);
 				multipole += sfmm::reduce_sum(M);
 			}
 		} else {
@@ -216,7 +220,7 @@ public:
 					}
 					multipole_type<V> M;
 					radius = std::max(radius, sfmm::reduce_max(abs(dx)));
-					sfmm::P2M(M, sfmm::create_mask<V>(end), dx);
+					flops += sfmm::P2M(M, sfmm::create_mask<V>(end), dx);
 					multipole += sfmm::reduce_sum(M);
 				}
 				radius = std::max(hsoft, radius);
@@ -226,9 +230,11 @@ public:
 			}
 		}
 		multipole.rescale(radius);
+		return flops;
 	}
 
-	void compute_gravity_field(expansion_type<T> expansion = expansion_type<T>(), std::vector<check_type> checklist = std::vector<check_type>()) {
+	size_t compute_gravity_field(expansion_type<T> expansion = expansion_type<T>(), std::vector<check_type> checklist = std::vector<check_type>()) {
+		size_t flops = 0;
 		static thread_local std::vector<tree*> Clist;
 		static thread_local std::vector<tree*> Plist;
 		Clist.resize(0);
@@ -240,7 +246,7 @@ public:
 
 		if (parent) {
 			expansion.rescale(radius);
-			sfmm::L2L(expansion, parent->center - center, FLAGS);
+			flops += sfmm::L2L(expansion, parent->center - center, FLAGS);
 		} else {
 			check_type ck;
 			ck.ptr = this;
@@ -259,7 +265,7 @@ public:
 			}
 			apply_padding(dx, end);
 			apply_padding(M, end);
-			sfmm::M2L(L, M, dx, FLAGS);
+			flops += sfmm::M2L(L, M, dx, FLAGS);
 			apply_mask(L, end);
 			expansion += reduce_sum(L);
 		}
@@ -271,7 +277,7 @@ public:
 					load(dx, parts[j + k].x - center, k);
 				}
 				apply_padding(dx, end);
-				sfmm::P2L(L, sfmm::create_mask<V>(end), dx);
+				flops += sfmm::P2L(L, sfmm::create_mask<V>(end), dx);
 				expansion += reduce_sum(L);
 			}
 		}
@@ -279,15 +285,16 @@ public:
 			if (checklist.size()) {
 				if (nthread_avail-- >= 0 && part_range.second - part_range.first > MIN_THREAD) {
 					auto fut = std::async([this,&expansion](decltype(checklist) checklist) {
-						children[LEFT].compute_gravity_field(expansion, std::move(checklist));
+						const auto flops = children[LEFT].compute_gravity_field(expansion, std::move(checklist));
 						nthread_avail++;
+						return flops;
 					}, checklist);
-					children[RIGHT].compute_gravity_field(expansion, std::move(checklist));
-					fut.get();
+					flops += children[RIGHT].compute_gravity_field(expansion, std::move(checklist));
+					flops += fut.get();
 				} else {
 					nthread_avail++;
-					children[LEFT].compute_gravity_field(expansion, checklist);
-					children[RIGHT].compute_gravity_field(expansion, std::move(checklist));
+					flops += children[LEFT].compute_gravity_field(expansion, checklist);
+					flops += children[RIGHT].compute_gravity_field(expansion, std::move(checklist));
 				}
 			}
 		} else {
@@ -305,7 +312,7 @@ public:
 				for (int j = 0; j < end; j++) {
 					load(dx, center - parts[i + j].x, j);
 				}
-				sfmm::L2P(F, L, dx, FLAGS);
+				flops += sfmm::L2P(F, L, dx, FLAGS);
 				for (int j = 0; j < end; j++) {
 					store(parts[i + j].f, F, j);
 				}
@@ -322,7 +329,7 @@ public:
 					}
 					apply_padding(dx, end);
 					apply_padding(M, end);
-					sfmm::M2P(F, M, dx, FLAGS);
+					flops += sfmm::M2P(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
 					}
@@ -339,12 +346,13 @@ public:
 						}
 						apply_padding(dx, end);
 						F.init();
-						P2P(F, sfmm::create_mask<V>(end), dx);
+						flops += P2P(F, sfmm::create_mask<V>(end), dx);
 						part.f += sfmm::reduce_sum(F);
 					}
 				}
 			}
 		}
+		return flops;
 	}
 
 	T compare_analytic(T sample_odds) {
@@ -398,66 +406,67 @@ public:
 
 };
 
-template<class T, class V, class M, int ORDER>
-std::vector<typename tree<T, V, M, ORDER>::particle> tree<T, V, M, ORDER>::parts;
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::vector<typename tree<T, V, M, ORDER, FLAGS>::particle> tree<T, V, M, ORDER, FLAGS>::parts;
 
-template<class T, class V, class M, int ORDER>
-std::atomic<int> tree<T, V, M, ORDER>::nthread_avail(std::thread::hardware_concurrency() - 1);
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<int> tree<T, V, M, ORDER, FLAGS>::nthread_avail(std::thread::hardware_concurrency() - 1);
 
-template<class T, class V, class M, int ORDER>
-const T tree<T, V, M, ORDER>::theta_max = 0.6;
+template<class T, class V, class M, int ORDER, int FLAGS>
+const T tree<T, V, M, ORDER, FLAGS>::theta_max = 0.6;
 
-template<class T, class V, class M, int ORDER>
-const T tree<T, V, M, ORDER>::hsoft = 0.01;
+template<class T, class V, class M, int ORDER, int FLAGS>
+const T tree<T, V, M, ORDER, FLAGS>::hsoft = 0.01;
 
-template<class T, class V, class M, int ORDER = PMIN>
+template<class T, class V, class M, int ORDER, int FLAGS>
 struct run_tests {
 	void operator()() const {
-		sfmm::timer tm;
+		sfmm::timer tm, ftm;
 		double tree_time, force_time;
-		tree<T, V, M, ORDER> root;
+		tree<T, V, M, ORDER, FLAGS> root;
 		root.set_root();
 		root.initialize();
 		tm.start();
-		root.form_tree();
+		size_t flops = root.form_tree();
 		tm.stop();
 		tree_time = tm.read();
 		tm.reset();
 		tm.start();
-		root.compute_gravity_field();
+		ftm.start();
+		flops += root.compute_gravity_field();
 		tm.stop();
+		ftm.stop();
 		force_time = tm.read();
 		tm.reset();
 		tm.start();
 		const auto error = root.compare_analytic(100.0 / TEST_SIZE);
 		tm.stop();
-		printf("%i %e %e %e %e\n", ORDER, tree_time, force_time, tm.read(), error);
-		run_tests<T, V, M, ORDER + 1> run;
+		printf("%i %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error, flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
+		run_tests<T, V, M, ORDER + 1, FLAGS> run;
 		run();
 	}
 };
 
-template<class T, class V, class M>
-struct run_tests<T, V, M, PMAX + 1> {
+template<class T, class V, class M, int FLAGS>
+struct run_tests<T, V, M, PMAX + 1, FLAGS> {
 	void operator()() const {
 	}
 };
 
 int main(int argc, char **argv) {
-	feenableexcept(FE_DIVBYZERO);
-	feenableexcept(FE_OVERFLOW);
-	feenableexcept(FE_INVALID);
-	//run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
-	//run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64> run1;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32> run2;
-	run_tests<float, float, float> run1;
-	run2();
-	run1();
-	auto prof = sfmm::operator_profiling_results();
+//	feenableexcept(FE_DIVBYZERO);
+	//feenableexcept(FE_OVERFLOW);
+//	feenableexcept(FE_INVALID);
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithBestOptimization /*| sfmmProfilingOn*/> run1;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithBestOptimization /*| sfmmProfilingOn*/ | sfmmCalculateWithoutPotential> run2;
+	auto prof = sfmm::detail::operator_best_rotations();
 	printf("%s\n", prof.c_str());
-	/*printf("float\n");
-	 run_tests<float> run1;
-	 run1();*/
-	sfmm::detail::operator_write_new_bestops_source();
+	run1();
+	run2();
+	prof = sfmm::operator_profiling_results();
+	printf("%s\n", prof.c_str());
+	prof = sfmm::detail::operator_best_rotations();
+	printf("%s\n", prof.c_str());
+//	sfmm::detail::operator_write_new_bestops_source();
 	return 0;
 }

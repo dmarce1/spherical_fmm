@@ -211,7 +211,8 @@ func_data_t* operator_data(int index);
 void operator_flops_initialize();
 int operator_best_rotation(int, int, const char*, const char*);
 void operator_write_new_bestops_source();
+std::string operator_best_rotations();
 }
-
+void operator_flops(int P, int nopot, const char* type, const char* name );
 std::string operator_profiling_results();
 

@@ -72,8 +72,13 @@ SFMM_PREFIX T sqr(const T& a) {
 }
 
 template<class T>
+SFMM_PREFIX inline T sqr(vec3<T> vec) {
+	return (sqr(vec[0])+sqr(vec[1])+sqr(vec[2]));
+}
+
+template<class T>
 SFMM_PREFIX inline T abs(vec3<T> vec) {
-	return sqrt(sqr(vec[0])+sqr(vec[1])+sqr(vec[2]));
+	return sqrt(sqr(vec));
 }
 
 template<class T>
