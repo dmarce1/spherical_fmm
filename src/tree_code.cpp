@@ -312,7 +312,7 @@ public:
 				for (int j = 0; j < end; j++) {
 					load(dx, center - parts[i + j].x, j);
 				}
-				flops += sfmm::L2P(F, L, dx, FLAGS);
+				flops += printf( "%i\n", sfmm::L2P(F, L, dx, FLAGS));
 				for (int j = 0; j < end; j++) {
 					store(parts[i + j].f, F, j);
 				}
@@ -329,7 +329,7 @@ public:
 					}
 					apply_padding(dx, end);
 					apply_padding(M, end);
-					sfmm::M2P(F, M, dx, FLAGS);
+					flops += sfmm::M2P(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
 					}

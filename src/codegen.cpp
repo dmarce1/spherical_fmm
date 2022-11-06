@@ -4249,8 +4249,8 @@ std::string L2L_rot2(int P, int Q) {
 	tprint("sinphi0 = sinphi;\n");
 	tprint("cosphi = fma(z, rinv, rzero);\n");
 	tprint("sinphi = -R * rinv;\n");
-	z_rot(P, "L", FULL);
-	xz_swap(P, "L", true, FULL);
+	z_rot(P, "L", Q == P ? FULL : PRE2, Q == P ? "L2L" : "L2P");
+	xz_swap(P, "L", true, Q == P ? FULL : PRE2, Q == P ? "L2L" : "L2P");
 	if (Q == 1) {
 		if (!nopot) {
 			tprint("L2[0] = L[0];\n");
