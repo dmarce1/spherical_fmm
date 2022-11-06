@@ -1310,7 +1310,7 @@ void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 					read_ronly = !(m % 2);
 				}
 			} else if (stage == PRE2) {
-				if (l == P || opname == "M2P") {
+				if (l == P || opname == "M2P" || opname == "L2P") {
 					write_ronly = m % 2 != l % 2;
 				}
 			}
@@ -1397,7 +1397,7 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opnam
 		int mmax = n;
 		if (stage == PRE2) {
 			mmax = std::min((P + 1) - n, n);
-			if (opname == "M2P") {
+			if (opname == "M2P" || opname == "L2P") {
 				mmax = std::min(1, mmax);
 			}
 		}

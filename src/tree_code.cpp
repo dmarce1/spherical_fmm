@@ -329,7 +329,7 @@ public:
 					}
 					apply_padding(dx, end);
 					apply_padding(M, end);
-					flops += sfmm::M2P(F, M, dx, FLAGS);
+					sfmm::M2P(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
 					}
