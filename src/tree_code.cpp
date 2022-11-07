@@ -457,16 +457,16 @@ int main(int argc, char **argv) {
 //	feenableexcept(FE_DIVBYZERO);
 	//feenableexcept(FE_OVERFLOW);
 //	feenableexcept(FE_INVALID);
+	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/> run1;
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/ | sfmmCalculateWithoutPotential> run2;
-	auto prof = sfmm::detail::operator_best_rotations();
-//	printf("%s\n", prof.c_str());
 	run1();
 	run2();
-//	prof = sfmm::operator_profiling_results();
-	//printf("%s\n", prof.c_str());
-	//prof = sfmm::detail::operator_best_rotations();
-//	printf("%s\n", prof.c_str());
+	auto prof = sfmm::operator_profiling_results();
+	printf("%s\n", prof.c_str());
+	prof = sfmm::detail::operator_best_rotations();
+	printf("%s\n", prof.c_str());
+	prof = sfmm::detail::operator_best_rotations();
 //	sfmm::detail::operator_write_new_bestops_source();
 	return 0;
 }

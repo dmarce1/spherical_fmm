@@ -192,6 +192,19 @@ std::string print2str(const char* fstr, Args&&...args) {
 	return result;
 }
 
+template<class ...Args>
+std::string print2str(const char* fstr) {
+	std::string result;
+	char* str;
+	if (!asprintf(&str, "%s", fstr)) {
+		printf("Error in %s on line %i\n", __FILE__, __LINE__);
+		abort();
+	}
+	result = str;
+	free(str);
+	return result;
+}
+
 struct func_data_t {
 	void* func_ptr;
 	std::string type;
@@ -208,11 +221,11 @@ func_data_t* operator_initialize(void*);
 void operator_update_timing(func_data_t*, double);
 int operator_count();
 func_data_t* operator_data(int index);
-void operator_flops_initialize();
-int operator_best_rotation(int, int, const char*, const char*);
 void operator_write_new_bestops_source();
 std::string operator_best_rotations();
 }
+std::string operator_show_flops();
+int operator_best_rotation(int, int, const char*, const char*);
 void operator_flops(int P, int nopot, const char* type, const char* name );
 std::string operator_profiling_results();
 
