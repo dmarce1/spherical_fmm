@@ -3117,28 +3117,13 @@ void func_closer(int P, std::string name, bool pub) {
 
 }
 
-int M2M_z(int P) {
-	static std::array<int, PMAX + 1> flops;
-	static bool init = false;
-	if (!init) {
-		for (int i = 0; i <= PMAX; i++) {
-			flops[i] = -1;
-		}
-		init = true;
-	}
-	if (flops[P] != -1) {
-		return flops[P];
-	}
-	//bool pub, bool calcpot, bool timing, bool flops, bool vec,
-	func_header((std::string("M2Mz") + std::to_string(P)).c_str(), P, false, false, false, false, false, "", "M", PTR, "z", LIT);
-	reset_running_flops();
-	init_reals("G", P - 1);
-	tprint("G[0] = z;\n");
+void M2M_z(int P) {
+	tprint("Y[0] = z;\n");
 	for (int i = 1; i < P - 1; i++) {
-		tprint("G[%i] = z * G[%i];\n", i, i - 1);
+		tprint("Y[%i] = z * Y[%i];\n", i, i - 1);
 	}
 	for (int i = 1; i < P - 1; i++) {
-		tprint("G[%i] *= TCAST(%0.20e);\n", i, 1.0 / factorial(i + 1));
+		tprint("Y[%i] *= TCAST(%0.20e);\n", i, 1.0 / factorial(i + 1));
 	}
 	for (int n = P - 1; n >= 0; n--) {
 		for (int m = -n; m <= n; m++) {
@@ -3147,60 +3132,24 @@ int M2M_z(int P) {
 				if (abs(m) > n - k) {
 					continue;
 				}
-				tprint("M[%i] = fma(G[%i], M[%i], M[%i]);\n", mindex(n, m), k - 1, mindex(n - k, m), mindex(n, m));
+				tprint("M[%i] = fma(Y[%i], M[%i], M[%i]);\n", mindex(n, m), k - 1, mindex(n - k, m), mindex(n, m));
 			}
 		}
 		tprint_flush_chains();
 	}
-	deindent();
-	tprint("return %i;\n", get_running_flops().load());
-	tprint("}\n");
-	tprint("}\n");
-	tprint("}\n");
-	flops[P] = get_running_flops().load();
-	TAB0();
-	return flops[P];
 }
 
-int regular_harmonic_xy(int P) {
-	static std::array<int, PMAX + 1> flops;
-	static bool init = false;
-	if (!init) {
-		for (int i = 0; i <= PMAX; i++) {
-			flops[i] = -1;
-		}
-		init = true;
-	}
-	if (flops[P] != -1) {
-		return flops[P];
-	}
-	auto fname = func_header("regular_harmonic_xy", P, false, false, false, false, false, "", "Y", XYEXP, "x", LIT, "y", LIT);
-	init_real("ax0");
-	init_real("ay0");
-	init_real("ax1");
-	init_real("ay1");
-	init_real("ax2");
-	init_real("ay2");
-	reset_running_flops();
-	if (P > 1) {
-		init_real("r2");
-		tprint("r2 = fma(x, x, y * y);\n");
-	}
-	tprint("Y[0] = TCAST(1);\n");
-	if (periodic && P > 1) {
-		tprint("Y_st.trace2() = r2;\n");
-	}
+void regular_harmonic_xy(int P) {
 	for (int m = 0; m <= P; m++) {
 		if (m > 0) {
-			if (m - 1 > 0) {
+			if (m > 1) {
 				tprint("ax0 = Y[%i] * TCAST(%.20e);\n", xyindex(m - 1, m - 1), 1.0 / (2.0 * m));
 				tprint("ay0 = Y[%i] * TCAST(%.20e);\n", xyindex(m - 1, -(m - 1)), 1.0 / (2.0 * m));
 				tprint("Y[%i] = x * ax0 - y * ay0;\n", xyindex(m, m));
 				tprint("Y[%i] = fma(y, ax0, x * ay0);\n", xyindex(m, -m));
 			} else {
-				tprint("ax0 = Y[%i] * TCAST(%.20e);\n", xyindex(m - 1, m - 1), 1.0 / (2.0 * m));
-				tprint("Y[%i] = x * ax0;\n", xyindex(m, m));
-				tprint("Y[%i] = y * ax0;\n", xyindex(m, -m));
+				tprint("Y[%i] = x * TCAST(%.20e);\n", xyindex(m, m), 1.0 / (2.0 * m));
+				tprint("Y[%i] = y * TCAST(%.20e);\n", xyindex(m, -m), 1.0 / (2.0 * m));
 			}
 		}
 	}
@@ -3208,45 +3157,47 @@ int regular_harmonic_xy(int P) {
 		tprint_new_chain();
 		for (int n = m + 2; n <= P; n += 2) {
 			const double inv = double(1) / (double(n * n) - double(m * m));
-			tprint_chain("ay%i = TCAST(%.20e) * r2;\n", current_chain, -(double) inv);
-			tprint_chain("Y[%i] = ay%i * Y[%i];\n", xyindex(n, m), current_chain, xyindex(n - 2, m));
-			if (m != 0) {
-				tprint_chain("Y[%i] = ay%i * Y[%i];\n", xyindex(n, -m), current_chain, xyindex(n - 2, -m));
+			if (n == 2 && m == 0) {
+				tprint_chain("Y[%i] = TCAST(%.20e) * R2;\n", xyindex(n, m), -(double) inv);
+			} else {
+				tprint_chain("ay%i = TCAST(%.20e) * R2;\n", current_chain, -(double) inv);
+				tprint_chain("Y[%i] = ay%i * Y[%i];\n", xyindex(n, m), current_chain, xyindex(n - 2, m));
+				if (m != 0) {
+					tprint_chain("Y[%i] = ay%i * Y[%i];\n", xyindex(n, -m), current_chain, xyindex(n - 2, -m));
+				}
 			}
 		}
 	}
 	tprint_flush_chains();
-	tprint("return %i;\n", get_running_flops().load());
-	flops[P] = get_running_flops().load();
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("}\n");
-	tprint("}\n");
-	tprint("\n");
-	TAB0();
-	return flops[P];
 }
 
 std::string M2M_rot1(int P) {
-	auto flops = regular_harmonic_xy(P - 1);
-	flops += M2M_z(P);
 	auto index = mindex;
 	auto fname = func_header("M2Mr1", P, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
-	reset_running_flops();
 	tprint("/* algorithm= z rotation only, half l^4 */\n");
 	open_timer("M2Mr1");
 	init_real("tmp1");
+	init_real("ax0");
+	init_real("ay0");
+	init_real("ax1");
+	init_real("ay1");
+	init_real("ax2");
+	init_real("ay2");
+	init_real("R2");
+	init_reals("Y", P - 1);
 	if (scaled) {
 		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
 		tprint("x *= tmp1;\n");
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
-	tprint("detail::expansion_xy<%s, %i> Y_st;\n", type.c_str(), P - 1);
-	tprint("T* Y(Y_st.data());\n");
-	tprint("detail::M2Mz%i(M, -z, flags);\n", P);
-	tprint("detail::regular_harmonic_xy(Y_st, -x, -y, flags);\n");
+	reset_running_flops();
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
+	tprint("R2 = fma(x, x, y * y);\n");
+	M2M_z(P);
+	regular_harmonic_xy(P - 1);
 	if (P > 2 && !nopot && periodic) {
 		tprint("M_st.trace2() = fma(TCAST(-4) * x, M[%i], M_st.trace2());\n", mindex(1, 1));
 		tprint("M_st.trace2() = fma(TCAST(-4) * y, M[%i], M_st.trace2());\n", mindex(1, -1));
@@ -3390,7 +3341,7 @@ std::string M2M_rot1(int P) {
 	close_timer();
 	deindent();
 	tprint("}\n");
-	flops += get_running_flops().load();
+	int flops = get_running_flops().load();
 	tprint("return %i;\n", flops);
 	deindent();
 	tprint("}\n");
@@ -3400,7 +3351,7 @@ std::string M2M_rot1(int P) {
 	if (nopot) {
 		tprint("}\n");
 	}
-	timing_body += print2str("\"M2M\", %i, %i, 1, %i, 0.0, 0}", P, nopot, flops / simd_size[typenum]);
+	timing_body += print2str("\"M2M\", %i, %i, 1, %i, 0.0, 0}", P, nopot, flops);
 	TAB0();
 	return fname;
 }
