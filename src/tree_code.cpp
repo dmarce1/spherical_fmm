@@ -458,8 +458,8 @@ int main(int argc, char **argv) {
 	//feenableexcept(FE_OVERFLOW);
 //	feenableexcept(FE_INVALID);
 	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/> run1;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/ | sfmmCalculateWithoutPotential> run2;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization /*| sfmmProfilingOn*/> run1;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization /*| sfmmProfilingOn*/ | sfmmCalculateWithoutPotential> run2;
 	run1();
 	run2();
 	auto prof = sfmm::operator_profiling_results();
