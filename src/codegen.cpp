@@ -370,27 +370,27 @@ flops_t accumulate_flops(int P) {
 flops_t sqrt_flops() {
 	flops_t fps;
 	fps.r += 4;
-	fps.r += 10;
+/*	fps.r += 10;
 	fps.i += 2;
 	fps.asgn += 2;
 	fps.fma += 2;
 	fps.rdiv++;
 	if (!is_float(type)) {
 		fps.fma += 2;
-	}
+	}*/
 	return fps;
 }
 
 flops_t rsqrt_flops() {
 	flops_t fps;
 	fps.r += 4;
-	fps.r += 10;
+/*	fps.r += 10;
 	fps.i += 2;
 	fps.asgn += 2;
 	fps.fma += 2;
 	if (!is_float(type)) {
 		fps.fma += 2;
-	}
+	}*/
 	return fps;
 }
 
@@ -2482,7 +2482,9 @@ void M2L_allrot(int P, int Q, int rot) {
 	} else if (rot == 0) {
 		tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
 	}
-	tprint("T* O(O_st.data());\n", type.c_str(), P);
+	if( rot != 2 ) {
+		tprint("T* O(O_st.data());\n", type.c_str(), P);
+	}
 	init_real("r2");
 	init_real("r2inv");
 	init_real("ax0");
@@ -2492,7 +2494,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	init_real("ay1");
 	init_real("ay2");
 	init_real("R2");
-	if (rot == 1) {
+	if (rot > 0) {
 		init_reals("rx", std::max(P - 1, Q));
 		init_reals("ry", std::max(P - 1, Q));
 		init_real("Rinv");
@@ -2502,6 +2504,13 @@ void M2L_allrot(int P, int Q, int rot) {
 		init_real("sinphi");
 		init_real("cosphi");
 		init_real("tmp0");
+		init_real("r2przero");
+		if (rot == 2) {
+			init_real("rinv");
+			init_real("sinphi0");
+			init_real("cosphi0");
+			init_reals("A", 2 * P + 1);
+		}
 	}
 	if (rot != 2) {
 		init_real("zx1;\n");
@@ -2566,14 +2575,7 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("M_st.r = M0_st.r;\n");
 		}
 	}
-
-	if (Q == 1) {
-		tprint("L[0] = TCAST(0);\n");
-		tprint("L[1] = TCAST(0);\n");
-		tprint("L[2] = TCAST(0);\n");
-		tprint("L[3] = TCAST(0);\n");
-	}
-	if (rot == 1) {
+	if (rot > 0) {
 		tprint("R2 = fma(x, x, y * y);\n");
 		tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
 		tprint("r2 = fma(z, z, R2);\n");
@@ -2581,11 +2583,34 @@ void M2L_allrot(int P, int Q, int rot) {
 		tprint("tmp1 = R2 + Rzero;\n");
 		tprint("Rinv = rsqrt(tmp1);\n");
 		tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
-		tprint("r2inv = TCAST(1) / (r2 + rzero);\n");
-		tprint("cosphi = fma(x, Rinv, Rzero);\n");
-		tprint("sinphi = -y * Rinv;\n");
-		z_rot(P - 1, "M", FULL);
+		tprint("r2przero = (r2 + rzero);\n");
+		if (rot == 1) {
+			tprint("r2inv = TCAST(1) / (r2przero);\n");
+			tprint("cosphi = fma(x, Rinv, Rzero);\n");
+			tprint("sinphi = -y * Rinv;\n");
+		} else {
+			tprint("rinv = rsqrt(r2przero);\n");
+			tprint("cosphi = y * Rinv;\n");
+			tprint("sinphi = fma(x, Rinv, Rzero);\n");
+			tprint("cosphi0 = fma(z, rinv, rzero);\n");
+			tprint("sinphi0 = -R * rinv;\n");
+		}
 	}
+	if (rot == 1) {
+		z_rot(P - 1, "M", FULL);
+	} else if (rot == 2) {
+		z_rot(P - 1, "M", PRE1);
+		xz_swap(P - 1, "M", false, PRE1);
+		tprint("tmp0 = cosphi;\n");
+		tprint("tmp1 = sinphi;\n");
+		tprint("cosphi = cosphi0;\n");
+		tprint("sinphi = sinphi0;\n");
+		tprint("cosphi0 = tmp0;\n");
+		tprint("sinphi0 = tmp1;\n");
+		z_rot(P - 1, "M", PRE2, P != Q ? "M2P" : "M2L");
+		xz_swap(P - 1, "M", false, PRE2, P != Q ? "M2P" : "M2L");
+	}
+
 	if (rot == 0) {
 		greens_body(P);
 	} else if (rot == 1) {
@@ -2628,7 +2653,57 @@ void M2L_allrot(int P, int Q, int rot) {
 		}
 		tprint_flush_chains();
 	}
-	m2lg_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
+	if (rot != 2) {
+		m2lg_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
+	} else {
+		tprint("A[0] = rinv;\n");
+		for (int n = 1; n <= P; n++) {
+			tprint("A[%i] = rinv * A[%i];\n", n, n - 1);
+		}
+		for (int n = 2; n <= P; n++) {
+			tprint("A[%i] *= TCAST(%.20e);\n", n, factorial(n));
+		}
+		bool first[(Q + 1)][(2 * Q + 1)];
+		for (int n = 0; n <= Q; n++) {
+			for (int m = -n; m <= n; m++) {
+				first[n][n + m] = true;
+			}
+		}
+		for (int n = nopot; n <= Q; n++) {
+			for (int m = 0; m <= n; m++) {
+				tprint_new_chain();
+				const int maxk = std::min(P - n, P - 1);
+				for (int k = m; k <= maxk; k++) {
+					if (nodip && k == 1) {
+						continue;
+					}
+					if (first[n][n + m]) {
+						first[n][n + m] = false;
+						tprint_chain("L[%i] = M[%i] * A[%i];\n", lindex(n, m), mindex(k, m), n + k);
+					} else {
+						tprint_chain("L[%i] = fma(M[%i], A[%i], L[%i]);\n", lindex(n, m), mindex(k, m), n + k, lindex(n, m));
+					}
+					if (m != 0) {
+						if (first[n][n - m]) {
+							first[n][n - m] = false;
+							tprint_chain("L[%i] = M[%i] * A[%i];\n", lindex(n, -m), mindex(k, -m), n + k);
+						} else {
+							tprint_chain("L[%i] = fma(M[%i], A[%i], L[%i]);\n", lindex(n, -m), mindex(k, -m), n + k, lindex(n, -m));
+						}
+					}
+				}
+				if (m % 2 != 0) {
+					if (!first[n][n + m]) {
+						tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+					}
+					if (!first[n][n - m]) {
+						tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
+					}
+				}
+			}
+		}
+		tprint_flush_chains();
+	}
 	if (rot == 1) {
 		tprint("sinphi = -sinphi;\n");
 		if (nodip) {
@@ -2636,6 +2711,14 @@ void M2L_allrot(int P, int Q, int rot) {
 		} else {
 			z_rot(Q, "L", Q == P ? XZ1 : FULL);
 		}
+	} else if (rot == 2) {
+		xz_swap(Q, "L", true, P == Q ? POST1 : FULL);
+		tprint("sinphi = -sinphi;\n");
+		z_rot(Q, "L", P == Q ? POST1 : FULL);
+		xz_swap(Q, "L", true, P == Q ? POST2 : FULL);
+		tprint("cosphi = cosphi0;\n");
+		tprint("sinphi = -sinphi0;\n");
+		z_rot(Q, "L", P == Q ? POST2 : FULL);
 	}
 	if (Q == 1) {
 		if (scaled) {
@@ -2673,7 +2756,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	if (nopot) {
 		tprint("}\n");
 	}
-	timing_body += print2str("\"M2%c\", %i, %i, 0, %i, 0.0, 0}", Q == P ? 'L' : 'P', P, nopot, get_running_flops(false).load());
+	timing_body += print2str("\"M2%c\", %i, %i, %i, %i, 0.0, 0}", Q == P ? 'L' : 'P', P, nopot, rot, get_running_flops(false).load());
 	TAB0();
 }
 
@@ -4443,8 +4526,8 @@ void safe_math_double() {
 }
 
 int flops_t::load() const {
-//		return r + 2 * fma + 4 * rdiv;// + con + rcmp;
-	return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
+		return r + 2 * fma + 4 * rdiv;// + con + rcmp;
+//	return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
 }
 
 void math_float(std::string _type) {
@@ -5201,7 +5284,7 @@ int main() {
 					M2L(P, P);
 					M2L_allrot(P, P, 0);
 					M2L_allrot(P, P, 1);
-					M2L_rot2(P, P);
+					M2L_allrot(P, P, 2);
 					M2L(P, 1);
 					M2L_rot0(P, 1);
 					M2L_rot1(P, 1);
