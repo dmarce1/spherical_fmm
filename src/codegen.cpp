@@ -1465,9 +1465,9 @@ void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string 
 			read_ronly = read_ronly || sw;
 			if (read_ionly) {
 				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
-				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
 			} else if (read_ronly) {
-				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * ip[%i];\n", dst, index(l, -m), src, index(l, m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * ip[%i];\n", dst, index(l, -m), src, index(l, m), m - 1)));
 				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, m), src, index(l, m), m - 1)));
 			} else if (write_ronly) {
 				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
@@ -1950,16 +1950,19 @@ std::string greens_safe(int P) {
 }
 
 void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex) {
+	struct entry_t {
+		int l;
+		int m;
+		int o;
+	};
+	std::vector<entry_t> pos;
+	std::vector<entry_t> neg;
 	for (int n = nopot; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
 			bool iload = true;
 			bool rload = true;
 			tprint_new_chain();
 			const int kmax = std::min(P - n, P - 1);
-			std::vector<std::pair<std::string, std::string>> pos_real;
-			std::vector<std::pair<std::string, std::string>> neg_real;
-			std::vector<std::pair<std::string, std::string>> pos_imag;
-			std::vector<std::pair<std::string, std::string>> neg_imag;
 			for (int k = 0; k <= kmax; k++) {
 				if (nodip && k == 1) {
 					continue;
@@ -1973,174 +1976,126 @@ void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 					int gysgn = 1;
 					int mxsgn = 1;
 					int mysgn = 1;
-					char* gxstr = nullptr;
-					char* gystr = nullptr;
-					char* mxstr = nullptr;
-					char* mystr = nullptr;
+					int gxstr;
+					int gystr;
+					int mxstr;
+					int mystr;
 					if (m + l > 0) {
-						ASPRINTF(&gxstr, "O[%i] /* %i %i */", oindex(n + k, m + l), n + k, m + l);
-						ASPRINTF(&gystr, "O[%i] /* %i %i */", oindex(n + k, -m - l), n + k, -m - l);
+						gxstr = oindex(n + k, m + l);
+						gystr = oindex(n + k, -m - l);
 					} else if (m + l < 0) {
 						if (abs(m + l) % 2 == 0) {
-							ASPRINTF(&gxstr, "O[%i] /* %i %i */", oindex(n + k, -m - l), n + k, -m - l);
-							ASPRINTF(&gystr, "O[%i] /* %i %i */", oindex(n + k, m + l), n + k, m + l);
+							gxstr = oindex(n + k, -m - l);
+							gystr = oindex(n + k, m + l);
 							gysgn = -1;
 						} else {
-							ASPRINTF(&gxstr, "O[%i] /* %i %i */", oindex(n + k, -m - l), n + k, -m - l);
-							ASPRINTF(&gystr, "O[%i] /* %i %i */", oindex(n + k, m + l), n + k, m + l);
+							gxstr = oindex(n + k, -m - l);
+							gystr = oindex(n + k, m + l);
 							gxsgn = -1;
 						}
 					} else {
 						greal = true;
-						ASPRINTF(&gxstr, "O[%i]  /* %i %i */", oindex(n + k, 0), n + k, 0);
+						gxstr = oindex(n + k, 0);
 					}
 					if (l > 0) {
-						ASPRINTF(&mxstr, "M[%i]", mindex(k, l));
-						ASPRINTF(&mystr, "M[%i]", mindex(k, -l));
+						mxstr = mindex(k, l);
+						mystr = mindex(k, -l);
 						mysgn = -1;
 					} else if (l < 0) {
 						if (l % 2 == 0) {
-							ASPRINTF(&mxstr, "M[%i]", mindex(k, -l));
-							ASPRINTF(&mystr, "M[%i]", mindex(k, l));
+							mxstr = mindex(k, -l);
+							mystr = mindex(k, l);
 						} else {
-							ASPRINTF(&mxstr, "M[%i]", mindex(k, -l));
-							ASPRINTF(&mystr, "M[%i]", mindex(k, l));
+							mxstr = mindex(k, -l);
+							mystr = mindex(k, l);
 							mxsgn = -1;
 							mysgn = -1;
 						}
 					} else {
 						mreal = true;
-						ASPRINTF(&mxstr, "M[%i]", mindex(k, 0));
+						mxstr = mindex(k, 0);
 					}
 					const auto csgn = [](int i) {
 						return i > 0 ? '+' : '-';
 					};
-					const auto add_work = [ronly,&gystr,&pos_real,&pos_imag,&neg_real,&neg_imag](int sgn, int m, char* mstr, char* gstr) {
+					const auto add_work = [n,ronly,&gystr,&pos,&neg](int sgn, int m, int mstr, int gstr) {
 						if( ronly && gystr == gstr) {
 							return;
 						}
+						entry_t entry;
+						entry.l = lindex(n, m);
+						entry.m = mstr;
+						entry.o = gstr;
 						if( sgn == 1) {
-							if( m >= 0 ) {
-								pos_real.push_back(std::make_pair(std::string(mstr),std::string(gstr)));
-							} else {
-								pos_imag.push_back(std::make_pair(std::string(mstr),std::string(gstr)));
-							}
+							pos.push_back(entry);
 						} else {
-							if( m >= 0 ) {
-								neg_real.push_back(std::make_pair(std::string(mstr),std::string(gstr)));
-							} else {
-								neg_imag.push_back(std::make_pair(std::string(mstr),std::string(gstr)));
-							}
+							neg.push_back(entry);
 						}
 					};
 					if (!mreal) {
 						if (!greal) {
-							add_work(mxsgn * gxsgn, 1, mxstr, gxstr);
-							add_work(-mysgn * gysgn, 1, mystr, gystr);
+							add_work(mxsgn * gxsgn, m, mxstr, gxstr);
+							add_work(-mysgn * gysgn, m, mystr, gystr);
 							if (m > 0) {
-								add_work(mysgn * gxsgn, -1, mystr, gxstr);
-								add_work(mxsgn * gysgn, -1, mxstr, gystr);
+								add_work(mysgn * gxsgn, -m, mystr, gxstr);
+								add_work(mxsgn * gysgn, -m, mxstr, gystr);
 							}
 						} else {
-							add_work(mxsgn * gxsgn, 1, mxstr, gxstr);
+							add_work(mxsgn * gxsgn, m, mxstr, gxstr);
 							if (m > 0) {
-								add_work(mysgn * gxsgn, -1, mystr, gxstr);
+								add_work(mysgn * gxsgn, -m, mystr, gxstr);
 							}
 						}
 					} else {
 						if (!greal) {
-							add_work(mxsgn * gxsgn, 1, mxstr, gxstr);
+							add_work(mxsgn * gxsgn, m, mxstr, gxstr);
 							if (m > 0) {
-								add_work(mxsgn * gysgn, -1, mxstr, gystr);
+								add_work(mxsgn * gysgn, -m, mxstr, gystr);
 							}
 						} else {
-							add_work(mxsgn * gxsgn, 1, mxstr, gxstr);
+							add_work(mxsgn * gxsgn, m, mxstr, gxstr);
 						}
 					}
-					if (gxstr) {
-						free(gxstr);
-					}
-					if (gystr) {
-						free(gystr);
-					}
-					if (mxstr) {
-						free(mxstr);
-					}
-					if (mystr) {
-						free(mystr);
-					}
 				}
 			}
-			if (fmaops && neg_real.size() >= 2) {
-				if (!rload) {
-					tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-				}
-				for (int i = 0; i < neg_real.size(); i++) {
-					if (rload) {
-						tprint_chain("L[%i] = %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-						rload = false;
-					} else {
-						tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), lindex(n, m));
-					}
-				}
-				if (!rload) {
-					tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-				}
-			} else {
-				for (int i = 0; i < neg_real.size(); i++) {
-					if (rload) {
-						tprint_chain("L[%i] = -%s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-						rload = false;
-					} else {
-						tprint_chain("L[%i] -= %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-					}
-				}
-			}
-			for (int i = 0; i < pos_real.size(); i++) {
-				if (rload) {
-					rload = false;
-					tprint_chain("L[%i] = %s * %s;\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str());
-				} else {
-					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), lindex(n, m));
-				}
-			}
-			if (fmaops && neg_imag.size() >= 2) {
-				if (!iload) {
-					tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
-				}
-				for (int i = 0; i < neg_imag.size(); i++) {
-					if (iload) {
-						iload = false;
-						tprint_chain("L[%i] = %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					} else {
-						tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), lindex(n, -m));
-					}
-				}
-				if (!iload) {
-					tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
-				}
-			} else {
-				for (int i = 0; i < neg_imag.size(); i++) {
-					if (iload) {
-						iload = false;
-						tprint_chain("L[%i] = -%s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					} else {
-						tprint_chain("L[%i] -= %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-					}
-				}
-			}
-			for (int i = 0; i < pos_imag.size(); i++) {
-				if (iload) {
-					iload = false;
-					tprint_chain("L[%i] = %s * %s;\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str());
-				} else {
-					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), lindex(n, -m));
-				}
-			}
-
 		}
 	}
-	tprint_flush_chains();
+	const auto cmp = [](entry_t a, entry_t b) {
+		if( a.m < b.m ) {
+			return true;
+		} else if( a.m > b.m ) {
+			return false;
+		} else {
+			return a.l < b.l;
+		}
+	};
+	std::sort(neg.begin(), neg.end(), cmp);
+	std::sort(pos.begin(), pos.end(), cmp);
+	bool first[(P + 1) * (P + 1)];
+	for (int n = 0; n < (P + 1) * (P + 1); n++) {
+		first[n] = true;
+	}
+	for (int i = 0; i < neg.size(); i++) {
+		if (first[neg[i].l]) {
+			tprint("L[%i] = M[%i] * O[%i];\n", neg[i].l, neg[i].m, neg[i].o);
+			first[neg[i].l] = false;
+		} else {
+			tprint("L[%i] = fma(M[%i], O[%i], L[%i]);\n", neg[i].l, neg[i].m, neg[i].o, neg[i].l);
+		}
+	}
+	for (int n = 0; n < (P + 1) * (P + 1); n++) {
+		if (!first[n]) {
+			tprint("L[%i] = -L[%i];\n", n, n);
+		}
+	}
+	for (int i = 0; i < pos.size(); i++) {
+		if (first[pos[i].l]) {
+			first[pos[i].l] = false;
+			tprint("L[%i] = M[%i] * O[%i];\n", pos[i].l, pos[i].m, pos[i].o);
+		} else {
+			tprint("L[%i] = fma(M[%i], O[%i], L[%i]);\n", pos[i].l, pos[i].m, pos[i].o, pos[i].l);
+		}
+	}
 }
 
 std::vector<complex> spherical_singular_harmonic(int P, double x, double y, double z) {
@@ -2780,8 +2735,10 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("T* in=inA;\n");
 		} else {
 			init_reals("r0", N);
-			init_reals("ip", N);
-			init_reals("in", N);
+			init_reals("ipA", N);
+			init_reals("inA", N);
+			tprint("T* ip=ipA;\n");
+			tprint("T* in=inA;\n");
 		}
 		init_real("Rinv");
 		init_real("R");
@@ -2797,7 +2754,7 @@ void M2L_allrot(int P, int Q, int rot) {
 		}
 	}
 	if (rot != 2) {
-		init_real("zx1;\n");
+		init_real("zx1");
 		for (int m = 1; m < P; m++) {
 			init_real(std::string("zx") + std::to_string(2 * m + 1));
 		}
@@ -2906,52 +2863,66 @@ void M2L_allrot(int P, int Q, int rot) {
 		for (int n = 2; n <= P; n++) {
 			tprint("A[%i] *= TCAST(%.20e);\n", n, factorial(n));
 		}
-		bool first[(Q + 1)][(2 * Q + 1)];
-		for (int n = 0; n <= Q; n++) {
-			for (int m = -n; m <= n; m++) {
-				first[n][n + m] = true;
-			}
+		bool first[(Q + 1) * (Q + 1)];
+		for (int n = 0; n < (Q + 1) * (Q + 1); n++) {
+			first[n] = true;
 		}
+		struct entry_t {
+			int l;
+			int m;
+			int r;
+		};
+		std::vector<entry_t> cmds;
 		for (int n = nopot; n <= Q; n++) {
 			for (int m = 0; m <= n; m++) {
-				tprint_new_chain();
 				const int maxk = std::min(P - n, P - 1);
 				for (int k = m; k <= maxk; k++) {
 					if (nodip && k == 1) {
 						continue;
 					}
-					if (first[n][n + m]) {
-						first[n][n + m] = false;
-						tprint_chain("L[%i] = M[%i] * A[%i];\n", lindex(n, m), mindex(k, m), n + k);
-					} else {
-						tprint_chain("L[%i] = fma(M[%i], A[%i], L[%i]);\n", lindex(n, m), mindex(k, m), n + k, lindex(n, m));
-					}
+					entry_t cmd;
+					cmd.l = lindex(n, m);
+					cmd.m = mindex(k, m);
+					cmd.r = n + k;
+					cmds.push_back(cmd);
 					if (m != 0) {
-						if (first[n][n - m]) {
-							first[n][n - m] = false;
-							tprint_chain("L[%i] = M[%i] * A[%i];\n", lindex(n, -m), mindex(k, -m), n + k);
-						} else {
-							tprint_chain("L[%i] = fma(M[%i], A[%i], L[%i]);\n", lindex(n, -m), mindex(k, -m), n + k, lindex(n, -m));
-						}
-					}
-				}
-				if (m % 2 != 0) {
-					if (!first[n][n + m]) {
-						tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-					}
-					if (!first[n][n - m]) {
-						tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
+						cmd.l = lindex(n, -m);
+						cmd.m = mindex(k, -m);
+						cmds.push_back(cmd);
 					}
 				}
 			}
 		}
-		tprint_flush_chains();
+		std::sort(cmds.begin(), cmds.end(), [](entry_t a, entry_t b) {
+			if( a.m < b.m ) {
+				return true;
+			} else if( a.m > b.m ) {
+				return false;
+			} else {
+				return a.l < b.l;
+			}
+		});
+		for (auto cmd : cmds) {
+			if (first[cmd.l]) {
+				first[cmd.l] = false;
+				tprint("L[%i] = M[%i] * A[%i];\n", cmd.l, cmd.m, cmd.r);
+			} else {
+				tprint("L[%i] = fma(M[%i], A[%i], L[%i]);\n", cmd.l, cmd.m, cmd.r, cmd.l);
+			}
+		}
+		for (int n = nopot; n <= Q; n++) {
+			for (int m = -n; m <= n; m++) {
+				if (abs(m) % 2 != 0) {
+					if (!first[lindex(n, m)]) {
+						tprint("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+					}
+				}
+			}
+		}
 	}
 	if (rot == 1) {
-		for (int i = 0; i < N; i++) {
-			tprint("in[%i] = -in[%i];\n", i, i);
-			tprint("ip[%i] = -ip[%i];\n", i, i);
-		}
+		tprint("ip=inA;\n");
+		tprint("in=ipA;\n");
 		if (nodip) {
 			z_rot2(Q, "L0", "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL, P != Q ? "M2P" : "M2L", false);
 		} else {
