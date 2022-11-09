@@ -454,15 +454,15 @@ struct run_tests<T, V, M, PMAX + 1, FLAGS> {
 };
 
 int main(int argc, char **argv) {
-//	feenableexcept(FE_DIVBYZERO);
-	//feenableexcept(FE_OVERFLOW);
-//	feenableexcept(FE_INVALID);
+	feenableexcept(FE_DIVBYZERO);
+	feenableexcept(FE_OVERFLOW);
+	feenableexcept(FE_INVALID);
 	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithoutOptimization /*| sfmmProfilingOn*/> run1;
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization /*| sfmmProfilingOn*/ > run2;
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/> run3;
-	run1();
-	run2();
+	//run1();
+	//run2();
 	run3();
 	auto prof = sfmm::operator_profiling_results();
 	printf("%s\n", prof.c_str());

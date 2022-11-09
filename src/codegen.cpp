@@ -27,7 +27,7 @@ enum stage_t {
 	PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL
 };
 
-//#define NO_DIPOLE
+#define NO_DIPOLE
 
 struct flops_t {
 	int r;
@@ -1210,6 +1210,9 @@ int xyindex(int l0, int m0) {
 
 int mindex(int l, int m) {
 	if (nodip) {
+		if (l == 1) {
+			abort();
+		}
 		return std::max(0, lindex(l, m) - 3);
 	} else {
 		return lindex(l, m);
@@ -1417,7 +1420,9 @@ void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string 
 	std::vector<cmd_t> cmds;
 	cmds.push_back(std::make_pair(0, print2str("%s[0] = %s[0];\n", dst, src)));
 	for (int m = 1; m <= P; m++) {
-		cmds.push_back(std::make_pair(index(m, 0), print2str("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0))));
+		if (!(nodip && m == 1 && dst[0] == 'M')) {
+			cmds.push_back(std::make_pair(index(m, 0), print2str("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0))));
+		}
 		for (int l = m; l <= P; l++) {
 			if (dst[0] == 'M' && nodip && l == 1) {
 				continue;
@@ -1518,7 +1523,7 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opnam
 	}
 	std::vector<int> set_nan;
 	for (int n = 1; n <= P; n++) {
-		if (std::string(name) == std::string("M") && nodip && n == 1) {
+		if (name[0] == 'M' && nodip && n == 1) {
 			continue;
 		}
 		int lmax = n;
@@ -2796,14 +2801,34 @@ void M2L_allrot(int P, int Q, int rot) {
 	if (rot == 1) {
 		z_rot2(P - 1, "M", "Min", FULL, P != Q ? "M2P" : "M2L", true);
 	} else if (rot == 2) {
-		z_rot2(P - 1, "M0", "Min", PRE1, P != Q ? "M2P" : "M2L", true);
+		tprint("r0[0] = cosphi;\n");
+		tprint("ip[0] = sinphi;\n");
+		tprint("in[0] = -sinphi;\n");
+		for (int m = 1; m < N; m++) {
+			tprint("r0[%i] = in[%i] * sinphi;\n", m, m - 1);
+			tprint("ip[%i] = ip[%i] * cosphi;\n", m, m - 1);
+			tprint("r0[%i] = fma(r0[%i], cosphi, r0[%i]);\n", m, m - 1, m);
+			tprint("ip[%i] = fma(r0[%i], sinphi, ip[%i]);\n", m, m - 1, m);
+			tprint("in[%i] = -ip[%i];\n", m, m);
+		}
+		z_rot2(P - 1, "M0", "Min", PRE1, P != Q ? "M2P" : "M2L", false);
 		xz_swap2(P - 1, "M", "M0", false, PRE1, P != Q ? "M2P" : "M2L");
 		tprint("cosphi = fma(z, rinv, rzero);\n");
 		tprint("sinphi = -R * rinv;\n");
 		tprint("r0=r0B;\n");
 		tprint("in=inB;\n");
 		tprint("ip=ipB;\n");
-		z_rot2(P - 1, "M0", "M", PRE2, P != Q ? "M2P" : "M2L", true);
+		tprint("r0[0] = cosphi;\n");
+		tprint("ip[0] = sinphi;\n");
+		tprint("in[0] = -sinphi;\n");
+		for (int m = 1; m < N; m++) {
+			tprint("r0[%i] = in[%i] * sinphi;\n", m, m - 1);
+			tprint("ip[%i] = ip[%i] * cosphi;\n", m, m - 1);
+			tprint("r0[%i] = fma(r0[%i], cosphi, r0[%i]);\n", m, m - 1, m);
+			tprint("ip[%i] = fma(r0[%i], sinphi, ip[%i]);\n", m, m - 1, m);
+			tprint("in[%i] = -ip[%i];\n", m, m);
+		}
+		z_rot2(P - 1, "M0", "M", PRE2, P != Q ? "M2P" : "M2L", false);
 		tprint("in=ipB;\n");
 		tprint("ip=inB;\n");
 		xz_swap2(P - 1, "M", "M0", false, PRE2, P != Q ? "M2P" : "M2L");
@@ -3179,25 +3204,43 @@ void func_closer(int P, std::string name, bool pub) {
 
 }
 
-void M2M_z(int P, const char* var = "z") {
-	tprint("Y[0] = %s;\n", var);
+void M2M_z(int P, int dir) {
+	tprint("Y[0] = z;\n");
 	for (int i = 1; i < P - 1; i++) {
-		tprint("Y[%i] = %s * Y[%i];\n", i, var, i - 1);
+		tprint("Y[%i] = z * Y[%i];\n", i, i - 1);
 	}
 	for (int i = 1; i < P - 1; i++) {
 		tprint("Y[%i] *= TCAST(%0.20e);\n", i, 1.0 / factorial(i + 1));
 	}
 	for (int n = P - 1; n >= 0; n--) {
 		for (int m = -n; m <= n; m++) {
-			tprint_new_chain();
 			for (int k = 1; k <= n; k++) {
 				if (abs(m) > n - k) {
 					continue;
 				}
+				if (nodip && dir > 0) {
+					if (n - k == 1) {
+						continue;
+					} else if (n == 1) {
+						tprint("Md = Y[%i] * M[%i];\n", k - 1, mindex(n - k, m));
+						continue;
+					}
+				}
+				if (nodip && dir < 0) {
+					if (n - k == 1) {
+						if (m == 1) {
+							tprint("M[%i] = fma(Y[%i], Md, M[%i]);\n", mindex(n, m), k - 1, mindex(n, m));
+							continue;
+						} else {
+							continue;
+						}
+					} else if (n == 1) {
+						continue;
+					}
+				}
 				tprint("M[%i] = fma(Y[%i], M[%i], M[%i]);\n", mindex(n, m), k - 1, mindex(n - k, m), mindex(n, m));
 			}
 		}
-		tprint_flush_chains();
 	}
 }
 
@@ -3290,6 +3333,9 @@ std::string M2M_allrot(int P, int rot) {
 	init_real("ax2");
 	init_real("ay2");
 	init_real("R2");
+	if (nodip) {
+		init_real("Md");
+	}
 	if (rot == 0) {
 		init_reals("Y", exp_sz(P - 1));
 	} else if (rot == 1) {
@@ -3335,7 +3381,7 @@ std::string M2M_allrot(int P, int rot) {
 			tprint("M_st.trace2() = fma(R2, M[%i], M_st.trace2());\n", mindex(0, 0));
 			tprint("M_st.trace2() = fma(z * z, M[%i], M_st.trace2());\n", mindex(0, 0));
 		}
-		M2M_z(P);
+		M2M_z(P, +1);
 		regular_harmonic_xy(P - 1);
 		yindex = xyindex;
 	} else if (rot == 2) {
@@ -3356,11 +3402,6 @@ std::string M2M_allrot(int P, int rot) {
 		tprint("sinphi = -y * Rinv;\n");
 		flops += get_running_flops().load();
 		reset_running_flops();
-		tprint("const auto z_translate=[&]() {\n");
-		indent();
-		M2M_z(P);
-		deindent();
-		tprint("};\n");
 		tprint("const auto z_rotate=[&]() {\n");
 		indent();
 		z_rot(P - 1, "M", FULL);
@@ -3373,16 +3414,22 @@ std::string M2M_allrot(int P, int rot) {
 		tprint("};\n");
 		flops += 2 * get_running_flops().load();
 		reset_running_flops();
-		tprint("z_translate();\n");
+		M2M_z(P, +1);
 		tprint("z_rotate();\n");
 		tprint("xz_swap();\n");
+		if (nodip) {
+			tprint("Md *= TCAST(0.5);\n");
+		}
 		tprint("z = R;\n");
-		tprint("z_translate();\n");
+		M2M_z(P, -1);
 		tprint("xz_swap();\n");
 		tprint("sinphi = -sinphi;\n");
 		tprint("z_rotate();\n");
 	} else {
 		for (int n = P - 1; n >= 0; n--) {
+			if (nodip && n == 1) {
+				continue;
+			}
 			for (int m = 0; m <= n; m++) {
 				tprint_new_chain();
 				std::vector<std::pair<std::string, std::string>> pos_real;
@@ -3405,6 +3452,9 @@ std::string M2M_allrot(int P, int rot) {
 					}
 				};
 				for (int k = 1; k <= n; k++) {
+					if (nodip && n - k == 1 && rot == 0) {
+						continue;
+					}
 					const int lmin = std::max(-k, m - n + k);
 					const int lmax = std::min(k, m + n - k);
 					for (int l = -k; l <= k; l++) {
@@ -3425,21 +3475,31 @@ std::string M2M_allrot(int P, int rot) {
 						if (-abs(m - l) < k - n) {
 							continue;
 						}
-						if (m - l > 0) {
-							ASPRINTF(&mxstr, "M[%i]", mindex(n - k, abs(m - l)));
-							ASPRINTF(&mystr, "M[%i]", mindex(n - k, -abs(m - l)));
-						} else if (m - l < 0) {
-							if (abs(m - l) % 2 == 0) {
-								ASPRINTF(&mxstr, "M[%i]", mindex(n - k, abs(m - l)));
-								ASPRINTF(&mystr, "M[%i]", mindex(n - k, -abs(m - l)));
-								mysgn = -1;
+						if (n - k == 1 && nodip) {
+							if (m - l > 0) {
+								continue;
+							} else if (m - l < 0) {
+								continue;
 							} else {
-								ASPRINTF(&mxstr, "M[%i]", mindex(n - k, abs(m - l)));
-								ASPRINTF(&mystr, "M[%i]", mindex(n - k, -abs(m - l)));
-								mxsgn = -1;
+								ASPRINTF(&mxstr, "Md");
 							}
 						} else {
-							ASPRINTF(&mxstr, "M[%i]", mindex(n - k, 0));
+							if (m - l > 0) {
+								ASPRINTF(&mxstr, "M[%i]", mindex(n - k, abs(m - l)));
+								ASPRINTF(&mystr, "M[%i]", mindex(n - k, -abs(m - l)));
+							} else if (m - l < 0) {
+								if (abs(m - l) % 2 == 0) {
+									ASPRINTF(&mxstr, "M[%i]", mindex(n - k, abs(m - l)));
+									ASPRINTF(&mystr, "M[%i]", mindex(n - k, -abs(m - l)));
+									mysgn = -1;
+								} else {
+									ASPRINTF(&mxstr, "M[%i]", mindex(n - k, abs(m - l)));
+									ASPRINTF(&mystr, "M[%i]", mindex(n - k, -abs(m - l)));
+									mxsgn = -1;
+								}
+							} else {
+								ASPRINTF(&mxstr, "M[%i]", mindex(n - k, 0));
+							}
 						}
 						if (l > 0) {
 							ASPRINTF(&gxstr, "Y[%i]", yindex(k, abs(l)));
