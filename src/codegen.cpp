@@ -11,6 +11,7 @@
 #include <cstring>
 #include <functional>
 #include <array>
+#include <vector>
 #include <stack>
 
 #if USE_DOUBLE_FLAG == 1
@@ -26,8 +27,24 @@
 enum stage_t {
 	PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL
 };
+std::vector<int> first_load((PMAX + 1) * (PMAX + 1), false);
 
-//#define NO_DIPOLE
+void reset_first_load() {
+	first_load = std::vector<int>((PMAX + 1) * (PMAX + 1), true);
+}
+
+void disable_first_load() {
+	first_load = std::vector<int>((PMAX + 1) * (PMAX + 1), false);
+}
+std::vector<int> first_store((PMAX + 1) * (PMAX + 1), false);
+
+void reset_first_store() {
+	first_store = std::vector<int>((PMAX + 1) * (PMAX + 1), true);
+}
+
+void disable_first_store() {
+	first_store = std::vector<int>((PMAX + 1) * (PMAX + 1), false);
+}
 
 struct flops_t {
 	int r;
@@ -370,27 +387,27 @@ flops_t accumulate_flops(int P) {
 flops_t sqrt_flops() {
 	flops_t fps;
 	fps.r += 4;
-/*	fps.r += 10;
-	fps.i += 2;
-	fps.asgn += 2;
-	fps.fma += 2;
-	fps.rdiv++;
-	if (!is_float(type)) {
-		fps.fma += 2;
-	}*/
+	/*	fps.r += 10;
+	 fps.i += 2;
+	 fps.asgn += 2;
+	 fps.fma += 2;
+	 fps.rdiv++;
+	 if (!is_float(type)) {
+	 fps.fma += 2;
+	 }*/
 	return fps;
 }
 
 flops_t rsqrt_flops() {
 	flops_t fps;
 	fps.r += 4;
-/*	fps.r += 10;
-	fps.i += 2;
-	fps.asgn += 2;
-	fps.fma += 2;
-	if (!is_float(type)) {
-		fps.fma += 2;
-	}*/
+	/*	fps.r += 10;
+	 fps.i += 2;
+	 fps.asgn += 2;
+	 fps.fma += 2;
+	 if (!is_float(type)) {
+	 fps.fma += 2;
+	 }*/
 	return fps;
 }
 
@@ -1250,6 +1267,10 @@ struct hash {
 	}
 };
 
+bool close2zero(double a) {
+	return abs(a) < 1e-50;
+}
+
 double Brot(int n, int m, int l) {
 	static std::unordered_map<std::array<int, 3>, double, hash> values;
 	std::array<int, 3> key;
@@ -1334,34 +1355,40 @@ void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 			}
 			read_ronly = read_ronly || (stage == XZ1 && l >= P);
 			read_ronly = read_ronly || (stage == XZ2 && l >= P - 1);
+			/*			bool sw = false;
+			 if (stage == POST1 && (l >= P - 1)) {
+			 if (nodip) {
+			 sw = true;
+			 } else {
+			 sw = m % 2 == P % 2;
+			 }
+			 }*/
+			read_ronly = read_ronly || ((stage == POST1 && (l >= P - 1)) && (nodip || (m % 2 == P % 2)));
+			if (first_load[index(l, m)] != first_load[index(l, -m)]) {
+				printf("unexpected condition %s %i\n", __FILE__, __LINE__);
+			}
+			const bool load = first_load[index(l, m)] && std::string(name) == "M";
+			const char* name2 = load ? "M0" : name;
 			if (read_ionly) {
-				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
-				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, -m), m - 1);
+				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name2, index(l, -m), m - 1);
+				tprint_chain("%s[%i] = %s[%i] * rx[%i];\n", name, index(l, -m), name2, index(l, -m), m - 1);
 			} else if (read_ronly) {
-				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
-				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name2, index(l, m), m - 1);
+				tprint_chain("%s[%i] = %s[%i] * rx[%i];\n", name, index(l, m), name2, index(l, m), m - 1);
 			} else if (write_ronly) {
-				tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
+				tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name2, index(l, m), m - 1, name2, index(l, -m), m - 1);
 				set_nan.push_back(index(l, -m));
 			} else {
-				bool sw = false;
-				if (stage == POST1 && (l >= P - 1)) {
-					if (nodip) {
-						sw = true;
-					} else {
-						sw = m % 2 == P % 2;
-					}
-				}
-				if (sw) {
-					tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
-					tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+				if (load) {
+					tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name2, index(l, m), m - 1, name2, index(l, -m), m - 1);
+					tprint_chain("%s[%i] = fma(%s[%i], ry[%i], %s[%i] * rx[%i]);\n", name, index(l, -m), name2, index(l, m), m - 1, name2, index(l, -m), m - 1);
 				} else {
 					tprint_chain("tmp%i = %s[%i];\n", current_chain, name, index(l, m));
 					tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
 					tprint_chain("%s[%i] = fma(tmp%i, ry[%i], %s[%i] * rx[%i]);\n", name, index(l, -m), current_chain, m - 1, name, index(l, -m), m - 1);
 				}
 			}
-
+			first_load[index(l, m)] = first_load[index(l, -m)] = false;
 		}
 	}
 	tprint_flush_chains();
@@ -1373,6 +1400,39 @@ void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 		fprintf(fp, "#endif /* NDEBUG */ \n");
 	}
 }
+
+struct matrix: public std::vector<std::vector<double>> {
+	matrix(int N) :
+			std::vector<std::vector<double>>(N, std::vector<double>(N, std::numeric_limits<double>::signaling_NaN())) {
+	}
+	void LU(matrix& L, matrix& U) const {
+		// https://www.codewithc.com/c-program-for-lu-factorization/
+		const auto& A = (*this);
+		const int n = size();
+		for (int j = 0; j < n; j++) {
+			for (int i = 0; i < n; i++) {
+				if (i <= j) {
+					U[i][j] = A[i][j];
+					for (int k = 0; k < i - 1; k++) {
+						U[i][j] -= L[i][k] * U[k][j];
+					}
+					if (i == j) {
+						L[i][j] = 1;
+					} else {
+						L[i][j] = 0;
+					}
+				} else {
+					L[i][j] = A[i][j];
+					for (int k = 0; k <= j - 1; k++) {
+						L[i][j] -= L[i][k] * U[k][j];
+					}
+					L[i][j] /= U[j][j];
+					U[i][j] = 0;
+				}
+			}
+		}
+	}
+};
 
 void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opname = "") {
 	auto brot = [inv](int n, int m, int l) {
@@ -1409,7 +1469,14 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opnam
 					continue;
 				}
 			}
-			tprint("A[%i] = %s[%i];\n", m + P, name, index(n, m));
+		//	if (!((m >= 0 && n % 2 == 0) || (m < 0 && n % 2 != 0))) {
+				if (std::string(name) == "M" && first_load[index(n, m)]) {
+					tprint("A[%i] = M0[%i];\n", m + P, index(n, m));
+				} else {
+					tprint("A[%i] = %s[%i];\n", m + P, name, index(n, m));
+				}
+				first_load[index(n, m)] = false;
+		//	}
 		}
 		std::vector<std::vector<std::pair<double, int>>>ops(2 * n + 1);
 		int mmax = n;
@@ -1419,39 +1486,115 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opnam
 				mmax = std::min(1, mmax);
 			}
 		}
+		matrix A(n + 1);
+		matrix L(n + 1);
+		matrix U(n + 1);
 		for (int m = 0; m <= n; m++) {
-			if (m <= mmax) {
-				for (int l = 0; l <= lmax; l++) {
-					bool flag = false;
-					if (stage == POST2) {
-						if (P == n && n % 2 != abs(l) % 2) {
-							continue;
-						} else if (nodip && P - 1 == n && n % 2 != abs(l) % 2) {
-							continue;
-						}
-					}
-					double r = l == 0 ? brot(n, m, 0) : brot(n, m, l) + nonepow<double>(l) * brot(n, m, -l);
-					double i = l == 0 ? 0.0 : brot(n, m, l) - nonepow<double>(l) * brot(n, m, -l);
-					if (r != 0.0) {
-						ops[n + m].push_back(std::make_pair(r, P + l));
-					}
-					if (i != 0.0 && m != 0) {
-						ops[n - m].push_back(std::make_pair(i, P - l));
-					}
-				}
-			} else {
-				set_nan.push_back(index(n, m));
-				set_nan.push_back(index(n, -m));
+			for (int l = 0; l <= n; l++) {
+				A[m][l] = 0.0;
 			}
 		}
+		for (int m = 0; m <= n; m++) {
+			for (int l = 0; l <= lmax; l++) {
+				bool flag = false;
+				if (stage == POST2) {
+					if (P == n && n % 2 != abs(l) % 2) {
+						continue;
+					} else if (nodip && P - 1 == n && n % 2 != abs(l) % 2) {
+						continue;
+					}
+				}
+				double r = l == 0 ? brot(n, m, 0) : brot(n, m, l) + nonepow<double>(l) * brot(n, m, -l);
+				double i = l == 0 ? 0.0 : brot(n, m, l) - nonepow<double>(l) * brot(n, m, -l);
+		//		if (n % 2 == 1) {
+					if (r != 0.0) {
+						if (m <= mmax) {
+							ops[n + m].push_back(std::make_pair(r, P + l));
+						} else {
+							set_nan.push_back(index(n, m));
+
+						}
+					}
+		//			if (i != 0.0 && m != 0) {
+		//				A[m][l] = i;
+		//			}
+		//		} else {
+		//			if (i != 0.0 && m != 0) {
+						if (m <= mmax) {
+							ops[n - m].push_back(std::make_pair(i, P - l));
+						} else {
+							set_nan.push_back(index(n, -m));
+						}
+		//			}
+		//			if (r != 0.0) {
+		//				A[m][l] = r;
+		//			}
+		//		}
+			}
+		}
+	/*	tprint_new_chain();
+		int sgn;
+		int imin;
+		if (A[0][0] == 0.0) {
+			A[0][0] = 1.0;
+			sgn = -1;
+			imin = 1;
+		} else {
+			sgn = 1;
+			imin = 0;
+		}
+		for (int m = 0; m <= n; m++) {
+			if (A[m][m] == 0.0) {
+				A[m][m] = 1.0;
+			}
+		}
+		A.LU(L, U);
+		tprint_chain("/*\n");
+		for (int m = 0; m <= n; m++) {
+			for (int l = 0; l <= n; l++) {
+				tprint_chain("%e ", A[m][l]);
+			}
+			tprint_chain(" | ");
+			for (int l = 0; l <= n; l++) {
+				tprint_chain("%e ", L[m][l]);
+			}
+			tprint_chain(" | ");
+			for (int l = 0; l <= n; l++) {
+				tprint_chain("%e ", U[m][l]);
+			}
+			tprint_chain("\n");
+		}
+		for (int m = imin; m <= mmax; m++) {
+			if ((std::string(name) == "M" && first_load[index(n, sgn * m)])) {
+				tprint_chain("M[%i] = M0[%i] * TCAST(%0.20e);\n", index(n, sgn * m), index(n, sgn * m), U[m][m]);
+				first_load[index(n, sgn * m)] = false;
+			} else {
+				tprint_chain("%s[%i] *= TCAST(%0.20e);\n", name, index(n, sgn * m), U[m][m]);
+			}
+			for (int l = m + 1; l <= lmax; l++) {
+				if (U[m][l]) {
+					tprint_chain("%s[%i] = fma(TCAST(%0.20e), %s[%i], %s[%i]);\n", name, index(n, sgn * m), U[m][l], name, index(n, sgn * l), name,
+							index(n, sgn * m));
+				}
+			}
+		}
+		for (int m = imin; m <= mmax; m++) {
+			for (int l = imin; l < std::min(m,lmax); l++) {
+				if (L[m][l]) {
+					tprint_chain("%s[%i] = fma(TCAST(%0.20e), %s[%i], %s[%i]);\n", name, index(n, sgn * m), L[m][l], name, index(n, sgn * l), name,
+							index(n, sgn * m));
+				}
+			}
+		}
+		tprint_flush_chains();*/
 		for (int m = 0; m < 2 * n + 1; m++) {
 			std::sort(ops[m].begin(), ops[m].end(), [](std::pair<double,int> a, std::pair<double,int> b) {
 				return a.first < b.first;
 			});
 		}
 
+		tprint_new_chain();
 		for (int m = 0; m < 2 * n + 1; m++) {
-			tprint_new_chain();
 			for (int l = 0; l < ops[m].size(); l++) {
 				int len = 1;
 				while (len + l < ops[m].size()) {
@@ -1745,39 +1888,41 @@ void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 					char* mxstr = nullptr;
 					char* mystr = nullptr;
 					if (m + l > 0) {
-						ASPRINTF(&gxstr, "O[%i] /* %i %i */", oindex(n + k, m + l), n + k, m + l);
-						ASPRINTF(&gystr, "O[%i] /* %i %i */", oindex(n + k, -m - l), n + k, -m - l);
+						ASPRINTF(&gxstr, "O[%i]", oindex(n + k, m + l));
+						ASPRINTF(&gystr, "O[%i]", oindex(n + k, -m - l));
 					} else if (m + l < 0) {
 						if (abs(m + l) % 2 == 0) {
-							ASPRINTF(&gxstr, "O[%i] /* %i %i */", oindex(n + k, -m - l), n + k, -m - l);
-							ASPRINTF(&gystr, "O[%i] /* %i %i */", oindex(n + k, m + l), n + k, m + l);
+							ASPRINTF(&gxstr, "O[%i]", oindex(n + k, -m - l));
+							ASPRINTF(&gystr, "O[%i]", oindex(n + k, m + l));
 							gysgn = -1;
 						} else {
-							ASPRINTF(&gxstr, "O[%i] /* %i %i */", oindex(n + k, -m - l), n + k, -m - l);
-							ASPRINTF(&gystr, "O[%i] /* %i %i */", oindex(n + k, m + l), n + k, m + l);
+							ASPRINTF(&gxstr, "O[%i]", oindex(n + k, -m - l));
+							ASPRINTF(&gystr, "O[%i]", oindex(n + k, m + l));
 							gxsgn = -1;
 						}
 					} else {
 						greal = true;
-						ASPRINTF(&gxstr, "O[%i]  /* %i %i */", oindex(n + k, 0), n + k, 0);
+						ASPRINTF(&gxstr, "O[%i] ", oindex(n + k, 0));
 					}
+					const char* sufr = first_load[mindex(k, l)] ? "0" : "";
+					const char* sufi = first_load[mindex(k, -l)] ? "0" : "";
 					if (l > 0) {
-						ASPRINTF(&mxstr, "M[%i]", mindex(k, l));
-						ASPRINTF(&mystr, "M[%i]", mindex(k, -l));
+						ASPRINTF(&mxstr, "M%s[%i]", sufr, mindex(k, l));
+						ASPRINTF(&mystr, "M%s[%i]", sufi, mindex(k, -l));
 						mysgn = -1;
 					} else if (l < 0) {
 						if (l % 2 == 0) {
-							ASPRINTF(&mxstr, "M[%i]", mindex(k, -l));
-							ASPRINTF(&mystr, "M[%i]", mindex(k, l));
+							ASPRINTF(&mxstr, "M%s[%i]", sufr, mindex(k, -l));
+							ASPRINTF(&mystr, "M%s[%i]", sufi, mindex(k, l));
 						} else {
-							ASPRINTF(&mxstr, "M[%i]", mindex(k, -l));
-							ASPRINTF(&mystr, "M[%i]", mindex(k, l));
+							ASPRINTF(&mxstr, "M%s[%i]", sufr, mindex(k, -l));
+							ASPRINTF(&mystr, "M%s[%i]", sufi, mindex(k, l));
 							mxsgn = -1;
 							mysgn = -1;
 						}
 					} else {
 						mreal = true;
-						ASPRINTF(&mxstr, "M[%i]", mindex(k, 0));
+						ASPRINTF(&mxstr, "M%s[%i]", sufr, mindex(k, 0));
 					}
 					const auto csgn = [](int i) {
 						return i > 0 ? '+' : '-';
@@ -1838,35 +1983,81 @@ void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 					}
 				}
 			}
-			if (fmaops && neg_real.size() >= 2) {
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-				for (int i = 0; i < neg_real.size(); i++) {
-					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), lindex(n, m));
-				}
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-			} else {
-				for (int i = 0; i < neg_real.size(); i++) {
-					tprint_chain("L[%i] -= %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
-				}
-			}
-			for (int i = 0; i < pos_real.size(); i++) {
-				tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), lindex(n, m));
-			}
-			if (fmaops && neg_imag.size() >= 2) {
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
-				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), lindex(n, -m));
-				}
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
-			} else {
-				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint_chain("L[%i] -= %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
-				}
-			}
-			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), lindex(n, -m));
-			}
+			{
+				int& store = first_store[lindex(n, m)];
 
+				if (fmaops && neg_real.size() >= 2) {
+					if (!store) {
+						tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+					}
+					for (int i = 0; i < neg_real.size(); i++) {
+						if (store) {
+							tprint_chain("L[%i] = %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+							store = false;
+						} else {
+							tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), lindex(n, m));
+						}
+					}
+					if (!store) {
+						tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+					}
+				} else {
+					for (int i = 0; i < neg_real.size(); i++) {
+						if (store) {
+							store = false;
+							tprint_chain("L[%i] = -%s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+						} else {
+							tprint_chain("L[%i] -= %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+						}
+					}
+				}
+				for (int i = 0; i < pos_real.size(); i++) {
+					if (store) {
+						store = false;
+						tprint_chain("L[%i] = %s * %s;\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str());
+					} else {
+						tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), lindex(n, m));
+					}
+				}
+
+			}
+			{
+				int& store = first_store[lindex(n, -m)];
+				if (fmaops && neg_imag.size() >= 2) {
+					if (!store) {
+						tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
+					}
+					for (int i = 0; i < neg_imag.size(); i++) {
+						if (store) {
+							store = false;
+							tprint_chain("L[%i] = %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+						} else {
+							tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), lindex(n, -m));
+						}
+					}
+					if (!store) {
+						tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
+					}
+				} else {
+					for (int i = 0; i < neg_imag.size(); i++) {
+						if (store) {
+							store = false;
+							tprint_chain("L[%i] = -%s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+						} else {
+							tprint_chain("L[%i] -= %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+						}
+					}
+				}
+				for (int i = 0; i < pos_imag.size(); i++) {
+					if (store) {
+						store = false;
+						tprint_chain("L[%i] = %s * %s;\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str());
+					} else {
+						tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), lindex(n, -m));
+					}
+				}
+
+			}
 		}
 	}
 	tprint_flush_chains();
@@ -1892,10 +2083,6 @@ std::vector<complex> spherical_singular_harmonic(int P, double x, double y, doub
 		}
 	}
 	return O;
-}
-
-bool close2zero(double a) {
-	return abs(a) < 1e-10;
 }
 
 std::string P2L(int P) {
@@ -2455,9 +2642,10 @@ void greens_xz_body(int P) {
 }
 
 void M2L_allrot(int P, int Q, int rot) {
+	reset_first_load();
 	std::string name = print2str("M2Lr%i", rot);
 	if (Q > 1) {
-		func_header(name.c_str(), P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+		func_header(name.c_str(), P, true, true, true, true, true, "", "L", EXP, "M0", CMUL, "dx", VEC3);
 	} else {
 		func_header("M2Pr0", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
 	}
@@ -2469,11 +2657,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	}
 
 	bool minit = false;
-	if (rot == 0 && Q != 1 && !scaled) {
-		tprint("const multipole<%s, %i>& M_st(M0_st);\n", type.c_str(), P);
-		tprint("const T* M(M_st.data());\n", type.c_str(), P);
-		minit = true;
-	} else {
+	if (rot != 0) {
 		tprint("multipole<%s, %i> M_st;\n", type.c_str(), P);
 		tprint("T* M(M_st.data());\n");
 	}
@@ -2482,7 +2666,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	} else if (rot == 0) {
 		tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
 	}
-	if( rot != 2 ) {
+	if (rot != 2) {
 		tprint("T* O(O_st.data());\n", type.c_str(), P);
 	}
 	init_real("r2");
@@ -2513,61 +2697,20 @@ void M2L_allrot(int P, int Q, int rot) {
 		}
 	}
 	if (rot != 2) {
-		init_real("zx1;\n");
+		init_real("zx1");
 		for (int m = 1; m < P; m++) {
 			init_real(std::string("zx") + std::to_string(2 * m + 1));
 		}
 	}
-	if (rot == 0 && Q != 1) {
-		tprint("expansion<%s, %i>& L_st(L0_st);\n", type.c_str(), P);
-		tprint("T* L(L_st.data());\n", type.c_str(), P);
-	} else {
+	if (Q == 1) {
 		init_reals("L", exp_sz(Q));
 	}
-	if (Q == 1) {
-		tprint("L[0] = TCAST(0);\n");
-		tprint("L[1] = TCAST(0);\n");
-		tprint("L[2] = TCAST(0);\n");
-		tprint("L[3] = TCAST(0);\n");
-	}
 	if (scaled) {
-		if (Q > 1) {
-			init_real("a");
-			init_real("b");
-			tprint("tmp1 = TCAST(1) / L0_st.scale();\n");
-			tprint("a = TCAST(M0_st.r) * tmp1;\n");
-			tprint("b = a;\n");
-			tprint("M_st.r = L0_st.r;\n");
-			tprint("M_st.o[0] = M0_st.o[0];\n");
-			for (int n = 1; n < P; n++) {
-				if (!(nodip && n == 1)) {
-					for (int m = -n; m <= n; m++) {
-						tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", mindex(n, m), mindex(n, m));
-					}
-				}
-				if (periodic && P > 2 && n == 2) {
-					tprint("M_st.t = M0_st.t * b;\n");
-				}
-				if (n != P - 1) {
-					tprint("b *= a;\n");
-				}
-			}
-			minit = true;
-			tprint("x *= tmp1;\n");
-			tprint("y *= tmp1;\n");
-			tprint("z *= tmp1;\n");
-		}
+		tprint("x *= tmp1;\n");
+		tprint("y *= tmp1;\n");
+		tprint("z *= tmp1;\n");
 	}
-	if (!minit) {
-		if (scaled) {
-			tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
-			tprint("x *= tmp1;\n");
-			tprint("y *= tmp1;\n");
-			tprint("z *= tmp1;\n");
-		}
-		for (int n = 0; n < mul_sz(P); n++) {
-			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
-		}
+	if (rot != 0) {
 		if (periodic && P > 2) {
 			tprint("M_st.t = M0_st.t;\n");
 		}
@@ -2575,6 +2718,7 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("M_st.r = M0_st.r;\n");
 		}
 	}
+
 	if (rot > 0) {
 		tprint("R2 = fma(x, x, y * y);\n");
 		tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
@@ -2610,7 +2754,6 @@ void M2L_allrot(int P, int Q, int rot) {
 		z_rot(P - 1, "M", PRE2, P != Q ? "M2P" : "M2L");
 		xz_swap(P - 1, "M", false, PRE2, P != Q ? "M2P" : "M2L");
 	}
-
 	if (rot == 0) {
 		greens_body(P);
 	} else if (rot == 1) {
@@ -2653,6 +2796,7 @@ void M2L_allrot(int P, int Q, int rot) {
 		}
 		tprint_flush_chains();
 	}
+	reset_first_store();
 	if (rot != 2) {
 		m2lg_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
 	} else {
@@ -2677,11 +2821,16 @@ void M2L_allrot(int P, int Q, int rot) {
 					if (nodip && k == 1) {
 						continue;
 					}
-					if (first[n][n + m]) {
-						first[n][n + m] = false;
-						tprint_chain("L[%i] = M[%i] * A[%i];\n", lindex(n, m), mindex(k, m), n + k);
+					if (k == 0 && m == 0) {
+						first[n][n] = false;
+						tprint_chain("L[%i] = M0[%i] * A[%i];\n", lindex(n, m), mindex(k, m), n + k);
 					} else {
-						tprint_chain("L[%i] = fma(M[%i], A[%i], L[%i]);\n", lindex(n, m), mindex(k, m), n + k, lindex(n, m));
+						if (first[n][n + m]) {
+							first[n][n + m] = false;
+							tprint_chain("L[%i] = M[%i] * A[%i];\n", lindex(n, m), mindex(k, m), n + k);
+						} else {
+							tprint_chain("L[%i] = fma(M[%i], A[%i], L[%i]);\n", lindex(n, m), mindex(k, m), n + k, lindex(n, m));
+						}
 					}
 					if (m != 0) {
 						if (first[n][n - m]) {
@@ -2704,6 +2853,7 @@ void M2L_allrot(int P, int Q, int rot) {
 		}
 		tprint_flush_chains();
 	}
+	disable_first_load();
 	if (rot == 1) {
 		tprint("sinphi = -sinphi;\n");
 		if (nodip) {
@@ -2738,10 +2888,6 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("f.force[1] -= L[1];\n");
 			tprint("f.force[2] -= L[2];\n");
 		}
-	} else if (rot != 0) {
-		for (int n = 0; n < exp_sz(Q); n++) {
-			tprint("L0[%i] += L[%i];\n", n, n);
-		}
 	}
 	close_timer();
 	deindent();
@@ -2758,6 +2904,8 @@ void M2L_allrot(int P, int Q, int rot) {
 	}
 	timing_body += print2str("\"M2%c\", %i, %i, %i, %i, 0.0, 0}", Q == P ? 'L' : 'P', P, nopot, rot, get_running_flops(false).load());
 	TAB0();
+	disable_first_load();
+	disable_first_store();
 }
 
 std::string M2L_rot0(int P, int Q) {
@@ -4526,7 +4674,7 @@ void safe_math_double() {
 }
 
 int flops_t::load() const {
-		return r + 2 * fma + 4 * rdiv;// + con + rcmp;
+	return r + 2 * fma + 4 * rdiv;				// + con + rcmp;
 //	return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
 }
 

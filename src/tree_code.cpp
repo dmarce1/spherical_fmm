@@ -82,7 +82,7 @@ class tree {
 	void list_iterate(std::vector<check_type>& checklist, std::vector<tree*>& Plist, std::vector<tree*>& Clist, bool leaf) {
 		static thread_local std::vector<check_type> nextlist;
 		nextlist.resize(0);
-		auto c0 = V(theta_max*theta_max);
+		auto c0 = V(theta_max * theta_max);
 		for (int i = 0; i < checklist.size(); i += sfmm::simd_size<V>()) {
 			sfmm::vec3<V> dx;
 			V rsum;
@@ -458,10 +458,12 @@ int main(int argc, char **argv) {
 	//feenableexcept(FE_OVERFLOW);
 //	feenableexcept(FE_INVALID);
 	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/> run1;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization /*| sfmmProfilingOn*/ | sfmmCalculateWithoutPotential> run2;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithoutOptimization /*| sfmmProfilingOn*/> run1;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization /*| sfmmProfilingOn*/> run2;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/> run3;
 	run1();
 	run2();
+	run3();
 	auto prof = sfmm::operator_profiling_results();
 	printf("%s\n", prof.c_str());
 	prof = sfmm::detail::operator_best_rotations();
