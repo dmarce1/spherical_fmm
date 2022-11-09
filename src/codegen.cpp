@@ -370,27 +370,27 @@ flops_t accumulate_flops(int P) {
 flops_t sqrt_flops() {
 	flops_t fps;
 	fps.r += 4;
-/*	fps.r += 10;
-	fps.i += 2;
-	fps.asgn += 2;
-	fps.fma += 2;
-	fps.rdiv++;
-	if (!is_float(type)) {
-		fps.fma += 2;
-	}*/
+	/*	fps.r += 10;
+	 fps.i += 2;
+	 fps.asgn += 2;
+	 fps.fma += 2;
+	 fps.rdiv++;
+	 if (!is_float(type)) {
+	 fps.fma += 2;
+	 }*/
 	return fps;
 }
 
 flops_t rsqrt_flops() {
 	flops_t fps;
 	fps.r += 4;
-/*	fps.r += 10;
-	fps.i += 2;
-	fps.asgn += 2;
-	fps.fma += 2;
-	if (!is_float(type)) {
-		fps.fma += 2;
-	}*/
+	/*	fps.r += 10;
+	 fps.i += 2;
+	 fps.asgn += 2;
+	 fps.fma += 2;
+	 if (!is_float(type)) {
+	 fps.fma += 2;
+	 }*/
 	return fps;
 }
 
@@ -1280,7 +1280,7 @@ bool close21(double a) {
 	return std::abs(1.0 - a) < 1.0e-20;
 }
 
-void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
+void z_rot(int P, const char* dst, const char* src, stage_t stage, std::string opname = "") {
 	tprint("rx[0] = cosphi;\n");
 	tprint("ry[0] = sinphi;\n");
 	for (int m = 1; m < P; m++) {
@@ -1290,16 +1290,23 @@ void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 	int mmin = 1;
 	bool initR = true;
 	std::function<int(int, int)> index;
-	if (name[0] == 'M') {
+	if (dst[0] == 'M') {
 		index = mindex;
 	} else {
 		index = lindex;
 	}
+	bool same = strcmp(dst, src) == 0;
 	std::vector<int> set_nan;
+	if (!same) {
+		tprint_chain("%s[0] = %s[0];\n", dst, src);
+	}
 	for (int m = 1; m <= P; m++) {
-		tprint_new_chain();
+		if (!same) {
+			tprint_new_chain();
+			tprint_chain("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0));
+		}
 		for (int l = m; l <= P; l++) {
-			if (name == "M" && nodip && l == 1) {
+			if (dst[0] == 'M' && nodip && l == 1) {
 				continue;
 			}
 			if (stage == POST1) {
@@ -1334,31 +1341,37 @@ void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 			}
 			read_ronly = read_ronly || (stage == XZ1 && l >= P);
 			read_ronly = read_ronly || (stage == XZ2 && l >= P - 1);
+			bool sw = false;
+			if (stage == POST1 && (l >= P - 1)) {
+				if (nodip) {
+					sw = true;
+				} else {
+					sw = m % 2 == P % 2;
+				}
+			}
+			read_ronly = read_ronly || sw;
 			if (read_ionly) {
-				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", name, index(l, m), name, index(l, -m), m - 1);
-				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, -m), m - 1);
+				tprint_new_chain();
+				tprint_chain("%s[%i] = -%s[%i] * ry[%i];\n", dst, index(l, m), src, index(l, -m), m - 1);
+				tprint_chain("%s[%i] = %s[%i] * rx[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1);
 			} else if (read_ronly) {
-				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
-				tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+				tprint_new_chain();
+				tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", dst, index(l, -m), src, index(l, m), m - 1);
+				tprint_chain("%s[%i] = %s[%i] * rx[%i];\n", dst, index(l, m), src, index(l, m), m - 1);
 			} else if (write_ronly) {
-				tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
+				tprint_new_chain();
+				tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", dst, index(l, m), src, index(l, m), m - 1, src, index(l, -m), m - 1);
 				set_nan.push_back(index(l, -m));
 			} else {
-				bool sw = false;
-				if (stage == POST1 && (l >= P - 1)) {
-					if (nodip) {
-						sw = true;
-					} else {
-						sw = m % 2 == P % 2;
-					}
-				}
-				if (sw) {
-					tprint_chain("%s[%i] = %s[%i] * ry[%i];\n", name, index(l, -m), name, index(l, m), m - 1);
-					tprint_chain("%s[%i] *= rx[%i];\n", name, index(l, m), m - 1);
+				if (same) {
+					tprint_new_chain();
+					tprint_chain("tmp%i = %s[%i];\n", current_chain, dst, index(l, m));
+					tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", dst, index(l, m), src, index(l, m), m - 1, src, index(l, -m), m - 1);
+					tprint_chain("%s[%i] = fma(tmp%i, ry[%i], %s[%i] * rx[%i]);\n", dst, index(l, -m), current_chain, m - 1, src, index(l, -m), m - 1);
 				} else {
-					tprint_chain("tmp%i = %s[%i];\n", current_chain, name, index(l, m));
-					tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", name, index(l, m), name, index(l, m), m - 1, name, index(l, -m), m - 1);
-					tprint_chain("%s[%i] = fma(tmp%i, ry[%i], %s[%i] * rx[%i]);\n", name, index(l, -m), current_chain, m - 1, name, index(l, -m), m - 1);
+					tprint_new_chain();
+					tprint_chain("%s[%i] = %s[%i] * rx[%i] - %s[%i] * ry[%i];\n", dst, index(l, m), src, index(l, m), m - 1, src, index(l, -m), m - 1);
+					tprint_chain("%s[%i] = fma(%s[%i], ry[%i], %s[%i] * rx[%i]);\n", dst, index(l, -m), src, index(l, m), m - 1, src, index(l, -m), m - 1);
 				}
 			}
 
@@ -1368,12 +1381,127 @@ void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
 	if (set_nan.size()) {
 		fprintf(fp, "#ifndef NDEBUG\n");
 		for (auto i : set_nan) {
-			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", dst, i, type.c_str());
 		}
 		fprintf(fp, "#endif /* NDEBUG */ \n");
 	}
 }
 
+void z_rot(int P, const char* name, stage_t stage, std::string opname = "") {
+	z_rot(P, name, name, stage, opname);
+}
+
+void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string opname, bool init) {
+	if (init) {
+		tprint("r0[0] = cosphi;\n");
+		tprint("ip[0] = sinphi;\n");
+		tprint("in[0] = -sinphi;\n");
+		for (int m = 1; m < P; m++) {
+			tprint("r0[%i] = in[%i] * sinphi;\n", m, m - 1);
+			tprint("ip[%i] = ip[%i] * cosphi;\n", m, m - 1);
+			tprint("r0[%i] = fma(r0[%i], cosphi, r0[%i]);\n", m, m - 1, m);
+			tprint("ip[%i] = fma(r0[%i], sinphi, ip[%i]);\n", m, m - 1, m);
+			tprint("in[%i] = -ip[%i];\n", m, m);
+		}
+	}
+	int mmin = 1;
+	bool initR = true;
+	std::function<int(int, int)> index;
+	if (dst[0] == 'M') {
+		index = mindex;
+	} else {
+		index = lindex;
+	}
+	std::vector<int> set_nan;
+	using cmd_t = std::pair<int,std::string>;
+	std::vector<cmd_t> cmds;
+	cmds.push_back(std::make_pair(0, print2str("%s[0] = %s[0];\n", dst, src)));
+	for (int m = 1; m <= P; m++) {
+		cmds.push_back(std::make_pair(index(m, 0), print2str("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0))));
+		for (int l = m; l <= P; l++) {
+			if (dst[0] == 'M' && nodip && l == 1) {
+				continue;
+			}
+			if (stage == POST1) {
+				if (l == P) {
+					if (l % 2 != m % 2) {
+						continue;
+					}
+				} else if (nodip && l == P - 1) {
+					if (l % 2 != m % 2) {
+						continue;
+					}
+				}
+			}
+			bool read_ionly = false;
+			bool read_ronly = false;
+			bool write_ronly = false;
+			if (stage == POST2) {
+				if (l == P) {
+					read_ionly = m % 2;
+				} else if (nodip && l == P - 1) {
+					read_ionly = m % 2;
+				}
+				if (l == P) {
+					read_ronly = !(m % 2);
+				} else if (nodip && l == P - 1) {
+					read_ronly = !(m % 2);
+				}
+			} else if (stage == PRE2) {
+				if (l == P || opname == "M2P" || opname == "L2P") {
+					write_ronly = m % 2 != l % 2;
+				}
+			}
+			read_ronly = read_ronly || (stage == XZ1 && l >= P);
+			read_ronly = read_ronly || (stage == XZ2 && l >= P - 1);
+			bool sw = false;
+			if (stage == POST1 && (l >= P - 1)) {
+				if (nodip) {
+					sw = true;
+				} else {
+					sw = m % 2 == P % 2;
+				}
+			}
+			read_ronly = read_ronly || sw;
+			if (read_ionly) {
+				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
+			} else if (read_ronly) {
+				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * ip[%i];\n", dst, index(l, -m), src, index(l, m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, m), src, index(l, m), m - 1)));
+			} else if (write_ronly) {
+				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
+				cmds.push_back(
+						std::make_pair(index(l, m),
+								print2str("%s[%i] = fma(%s[%i], r0[%i], %s[%i]);\n", dst, index(l, m), src, index(l, m), m - 1, dst, index(l, m))));
+				set_nan.push_back(index(l, -m));
+			} else {
+				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * in[%i];\n", dst, index(l, m), src, index(l, -m), m - 1)));
+				cmds.push_back(std::make_pair(index(l, -m), print2str("%s[%i] = %s[%i] * r0[%i];\n", dst, index(l, -m), src, index(l, -m), m - 1)));
+				cmds.push_back(
+						std::make_pair(index(l, m),
+								print2str("%s[%i] = fma(%s[%i], r0[%i], %s[%i]);\n", dst, index(l, m), src, index(l, m), m - 1, dst, index(l, m))));
+				cmds.push_back(
+						std::make_pair(index(l, m),
+								print2str("%s[%i] = fma(%s[%i], ip[%i], %s[%i]);\n", dst, index(l, -m), src, index(l, m), m - 1, dst, index(l, -m))));
+			}
+
+		}
+	}
+	std::sort(cmds.begin(), cmds.end(), [](const cmd_t& a, const cmd_t& b) {
+		return a.first < b.first;
+	});
+	for (auto cmd : cmds) {
+		tprint("%s", cmd.second.c_str());
+	}
+	if (set_nan.size()) {
+		fprintf(fp, "#ifndef NDEBUG\n");
+		for (auto i : set_nan) {
+			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", dst, i, type.c_str());
+		}
+		fprintf(fp, "#endif /* NDEBUG */ \n");
+	}
+}
 void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opname = "") {
 	auto brot = [inv](int n, int m, int l) {
 		if( inv ) {
@@ -1492,6 +1620,109 @@ void xz_swap(int P, const char* name, bool inv, stage_t stage, const char* opnam
 		fprintf(fp, "#ifndef NDEBUG\n");
 		for (auto i : set_nan) {
 			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", name, i, type.c_str());
+		}
+		fprintf(fp, "#endif /* NDEBUG */ \n");
+	}
+}
+
+void xz_swap2(int P, const char* dst, const char* src, bool inv, stage_t stage, const char* opname = "") {
+	auto brot = [inv](int n, int m, int l) {
+		if( inv ) {
+			return Brot(n,m,l);
+		} else {
+			return Brot(n,l,m);
+		}
+	};
+	std::function<int(int, int)> index;
+	if (dst[0] == 'M') {
+		index = mindex;
+	} else {
+		index = lindex;
+	}
+	tprint("%s[0] = %s[0];\n", dst, src);
+	std::vector<int> set_nan;
+	for (int n = 1; n <= P; n++) {
+		if (dst[0] == 'M' && nodip && n == 1) {
+			continue;
+		}
+		int lmax = n;
+		if (stage == POST1) {
+			lmax = std::min(n, P - n);
+			if (nodip && n == P - 1) {
+				lmax = 0;
+			}
+		}
+		std::vector<std::vector<std::pair<double, int>>>ops(2 * n + 1);
+		int mmax = n;
+		if (stage == PRE2) {
+			mmax = std::min((P + 1) - n, n);
+			if (opname == "M2P" || opname == "L2P") {
+				mmax = std::min(1, mmax);
+			}
+		}
+		for (int m = 0; m <= n; m++) {
+			if (m <= mmax) {
+				for (int l = 0; l <= lmax; l++) {
+					bool flag = false;
+					if (stage == POST2) {
+						if (P == n && n % 2 != abs(l) % 2) {
+							continue;
+						} else if (nodip && P - 1 == n && n % 2 != abs(l) % 2) {
+							continue;
+						}
+					}
+					double r = l == 0 ? brot(n, m, 0) : brot(n, m, l) + nonepow<double>(l) * brot(n, m, -l);
+					double i = l == 0 ? 0.0 : brot(n, m, l) - nonepow<double>(l) * brot(n, m, -l);
+					if (r != 0.0) {
+						ops[n + m].push_back(std::make_pair(r, l));
+					}
+					if (i != 0.0 && m != 0) {
+						ops[n - m].push_back(std::make_pair(i, -l));
+					}
+				}
+			} else {
+				set_nan.push_back(index(n, m));
+				set_nan.push_back(index(n, -m));
+			}
+		}
+		for (int m = 0; m < 2 * n + 1; m++) {
+			std::sort(ops[m].begin(), ops[m].end(), [n, index](std::pair<double,int> a, std::pair<double,int> b) {
+				return index(n, a.second) < index(n, b.second);
+			});
+		}
+		for (int ppp = 0; ppp < (P + 1) * (P + 1); ppp++) {
+			for (int m = 0; m < 2 * n + 1; m++) {
+				for (int l = 0; l < ops[m].size(); l++) {
+					int len = 1;
+					while (len + l < ops[m].size()) {
+						if (ops[m][len + l].first == ops[m][l].first && !close21(ops[m][l].first)) {
+							len++;
+						} else {
+							break;
+						}
+					}
+					if (index(n, ops[m][l].second) != ppp) {
+						continue;
+					}
+					if (close21(ops[m][l].first)) {
+						tprint("%s[%i] %s= %s[%i];\n", dst, index(n, m - n), l == 0 ? "" : "+", src, index(n, ops[m][l].second));
+					} else {
+						if (l == 0) {
+							tprint("%s[%i] = TCAST(%.20e) * %s[%i];\n", dst, index(n, m - n), ops[m][l].first, src, index(n, ops[m][l].second));
+						} else {
+							tprint("%s[%i] = fma(TCAST(%.20e), %s[%i], %s[%i]);\n", dst, index(n, m - n), ops[m][l].first, src, index(n, ops[m][l].second), dst,
+									index(n, m - n));
+						}
+					}
+					l += len - 1;
+				}
+			}
+		}
+	}
+	if (set_nan.size()) {
+		fprintf(fp, "#ifndef NDEBUG\n");
+		for (auto i : set_nan) {
+			tprint("%s[%i]=std::numeric_limits<%s>::signaling_NaN();\n", dst, i, type.c_str());
 		}
 		fprintf(fp, "#endif /* NDEBUG */ \n");
 	}
@@ -1721,6 +1952,8 @@ std::string greens_safe(int P) {
 void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex) {
 	for (int n = nopot; n <= Q; n++) {
 		for (int m = 0; m <= n; m++) {
+			bool iload = true;
+			bool rload = true;
 			tprint_new_chain();
 			const int kmax = std::min(P - n, P - 1);
 			std::vector<std::pair<std::string, std::string>> pos_real;
@@ -1839,32 +2072,70 @@ void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 				}
 			}
 			if (fmaops && neg_real.size() >= 2) {
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-				for (int i = 0; i < neg_real.size(); i++) {
-					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), lindex(n, m));
+				if (!rload) {
+					tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
 				}
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+				for (int i = 0; i < neg_real.size(); i++) {
+					if (rload) {
+						tprint_chain("L[%i] = %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+						rload = false;
+					} else {
+						tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str(), lindex(n, m));
+					}
+				}
+				if (!rload) {
+					tprint_chain("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+				}
 			} else {
 				for (int i = 0; i < neg_real.size(); i++) {
-					tprint_chain("L[%i] -= %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					if (rload) {
+						tprint_chain("L[%i] = -%s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+						rload = false;
+					} else {
+						tprint_chain("L[%i] -= %s * %s;\n", lindex(n, m), neg_real[i].first.c_str(), neg_real[i].second.c_str());
+					}
 				}
 			}
 			for (int i = 0; i < pos_real.size(); i++) {
-				tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), lindex(n, m));
+				if (rload) {
+					rload = false;
+					tprint_chain("L[%i] = %s * %s;\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str());
+				} else {
+					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, m), pos_real[i].first.c_str(), pos_real[i].second.c_str(), lindex(n, m));
+				}
 			}
 			if (fmaops && neg_imag.size() >= 2) {
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
-				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), lindex(n, -m));
+				if (!iload) {
+					tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
 				}
-				tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
+				for (int i = 0; i < neg_imag.size(); i++) {
+					if (iload) {
+						iload = false;
+						tprint_chain("L[%i] = %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					} else {
+						tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str(), lindex(n, -m));
+					}
+				}
+				if (!iload) {
+					tprint_chain("L[%i] = -L[%i];\n", lindex(n, -m), lindex(n, -m));
+				}
 			} else {
 				for (int i = 0; i < neg_imag.size(); i++) {
-					tprint_chain("L[%i] -= %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					if (iload) {
+						iload = false;
+						tprint_chain("L[%i] = -%s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					} else {
+						tprint_chain("L[%i] -= %s * %s;\n", lindex(n, -m), neg_imag[i].first.c_str(), neg_imag[i].second.c_str());
+					}
 				}
 			}
 			for (int i = 0; i < pos_imag.size(); i++) {
-				tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), lindex(n, -m));
+				if (iload) {
+					iload = false;
+					tprint_chain("L[%i] = %s * %s;\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str());
+				} else {
+					tprint_chain("L[%i] = fma(%s, %s, L[%i]);\n", lindex(n, -m), pos_imag[i].first.c_str(), pos_imag[i].second.c_str(), lindex(n, -m));
+				}
 			}
 
 		}
@@ -1895,7 +2166,7 @@ std::vector<complex> spherical_singular_harmonic(int P, double x, double y, doub
 }
 
 bool close2zero(double a) {
-	return abs(a) < 1e-10;
+	return std::abs(a) < 1e-10;
 }
 
 std::string P2L(int P) {
@@ -2457,9 +2728,9 @@ void greens_xz_body(int P) {
 void M2L_allrot(int P, int Q, int rot) {
 	std::string name = print2str("M2Lr%i", rot);
 	if (Q > 1) {
-		func_header(name.c_str(), P, true, true, true, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+		func_header(name.c_str(), P, true, true, true, true, true, "", "L", EXP, rot == 0 ? "M" : "Min", CMUL, "dx", VEC3);
 	} else {
-		func_header("M2Pr0", P, true, true, true, true, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
+		func_header("M2Pr0", P, true, true, true, true, true, "", "f", FORCE, "M", CMUL, "dx", VEC3);
 	}
 	open_timer(P == Q ? name : "M2Pr0");
 	init_real("tmp1");
@@ -2469,20 +2740,21 @@ void M2L_allrot(int P, int Q, int rot) {
 	}
 
 	bool minit = false;
-	if (rot == 0 && Q != 1 && !scaled) {
-		tprint("const multipole<%s, %i>& M_st(M0_st);\n", type.c_str(), P);
-		tprint("const T* M(M_st.data());\n", type.c_str(), P);
-		minit = true;
-	} else {
+	if (rot != 0) {
 		tprint("multipole<%s, %i> M_st;\n", type.c_str(), P);
+		tprint("multipole<%s, %i> M0_st;\n", type.c_str(), P);
+		tprint("expansion<%s, %i> L0_st;\n", type.c_str(), P);
 		tprint("T* M(M_st.data());\n");
+		tprint("T* M0(M0_st.data());\n");
+		tprint("T* L0(L0_st.data());\n");
+		tprint("T* ptr;\n");
 	}
 	if (rot == 1) {
 		tprint("detail::expansion_xz<%s, %i> O_st;\n", type.c_str(), P);
 	} else if (rot == 0) {
 		tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
 	}
-	if( rot != 2 ) {
+	if (rot != 2) {
 		tprint("T* O(O_st.data());\n", type.c_str(), P);
 	}
 	init_real("r2");
@@ -2494,9 +2766,23 @@ void M2L_allrot(int P, int Q, int rot) {
 	init_real("ay1");
 	init_real("ay2");
 	init_real("R2");
+	int N = std::max(P - 1, Q);
 	if (rot > 0) {
-		init_reals("rx", std::max(P - 1, Q));
-		init_reals("ry", std::max(P - 1, Q));
+		if (rot == 2) {
+			init_reals("r0A", N);
+			init_reals("ipA", N);
+			init_reals("inA", N);
+			init_reals("r0B", N);
+			init_reals("ipB", N);
+			init_reals("inB", N);
+			tprint("T* r0=r0A;\n");
+			tprint("T* ip=ipA;\n");
+			tprint("T* in=inA;\n");
+		} else {
+			init_reals("r0", N);
+			init_reals("ip", N);
+			init_reals("in", N);
+		}
 		init_real("Rinv");
 		init_real("R");
 		init_real("Rzero");
@@ -2507,9 +2793,7 @@ void M2L_allrot(int P, int Q, int rot) {
 		init_real("r2przero");
 		if (rot == 2) {
 			init_real("rinv");
-			init_real("sinphi0");
-			init_real("cosphi0");
-			init_reals("A", 2 * P + 1);
+			init_reals("A", P + 1);
 		}
 	}
 	if (rot != 2) {
@@ -2518,62 +2802,17 @@ void M2L_allrot(int P, int Q, int rot) {
 			init_real(std::string("zx") + std::to_string(2 * m + 1));
 		}
 	}
-	if (rot == 0 && Q != 1) {
-		tprint("expansion<%s, %i>& L_st(L0_st);\n", type.c_str(), P);
-		tprint("T* L(L_st.data());\n", type.c_str(), P);
-	} else {
-		init_reals("L", exp_sz(Q));
+	if (scaled) {
+		tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
+		tprint("x *= tmp1;\n");
+		tprint("y *= tmp1;\n");
+		tprint("z *= tmp1;\n");
 	}
-	if (Q == 1) {
-		tprint("L[0] = TCAST(0);\n");
-		tprint("L[1] = TCAST(0);\n");
-		tprint("L[2] = TCAST(0);\n");
-		tprint("L[3] = TCAST(0);\n");
+	if (periodic && P > 2) {
+		tprint("M_st.t = M0_st.t;\n");
 	}
 	if (scaled) {
-		if (Q > 1) {
-			init_real("a");
-			init_real("b");
-			tprint("tmp1 = TCAST(1) / L0_st.scale();\n");
-			tprint("a = TCAST(M0_st.r) * tmp1;\n");
-			tprint("b = a;\n");
-			tprint("M_st.r = L0_st.r;\n");
-			tprint("M_st.o[0] = M0_st.o[0];\n");
-			for (int n = 1; n < P; n++) {
-				if (!(nodip && n == 1)) {
-					for (int m = -n; m <= n; m++) {
-						tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", mindex(n, m), mindex(n, m));
-					}
-				}
-				if (periodic && P > 2 && n == 2) {
-					tprint("M_st.t = M0_st.t * b;\n");
-				}
-				if (n != P - 1) {
-					tprint("b *= a;\n");
-				}
-			}
-			minit = true;
-			tprint("x *= tmp1;\n");
-			tprint("y *= tmp1;\n");
-			tprint("z *= tmp1;\n");
-		}
-	}
-	if (!minit) {
-		if (scaled) {
-			tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
-			tprint("x *= tmp1;\n");
-			tprint("y *= tmp1;\n");
-			tprint("z *= tmp1;\n");
-		}
-		for (int n = 0; n < mul_sz(P); n++) {
-			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
-		}
-		if (periodic && P > 2) {
-			tprint("M_st.t = M0_st.t;\n");
-		}
-		if (scaled) {
-			tprint("M_st.r = M0_st.r;\n");
-		}
+		tprint("M_st.r = M0_st.r;\n");
 	}
 	if (rot > 0) {
 		tprint("R2 = fma(x, x, y * y);\n");
@@ -2592,23 +2831,22 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("rinv = rsqrt(r2przero);\n");
 			tprint("cosphi = y * Rinv;\n");
 			tprint("sinphi = fma(x, Rinv, Rzero);\n");
-			tprint("cosphi0 = fma(z, rinv, rzero);\n");
-			tprint("sinphi0 = -R * rinv;\n");
 		}
 	}
 	if (rot == 1) {
-		z_rot(P - 1, "M", FULL);
+		z_rot2(P - 1, "M", "Min", FULL, P != Q ? "M2P" : "M2L", true);
 	} else if (rot == 2) {
-		z_rot(P - 1, "M", PRE1);
-		xz_swap(P - 1, "M", false, PRE1);
-		tprint("tmp0 = cosphi;\n");
-		tprint("tmp1 = sinphi;\n");
-		tprint("cosphi = cosphi0;\n");
-		tprint("sinphi = sinphi0;\n");
-		tprint("cosphi0 = tmp0;\n");
-		tprint("sinphi0 = tmp1;\n");
-		z_rot(P - 1, "M", PRE2, P != Q ? "M2P" : "M2L");
-		xz_swap(P - 1, "M", false, PRE2, P != Q ? "M2P" : "M2L");
+		z_rot2(P - 1, "M0", "Min", PRE1, P != Q ? "M2P" : "M2L", true);
+		xz_swap2(P - 1, "M", "M0", false, PRE1);
+		tprint("cosphi = fma(z, rinv, rzero);\n");
+		tprint("sinphi = -R * rinv;\n");
+		tprint("r0=r0B;\n");
+		tprint("in=inB;\n");
+		tprint("ip=ipB;\n");
+		z_rot2(P - 1, "M0", "M", PRE2, P != Q ? "M2P" : "M2L", true);
+		tprint("in=ipB;\n");
+		tprint("ip=inB;\n");
+		xz_swap2(P - 1, "M", "M0", false, PRE2);
 	}
 
 	if (rot == 0) {
@@ -2652,6 +2890,11 @@ void M2L_allrot(int P, int Q, int rot) {
 			}
 		}
 		tprint_flush_chains();
+	}
+	if (rot == 1) {
+		tprint("ptr=L0;\n");
+		tprint("L0=L;\n");
+		tprint("L=ptr;\n");
 	}
 	if (rot != 2) {
 		m2lg_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
@@ -2705,20 +2948,23 @@ void M2L_allrot(int P, int Q, int rot) {
 		tprint_flush_chains();
 	}
 	if (rot == 1) {
-		tprint("sinphi = -sinphi;\n");
+		for (int i = 0; i < N; i++) {
+			tprint("in[%i] = -in[%i];\n", i, i);
+			tprint("ip[%i] = -ip[%i];\n", i, i);
+		}
 		if (nodip) {
-			z_rot(Q, "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL);
+			z_rot2(Q, "L0", "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL, P != Q ? "M2P" : "M2L", false);
 		} else {
-			z_rot(Q, "L", Q == P ? XZ1 : FULL);
+			z_rot2(Q, "L0", "L", Q == P ? XZ1 : FULL, P != Q ? "M2P" : "M2L", false);
 		}
 	} else if (rot == 2) {
-		xz_swap(Q, "L", true, P == Q ? POST1 : FULL);
-		tprint("sinphi = -sinphi;\n");
-		z_rot(Q, "L", P == Q ? POST1 : FULL);
-		xz_swap(Q, "L", true, P == Q ? POST2 : FULL);
-		tprint("cosphi = cosphi0;\n");
-		tprint("sinphi = -sinphi0;\n");
-		z_rot(Q, "L", P == Q ? POST2 : FULL);
+		xz_swap2(Q, "L0", "L", true, P == Q ? POST1 : FULL);
+		z_rot2(Q, "L", "L0", P == Q ? POST1 : FULL, P != Q ? "M2P" : "M2L", false);
+		xz_swap2(Q, "L0", "L", true, P == Q ? POST2 : FULL);
+		tprint("r0=r0A;\n");
+		tprint("in=ipA;\n");
+		tprint("ip=inA;\n");
+		z_rot2(Q, "L", "L0", P == Q ? POST2 : FULL, P != Q ? "M2P" : "M2L", false);
 	}
 	if (Q == 1) {
 		if (scaled) {
@@ -2737,10 +2983,6 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("f.force[0] -= L[3];\n");
 			tprint("f.force[1] -= L[1];\n");
 			tprint("f.force[2] -= L[2];\n");
-		}
-	} else if (rot != 0) {
-		for (int n = 0; n < exp_sz(Q); n++) {
-			tprint("L0[%i] += L[%i];\n", n, n);
 		}
 	}
 	close_timer();
@@ -4526,7 +4768,7 @@ void safe_math_double() {
 }
 
 int flops_t::load() const {
-		return r + 2 * fma + 4 * rdiv;// + con + rcmp;
+	return r + 2 * fma + 4 * rdiv;				// + con + rcmp;
 //	return r + i + fma + 4 * (rdiv + idiv) + con + asgn + icmp + rcmp;
 }
 
