@@ -46,6 +46,7 @@ enum stage_t {
 };
 
 #define NO_DIPOLE
+#define USE_PERIODIC
 
 struct flops_t {
 	int r;
@@ -1561,6 +1562,7 @@ std::string greens_safe(int P) {
 	init_real("flag");
 	init_real("tmp0");
 	init_real("tmp1");
+	init_real("tmp2");
 	init_real("tmp3");
 	init_real("rinv");
 	init_real("r2");
@@ -1928,6 +1930,7 @@ std::string greens_ewald(int P, double alpha) {
 	init_real("xxx");
 	init_real("tmp0");
 	init_real("tmp1");
+	init_real("tmp2");
 	init_real("gam1");
 	init_real("exp0");
 	init_real("xfac");
@@ -2247,9 +2250,6 @@ const char* boolstr(bool b) {
 
 void greens_xz_body(int P) {
 	tprint("O[0] = sqrt(r2inv);\n");
-	if (periodic && P > 1) {
-		tprint("O_st.trace2() = TCAST(0);\n");
-	}
 	tprint("R *= r2inv;\n");
 	tprint("z *= r2inv;\n");
 	const auto index = [](int l, int m) {
@@ -2310,7 +2310,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	}
 	if (Q == 1) {
 		init_reals("La", 4);
-		if( rot != 0 ) {
+		if (rot != 0) {
 			init_reals("Lb", 4);
 		}
 		tprint("T* L=La;\n");
@@ -2378,12 +2378,6 @@ void M2L_allrot(int P, int Q, int rot) {
 		tprint("x *= tmp1;\n");
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
-	}
-	if (periodic && P > 2) {
-		tprint("M_st.t = M0_st.t;\n");
-	}
-	if (scaled) {
-		tprint("M_st.r = M0_st.r;\n");
 	}
 	if (rot > 0) {
 		tprint("R2 = fma(x, x, y * y);\n");
@@ -2729,11 +2723,15 @@ std::string M2L_ewald(int P) {
 	deindent();
 	tprint("} else {\n");
 	indent();
+
+	tprint("expansion<%s, %i> L_st;\n", type.c_str(), P);
+	tprint("multipole<%s, %i> M_st;\n", type.c_str(), P);
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
-	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + M2LG(L_st, M_st, G_st) + %i;\n",
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + M2LG(L_st, M_st, O_st) + %i;\n",
 			get_running_flops(false).load() + flops_map[P][type + "greens_ewald_real"].load());
 	deindent();
 	tprint("}\n");
+	deindent();
 	tprint("}\n");
 	tprint("\n");
 	tprint("}\n");
@@ -2839,7 +2837,7 @@ void regular_harmonic_full(int P) {
 	const double c0 = -0.25;
 	const double c1 = double(1) / (double((1) * (1)));
 	if (2 <= P) {
-		tprint("Y[%i] = TCAST(-0.25) * R2;\n", lindex(2, 0));
+		tprint("Y[%i] = TCAST(-0.25) * r2;\n", lindex(2, 0));
 	}
 	if (1 <= P) {
 		tprint("Y[%i] = z;\n", lindex(1, 0));
@@ -2848,14 +2846,14 @@ void regular_harmonic_full(int P) {
 		const double c0 = -double(1) / (double((n + 2) * (n + 2)));
 		const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)));
 		if (n + 2 <= P) {
-			tprint("Y[%i] = TCAST(%.20e) * R2 * Y[%i];\n", lindex(n + 2, 0), c0, lindex(n, 0));
+			tprint("Y[%i] = TCAST(%.20e) * r2 * Y[%i];\n", lindex(n + 2, 0), c0, lindex(n, 0));
 		}
 		tprint("Y[%i] = fma(TCAST(%.20e) * z, Y[%i], Y[%i]);\n", lindex(n + 1, 0), c1, lindex(n, 0), lindex(n + 1, 0));
 		for (int m = 1; m <= n; m++) {
 			const double c0 = -double(1) / (double((n + 2) * (n + 2)) - double(m * m));
 			const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)) - double(m * m));
 			if (n + 2 <= P) {
-				tprint("ax0 = TCAST(%.20e) * R2;\n", c0);
+				tprint("ax0 = TCAST(%.20e) * r2;\n", c0);
 			}
 			if (n + 2 <= P) {
 				tprint("Y[%i] = ax0 * Y[%i];\n", lindex(n + 2, m), lindex(n, m));
@@ -2930,6 +2928,9 @@ std::string M2M_allrot(int P, int rot) {
 	init_real("ax2");
 	init_real("ay2");
 	init_real("R2");
+	if (periodic || rot == 0) {
+		init_real("r2");
+	}
 	if (nodip) {
 		init_real("Md");
 	}
@@ -2964,37 +2965,29 @@ std::string M2M_allrot(int P, int rot) {
 		tprint("z *= tmp1;\n");
 	}
 	reset_running_flops();
-	if (P > 2 && periodic) {
-		tprint("M_st.trace2() = fma(TCAST(-4) * x, M[%i], M_st.trace2());\n", mindex(1, 1));
-		tprint("M_st.trace2() = fma(TCAST(-4) * y, M[%i], M_st.trace2());\n", mindex(1, -1));
-		tprint("M_st.trace2() = fma(TCAST(-2) * z, M[%i], M_st.trace2());\n", mindex(1, 0));
-	}
 	tprint("x = -x;\n");
 	tprint("y = -y;\n");
 	tprint("z = -z;\n");
+	tprint("R2 = fma(x, x, y * y);\n");
+	if (periodic || rot == 0) {
+		tprint("r2 = fma(z, z, R2);\n");
+	}
 	std::function<int(int, int)> yindex;
+	if (P > 2 && periodic && !nodip) {
+		tprint("M_st.trace2() = fma(TCAST(4) * x, M[%i], M_st.trace2());\n", mindex(1, 1));
+		tprint("M_st.trace2() = fma(TCAST(4) * y, M[%i], M_st.trace2());\n", mindex(1, -1));
+		tprint("M_st.trace2() = fma(TCAST(2) * z, M[%i], M_st.trace2());\n", mindex(1, 0));
+	}
+	if (P > 2 && periodic) {
+		tprint("M_st.trace2() = fma(r2, M[%i], M_st.trace2());\n", mindex(0, 0));
+	}
 	if (rot == 0) {
-		tprint("R2 = fma(x, x, fma(y, y, z * z));\n");
-		if (P > 2 && periodic) {
-			tprint("M_st.trace2() = fma(R2, M[%i], M_st.trace2());\n", mindex(0, 0));
-		}
 		regular_harmonic_full(P - 1);
 		yindex = lindex;
 	} else if (rot == 1) {
-		tprint("R2 = fma(x, x, y * y);\n");
-		if (P > 2 && periodic) {
-			tprint("M_st.trace2() = fma(R2, M[%i], M_st.trace2());\n", mindex(0, 0));
-			tprint("M_st.trace2() = fma(z * z, M[%i], M_st.trace2());\n", mindex(0, 0));
-		}
 		M2M_z(P, +1);
 		regular_harmonic_xy(P - 1);
 		yindex = xyindex;
-	} else if (rot == 2) {
-		tprint("R2 = fma(x, x, y * y);\n");
-		if (P > 2 && periodic) {
-			tprint("M_st.trace2() = fma(R2, M[%i], M_st.trace2());\n", mindex(0, 0));
-			tprint("M_st.trace2() = fma(z * z, M[%i], M_st.trace2());\n", mindex(0, 0));
-		}
 	}
 	flops += get_running_flops().load();
 	reset_running_flops();
@@ -3221,6 +3214,9 @@ void L2L_allrot(int P, int Q, int rot) {
 		init_real("ay0");
 	}
 	init_real("R2");
+	if (periodic || rot == 0) {
+		init_real("r2");
+	}
 	if (Q == 1 && (rot != 2)) {
 		init_reals("L2", 4);
 	}
@@ -3253,9 +3249,6 @@ void L2L_allrot(int P, int Q, int rot) {
 		for (int i = 0; i < exp_sz(P); i++) {
 			tprint("L[%i] = L0[%i];\n", i, i);
 		}
-		if (periodic) {
-			tprint("L_st.trace2() = L0_st.trace2();\n");
-		}
 	}
 	const auto init_L2 = [Q]() {
 		if (Q == 1) {
@@ -3275,19 +3268,19 @@ void L2L_allrot(int P, int Q, int rot) {
 	tprint("y = -y;\n");
 	tprint("z = -z;\n");
 	std::function<int(int, int)> yindex;
+	tprint("R2 = fma(x, x, y * y);\n");
+	if (periodic || rot == 0) {
+		tprint("r2 = fma(z, z, R2);\n");
+	}
 	if (rot == 0) {
 		init_L2();
-		tprint("R2 = fma(x, x, fma(y, y, z * z));\n");
 		regular_harmonic_full(P);
 		yindex = lindex;
 	} else if (rot == 1) {
-		tprint("R2 = fma(x, x, y * y);\n");
 		L2L_z(P, P);
 		init_L2();
 		regular_harmonic_xy(P);
 		yindex = xyindex;
-	} else if (rot == 2) {
-		tprint("R2 = fma(x, x, y * y);\n");
 	}
 	flops += get_running_flops().load();
 	reset_running_flops();
@@ -3432,12 +3425,16 @@ void L2L_allrot(int P, int Q, int rot) {
 	}
 
 	if (P > 1 && periodic) {
-		tprint("L%s[%i] = fma(TCAST(2) * x, L_st.trace2(), L%s[%i]);\n", index(1, 1), index(1, 1));
-		tprint("L%s[%i] = fma(TCAST(2) * y, L_st.trace2(), L%s[%i]);\n", index(1, -1), index(1, -1));
-		tprint("L%s[%i] = fma(TCAST(2) * z, L_st.trace2(), L%s[%i]);\n", index(1, 0), index(1, 0));
-		tprint("L%s[%i] = fma(R2, L_st.trace2(), L%s[%i]);\n", index(0, 0), index(0, 0));
-		if (rot != 0) {
-			tprint("L%s[%i] = fma(z * z, L_st.trace2(), L%s[%i]);\n", index(0, 0), index(0, 0));
+		if (Q != 1) {
+			tprint("L0[%i] = fma(TCAST(2) * x, L0_st.trace2(), L0[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L0[%i] = fma(TCAST(2) * y, L0_st.trace2(), L0[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L0[%i] = fma(TCAST(2) * z, L0_st.trace2(), L0[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L0[%i] = fma(r2, L0_st.trace2(), L0[%i]);\n", index(0, 0), index(0, 0));
+		} else {
+			tprint("L2[%i] = fma(TCAST(2) * x, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L2[%i] = fma(TCAST(2) * y, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L2[%i] = fma(TCAST(2) * z, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L2[%i] = fma(r2, L0_st.trace2(), L2[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
 	if (Q == 1) {
@@ -3496,7 +3493,7 @@ std::string P2M(int P) {
 	init_real("ay1");
 	init_real("ax2");
 	init_real("ay2");
-	init_real("R2");
+	init_real("r2");
 	init_real("tmp1");
 	if (nodip) {
 		init_real("Mdx");
@@ -3516,7 +3513,7 @@ std::string P2M(int P) {
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
-	tprint("R2 = fma(x, x, fma(y, y, z * z));\n");
+	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("M[0] = m;\n");
 	if (periodic & P > 2) {
 		tprint("M_st.trace2() = m * r2;\n");
@@ -3548,7 +3545,7 @@ std::string P2M(int P) {
 	const double c0 = -0.25;
 	const double c1 = double(1) / (double((1) * (1)));
 	if (2 <= P) {
-		tprint("%s = TCAST(-0.25) * R2;\n", mstr(2, 0).c_str());
+		tprint("%s = TCAST(-0.25) * r2;\n", mstr(2, 0).c_str());
 	}
 	if (1 <= P) {
 		tprint("%s = z * M[0];\n", mstr(1, 0).c_str());
@@ -3557,14 +3554,14 @@ std::string P2M(int P) {
 		const double c0 = -double(1) / (double((n + 2) * (n + 2)));
 		const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)));
 		if (n + 2 <= P) {
-			tprint("%s = TCAST(%.20e) * R2 * %s;\n", mstr(n + 2, 0).c_str(), c0, mstr(n, 0).c_str());
+			tprint("%s = TCAST(%.20e) * r2 * %s;\n", mstr(n + 2, 0).c_str(), c0, mstr(n, 0).c_str());
 		}
 		tprint("%s = fma(TCAST(%.20e) * z, %s, %s);\n", mstr(n + 1, 0).c_str(), c1, mstr(n, 0).c_str(), mstr(n + 1, 0).c_str());
 		for (int m = 1; m <= n; m++) {
 			const double c0 = -double(1) / (double((n + 2) * (n + 2)) - double(m * m));
 			const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)) - double(m * m));
 			if (n + 2 <= P) {
-				tprint("ax0 = TCAST(%.20e) * R2;\n", c0);
+				tprint("ax0 = TCAST(%.20e) * r2;\n", c0);
 			}
 			if (n + 2 <= P) {
 				tprint("%s = ax0 * %s;\n", mstr(n + 2, m).c_str(), mstr(n, m).c_str());
@@ -4388,7 +4385,7 @@ int main() {
 			flops_map[P][type + "greens_ewald_real"] = flops0;
 			const double alpha = is_float(type) ? 2.4 : 2.25;
 			M2LG(P, P);
-			if (periodic) {
+			if (periodic && simd[typenum] && !m2monly[typenum]) {
 				greens_ewald(P, alpha);
 			}
 		}
@@ -4431,7 +4428,7 @@ int main() {
 				M2L_allrot(P, 1, 2);
 				P2L(P);
 			}
-			if (periodic) {
+			if (periodic && !m2monly[typenum] && simd[typenum]) {
 				M2L_ewald(P);
 			}
 
@@ -4925,9 +4922,6 @@ int main() {
 			indent();
 			tprint("typedef %s T;\n", type.c_str());
 			tprint("T o[%i];\n", half_exp_sz(P));
-			if (periodic && P > 1) {
-				tprint("T t;\n");
-			}
 			deindent();
 			tprint("public:\n");
 			indent();
@@ -4939,9 +4933,6 @@ int main() {
 			tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
 			deindent();
 			tprint("}\n");
-			if (periodic && P > 1) {
-				tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-			}
 			fprintf(fp, "#endif\n");
 			deindent();
 			tprint("}\n");
@@ -4955,18 +4946,6 @@ int main() {
 			tprint("return o;\n");
 			deindent();
 			tprint("}\n");
-			if (periodic && P > 1) {
-				tprint("SFMM_PREFIX T& trace2() {\n");
-				indent();
-				tprint("return t;\n");
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX T trace2() const {\n");
-				indent();
-				tprint("return t;\n");
-				deindent();
-				tprint("}\n");
-			}
 			deindent();
 			tprint("};\n");
 			tprint("\ntemplate<>\n");
@@ -4974,9 +4953,6 @@ int main() {
 			indent();
 			tprint("typedef %s T;\n", type.c_str());
 			tprint("T o[%i];\n", xyexp_sz(P));
-			if (periodic && P > 1) {
-				tprint("T t;\n");
-			}
 			deindent();
 			tprint("public:\n");
 			indent();
@@ -4988,9 +4964,6 @@ int main() {
 			tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
 			deindent();
 			tprint("}\n");
-			if (periodic && P > 1) {
-				tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-			}
 			fprintf(fp, "#endif\n");
 			deindent();
 			tprint("}\n");
@@ -5004,18 +4977,6 @@ int main() {
 			tprint("return o;\n");
 			deindent();
 			tprint("}\n");
-			if (periodic && P > 1) {
-				tprint("SFMM_PREFIX T& trace2() {\n");
-				indent();
-				tprint("return t;\n");
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX T trace2() const {\n");
-				indent();
-				tprint("return t;\n");
-				deindent();
-				tprint("}\n");
-			}
 			deindent();
 			tprint("};\n");
 			tprint("}\n");
@@ -5033,7 +4994,7 @@ int main() {
 			"\tfor (int i = 0; i < V::size(); i++) {\n"
 			"\t\tapply_padding(A[i], n);\n"
 			"\t}\n"
-#ifdef PERIODIC
+#ifdef USE_PERIODIC
 			"\tapply_padding(A.trace2(), n);\n"
 #endif
 			"}\n"
@@ -5044,7 +5005,7 @@ int main() {
 			"\tfor (int i = 0; i < V::size(); i++) {\n"
 			"\t\tA[i] *= mask;\n"
 			"\t}\n"
-#ifdef PERIODIC
+#ifdef USE_PERIODIC
 			"\tA.trace2() *= mask;\n"
 #endif
 			"}\n"
@@ -5057,7 +5018,7 @@ int main() {
 			"\tfor (int i = 0; i < end; i++) {\n"
 			"\t\tB[i] = reduce_sum(A[i]);\n"
 			"\t}\n"
-#ifdef PERIODIC
+#ifdef USE_PERIODIC
 			"\tB.trace2() = reduce_sum(A.trace2());\n"
 #endif
 			"\treturn B;\n"
@@ -5072,7 +5033,7 @@ int main() {
 			"\tfor (int i = 0; i < end; i++) {\n"
 			"\t\tB[i] = reduce_sum(A[i]);\n"
 			"\t}\n"
-#ifdef PERIODIC
+#ifdef USE_PERIODIC
 			"\tB.trace2() = reduce_sum(A.trace2());\n"
 #endif
 			"\treturn B;\n"

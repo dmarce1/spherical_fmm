@@ -223,6 +223,14 @@ func_data_t* operator_data(int index);
 void operator_write_new_bestops_source();
 std::string operator_best_rotations();
 }
+
+template<class V>
+inline void apply_padding(vec3<V>& A, int n) {
+	for (int i = 0; i < SFMM_NDIM; i++) {
+		apply_padding(A[i], n);
+	}
+}
+
 std::string operator_show_flops();
 int operator_best_rotation(int, const char*, const char*);
 void operator_flops(int P, const char* type, const char* name );
