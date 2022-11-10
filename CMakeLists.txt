@@ -25,7 +25,7 @@ execute_process(
   	RESULT_VARIABLE RESULT
 )
 
-#add_compile_options(-D_GLIBCXX_DEBUG -fsanitize=address)
+add_compile_options(-Wunused)
 #add_link_options(-D_GLIBCXX_DEBUG -fsanitize=address)
 
 if(NOT RESULT EQUAL 0)

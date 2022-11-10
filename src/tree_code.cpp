@@ -341,7 +341,6 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for (int k = 0; k < end; k++) {
-							const auto& src_part = parts[j + k];
 							load(dx, parts[j + k].x - part.x, k);
 						}
 						apply_padding(dx, end);
