@@ -2804,17 +2804,15 @@ void M2M_z(int P, int dir) {
 
 void regular_harmonic_full(int P) {
 	tprint("Y[0] = TCAST(1);\n");
-	for (int m = 0; m <= P; m++) {
-		if (m > 0) {
-			if (m - 1 > 0) {
-				tprint("ax0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, m - 1), 1.0 / (2.0 * m));
-				tprint("ay0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, -(m - 1)), 1.0 / (2.0 * m));
-				tprint("Y[%i] = x * ax0 - y * ay0;\n", lindex(m, m));
-				tprint("Y[%i] = fma(y, ax0, x * ay0);\n", lindex(m, -m));
-			} else {
-				tprint("Y[%i] = x * TCAST(%.20e);\n", lindex(m, m), 1.0 / (2.0 * m));
-				tprint("Y[%i] = y * TCAST(%.20e);\n", lindex(m, -m), 1.0 / (2.0 * m));
-			}
+	for (int m = 1; m <= P; m++) {
+		if (m - 1 > 0) {
+			tprint("ax0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, m - 1), 1.0 / (2.0 * m));
+			tprint("ay0 = Y[%i] * TCAST(%.20e);\n", lindex(m - 1, -(m - 1)), 1.0 / (2.0 * m));
+			tprint("Y[%i] = x * ax0 - y * ay0;\n", lindex(m, m));
+			tprint("Y[%i] = fma(y, ax0, x * ay0);\n", lindex(m, -m));
+		} else {
+			tprint("Y[%i] = x * TCAST(%.20e);\n", lindex(m, m), 1.0 / (2.0 * m));
+			tprint("Y[%i] = y * TCAST(%.20e);\n", lindex(m, -m), 1.0 / (2.0 * m));
 		}
 	}
 	const double c0 = -0.25;
@@ -3482,7 +3480,7 @@ std::string P2M(int P) {
 	init_real("ay1");
 	init_real("ax2");
 	init_real("ay2");
-	init_real("r2");
+	init_real("R2");
 	init_real("tmp1");
 	if (nodip) {
 		init_real("Mdx");
@@ -3502,87 +3500,71 @@ std::string P2M(int P) {
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
-	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
+	tprint("R2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("M[0] = m;\n");
 	if (periodic & P > 2) {
 		tprint("M_st.trace2() = m * r2;\n");
 	}
-	for (int m = 0; m < P; m++) {
-		if (m > 0) {
-			if (m - 1 > 0) {
-				if (m - 1 == 1 && nodip) {
-					tprint("ax0 = Mdx * TCAST(%.20e);\n", 1.0 / (2.0 * m));
-					tprint("ay0 = Mdy * TCAST(%.20e);\n", 1.0 / (2.0 * m));
-				} else {
-					tprint("ax0 = M[%i] * TCAST(%.20e);\n", mindex(m - 1, m - 1), 1.0 / (2.0 * m));
-					tprint("ay0 = M[%i] * TCAST(%.20e);\n", mindex(m - 1, -(m - 1)), 1.0 / (2.0 * m));
-				}
-				if (m == 1 && nodip) {
-					tprint("Mdx = x * ax0 - y * ay0;\n");
-					tprint("Mdy = fma(y, ax0, x * ay0);\n");
-				} else {
-					tprint("M[%i] = x * ax0 - y * ay0;\n", mindex(m, m));
-					tprint("M[%i] = fma(y, ax0, x * ay0);\n", mindex(m, -m));
-				}
-
+	const auto mstr = [](int l, int m) {
+		if( nodip && l == 1 ) {
+			if( m == 0 ) {
+				return std::string("Mdz");
+			} else if( m == 1 ) {
+				return std::string("Mdx");
 			} else {
-				tprint("ax0 = M[%i] * TCAST(%.20e);\n", mindex(m - 1, m - 1), 1.0 / (2.0 * m));
-				if (nodip) {
-					tprint("Mdx = x * ax0;\n");
-					tprint("Mdy = y * ax0;\n");
-				} else {
-					tprint("M[%i] = x * ax0;\n", mindex(m, m));
-					tprint("M[%i] = y * ax0;\n", mindex(m, -m));
-				}
+				return std::string("Mdy");
+			}
+		}
+		return std::string("M[") + std::to_string(mindex(l,m)) + "]";
+	};
+	P--;
+	for (int m = 1; m <= P; m++) {
+		if (m - 1 > 0) {
+			tprint("ax0 = %s * TCAST(%.20e);\n", mstr(m - 1, m - 1).c_str(), 1.0 / (2.0 * m));
+			tprint("ay0 = %s * TCAST(%.20e);\n", mstr(m - 1, -(m - 1)).c_str(), 1.0 / (2.0 * m));
+			tprint("%s = x * ax0 - y * ay0;\n", mstr(m, m).c_str());
+			tprint("%s = fma(y, ax0, x * ay0);\n", mstr(m, -m).c_str());
+		} else {
+			tprint("%s = x * TCAST(%.20e) * M[0];\n", mstr(m, m).c_str(), 1.0 / (2.0 * m));
+			tprint("%s = y * TCAST(%.20e) * M[0];\n", mstr(m, -m).c_str(), 1.0 / (2.0 * m));
+		}
+	}
+	const double c0 = -0.25;
+	const double c1 = double(1) / (double((1) * (1)));
+	if (2 <= P) {
+		tprint("%s = TCAST(-0.25) * R2;\n", mstr(2, 0).c_str());
+	}
+	if (1 <= P) {
+		tprint("%s = z * M[0];\n", mstr(1, 0).c_str());
+	}
+	for (int n = 1; n < P; n++) {
+		const double c0 = -double(1) / (double((n + 2) * (n + 2)));
+		const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)));
+		if (n + 2 <= P) {
+			tprint("%s = TCAST(%.20e) * R2 * %s;\n", mstr(n + 2, 0).c_str(), c0, mstr(n, 0).c_str());
+		}
+		tprint("%s = fma(TCAST(%.20e) * z, %s, %s);\n", mstr(n + 1, 0).c_str(), c1, mstr(n, 0).c_str(), mstr(n + 1, 0).c_str());
+		for (int m = 1; m <= n; m++) {
+			const double c0 = -double(1) / (double((n + 2) * (n + 2)) - double(m * m));
+			const double c1 = double(2 * n + 1) / (double((n + 1) * (n + 1)) - double(m * m));
+			if (n + 2 <= P) {
+				tprint("ax0 = TCAST(%.20e) * R2;\n", c0);
+			}
+			tprint("ay0 = TCAST(%.20e) * z;\n", c1);
+			if (n + 2 <= P) {
+				tprint("%s = ax0 * %s;\n", mstr(n + 2, m).c_str(), mstr(n, m).c_str());
+				tprint("%s = ax0 * %s;\n", mstr(n + 2, -m).c_str(), mstr(n, -m).c_str());
+			}
+			if (n == m) {
+				tprint("%s = ay0 * %s;\n", mstr(n + 1, m).c_str(), mstr(n, m).c_str());
+				tprint("%s = ay0 * %s;\n", mstr(n + 1, -m).c_str(), mstr(n, -m).c_str());
+			} else {
+				tprint("%s = fma(ay0, %s, %s);\n", mstr(n + 1, m).c_str(), mstr(n, m).c_str(), mstr(n + 1, m).c_str());
+				tprint("%s = fma(ay0, %s, %s);\n", mstr(n + 1, -m).c_str(), mstr(n, -m).c_str(), mstr(n + 1, -m).c_str());
 			}
 		}
 	}
-	for (int m = 0; m < P; m++) {
-		tprint_new_chain();
-		if (m + 1 < P) {
-			if (m == 0) {
-				if (nodip) {
-					tprint_chain("Mdz = z * M[0];\n");
-				} else {
-					tprint_chain("M[%i] = z * M[%i];\n", mindex(1, 0), mindex(0, 0));
-				}
-			} else {
-				if (nodip && m == 1) {
-					tprint_chain("M[%i] = z * Mdx;\n", mindex(m + 1, m));
-					tprint_chain("M[%i] = z * Mdy;\n", mindex(m + 1, -m));
-				} else {
-					tprint_chain("M[%i] = z * M[%i];\n", mindex(m + 1, m), mindex(m, m));
-					tprint_chain("M[%i] = z * M[%i];\n", mindex(m + 1, -m), mindex(m, -m));
-				}
-			}
-		}
-		for (int n = m + 2; n < P; n++) {
-			const double inv = double(1) / (double(n * n) - double(m * m));
-			tprint_chain("ax%i = TCAST(%.20e) * z;\n", current_chain, inv * double(2 * n - 1));
-			tprint_chain("ay%i = TCAST(%.20e) * r2;\n", current_chain, -(double) inv);
-			if (nodip && n - 2 == 1) {
-				if (m == 0) {
-					tprint_chain("M[%i] = fma(ax%i, M[%i], ay%i * Mdz);\n", mindex(n, m), current_chain, mindex(n - 1, m), current_chain);
-				} else {
-					tprint_chain("M[%i] = fma(ax%i, M[%i], ay%i * Mdx);\n", mindex(n, m), current_chain, mindex(n - 1, m), current_chain);
-					tprint_chain("M[%i] = fma(ax%i, M[%i], ay%i * Mdy);\n", mindex(n, -m), current_chain, mindex(n - 1, -m), current_chain);
-				}
-			} else if (nodip && n - 1 == 1) {
-				if (m == 0) {
-					tprint_chain("M[%i] = fma(ax%i, Mdz, ay%i * M[%i]);\n", mindex(n, m), current_chain, mindex(n - 2, m), current_chain);
-				} else {
-					tprint_chain("M[%i] = fma(ax%i, Mdx, ay%i * M[%i]);\n", mindex(n, m), current_chain, mindex(n - 2, m));
-					tprint_chain("M[%i] = fma(ax%i, Mdy, ay%i * M[%i]);\n", mindex(n, -m), current_chain, mindex(n - 2, -m));
-				}
-			} else {
-				tprint_chain("M[%i] = fma(ax%i, M[%i], ay%i * M[%i]);\n", mindex(n, m), current_chain, mindex(n - 1, m), current_chain, mindex(n - 2, m));
-				if (m != 0) {
-					tprint_chain("M[%i] = fma(ax%i, M[%i], ay%i * M[%i]);\n", mindex(n, -m), current_chain, mindex(n - 1, -m), current_chain, mindex(n - 2, -m));
-				}
-			}
-		}
-	}
-	tprint_flush_chains();
+	P++;
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
