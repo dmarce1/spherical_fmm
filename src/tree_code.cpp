@@ -461,8 +461,8 @@ int main(int argc, char **argv) {
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithoutOptimization /*| sfmmProfilingOn*/> run1;
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization /*| sfmmProfilingOn*/ > run2;
 	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization /*| sfmmProfilingOn*/> run3;
-	//run1();
-	//run2();
+	run1();
+	run2();
 	run3();
 	auto prof = sfmm::operator_profiling_results();
 	printf("%s\n", prof.c_str());
