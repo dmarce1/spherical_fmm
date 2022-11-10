@@ -1522,7 +1522,6 @@ void greens_body(int P, const char* M = nullptr) {
 			}
 		}
 	}
-	tprint_flush_chains();
 }
 
 std::string greens_safe(int P) {
@@ -2238,40 +2237,37 @@ void greens_xz_body(int P) {
 	if (periodic && P > 1) {
 		tprint("O_st.trace2() = TCAST(0);\n");
 	}
-	tprint("x *= r2inv;\n");
+	tprint("R *= r2inv;\n");
 	tprint("z *= r2inv;\n");
-	tprint("zx1 = z;\n");
-	for (int m = 1; m < P; m++) {
-		tprint("zx%i = TCAST(%i) * z;\n", 2 * m + 1, 2 * m + 1);
-	}
 	const auto index = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
-	tprint("O[%i] = x * O[0];\n", index(1, 1));
+	tprint("O[%i] = R * O[0];\n", index(1, 1));
 	for (int m = 2; m <= P; m++) {
-		tprint("O[%i] = x * O[%i] * TCAST(%i);\n", index(m, m), index(m - 1, m - 1), 2 * m - 1);
+		tprint("O[%i] = R * O[%i] * TCAST(%i);\n", index(m, m), index(m - 1, m - 1), 2 * m - 1);
 	}
-	for (int m = 0; m <= P; m++) {
-		tprint_new_chain();
-		if (m + 1 <= P) {
-			tprint_chain("O[%i] = zx%i * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
+	if (2 <= P) {
+		tprint("O[%i] = -r2inv * O[0];\n", index(2, 0), index(0, 0));
+	}
+	if (1 <= P) {
+		tprint("O[%i] = z * O[0];\n", index(1, 0));
+	}
+	for (int n = 1; n < P; n++) {
+		const double c0 = -(double((n + 1) * (n + 1)));
+		const double c1 = double(2 * n + 1);
+		int mmax = n - 1;
+		tprint("ax0 = TCAST(%.20e) * z;\n", c1);
+		for (int m = 0; m <= mmax; m++) {
+			tprint("O[%i] = fma(ax0, O[%i], O[%i]);\n", index(n + 1, m), index(n, m), index(n + 1, m));
 		}
-		for (int n = m + 2; n <= P; n++) {
-			if (m != 0) {
-				tprint_chain("ay%i = TCAST(-%i) * r2inv;\n", current_chain, (n - 1) * (n - 1) - m * m);
-				tprint_chain("O[%i] = fma(zx%i, O[%i], ay%i * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), current_chain, index(n - 2, m));
-			} else {
-				if ((n - 1) * (n - 1) - m * m == 1) {
-					tprint_chain("O[%i] = (zx%i * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
-
-				} else {
-					tprint_chain("O[%i] = fma(zx%i, O[%i], TCAST(-%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
-							index(n - 2, m));
-				}
+		tprint("O[%i] = ax0 * O[%i];\n", index(n + 1, n), index(n, n));
+		if (n != P - 1) {
+			for (int m = 0; m <= n; m++) {
+				const double c0 = -(double((n + 1) * (n + 1)) - double(m * m));
+				tprint("O[%i] = TCAST(%.20e) * r2inv * O[%i];\n", index(n + 2, m), c0, index(n, m));
 			}
 		}
 	}
-	tprint_flush_chains();
 }
 
 void M2L_allrot(int P, int Q, int rot) {
@@ -2426,44 +2422,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	if (rot == 0) {
 		greens_body(P);
 	} else if (rot == 1) {
-		tprint("O[0] = sqrt(r2inv);\n");
-		if (periodic && P > 1) {
-			tprint("O_st.trace2() = TCAST(0);\n");
-		}
-		tprint("R *= r2inv;\n");
-		tprint("z *= r2inv;\n");
-		tprint("zx1 = z;\n");
-		for (int m = 1; m < P; m++) {
-			tprint("zx%i = TCAST(%i) * z;\n", 2 * m + 1, 2 * m + 1);
-		}
-		const auto index = [](int l, int m) {
-			return l*(l+1)/2+m;
-		};
-		tprint("O[%i] = R * O[0];\n", index(1, 1));
-		for (int m = 2; m <= P; m++) {
-			tprint("O[%i] = R * O[%i] * TCAST(%i);\n", index(m, m), index(m - 1, m - 1), 2 * m - 1);
-		}
-		for (int m = 0; m <= P; m++) {
-			tprint_new_chain();
-			if (m + 1 <= P) {
-				tprint_chain("O[%i] = zx%i * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
-			}
-			for (int n = m + 2; n <= P; n++) {
-				if (m != 0) {
-					tprint_chain("ay%i = TCAST(-%i) * r2inv;\n", current_chain, (n - 1) * (n - 1) - m * m);
-					tprint_chain("O[%i] = fma(zx%i, O[%i], ay%i * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), current_chain, index(n - 2, m));
-				} else {
-					if ((n - 1) * (n - 1) - m * m == 1) {
-						tprint_chain("O[%i] = (zx%i * O[%i] - r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), index(n - 2, m));
-
-					} else {
-						tprint_chain("O[%i] = fma(zx%i, O[%i], TCAST(-%i) * r2inv * O[%i]);\n", index(n, m), 2 * n - 1, index(n - 1, m), (n - 1) * (n - 1) - m * m,
-								index(n - 2, m));
-					}
-				}
-			}
-		}
-		tprint_flush_chains();
+		greens_xz_body(P);
 	}
 	if (rot == 1 && P == Q) {
 		tprint("ptr=L0;\n");
