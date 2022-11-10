@@ -210,7 +210,6 @@ struct func_data_t {
 	std::string type;
 	std::string name;
 	int P;
-	int nopot;
 	int nrot;
 	int flops;
 	double time;
@@ -225,7 +224,7 @@ void operator_write_new_bestops_source();
 std::string operator_best_rotations();
 }
 std::string operator_show_flops();
-int operator_best_rotation(int, int, const char*, const char*);
-void operator_flops(int P, int nopot, const char* type, const char* name );
+int operator_best_rotation(int, const char*, const char*);
+void operator_flops(int P, const char* type, const char* name );
 std::string operator_profiling_results();
 
