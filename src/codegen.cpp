@@ -1886,6 +1886,7 @@ std::string M2LG(int P, int Q) {
 	flops_map[P][type + "M2LG"] = get_running_flops();
 	deindent();
 	tprint("}\n");
+
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
@@ -2643,29 +2644,13 @@ std::string M2L(int P, int Q) {
 }
 
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, true, false, true, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L0", EXP, "M", CMUL, "dx", VEC3);
 	reset_running_flops();
 	tprint("expansion<%s, %i> G_st;\n", type.c_str(), P);
-	tprint("expansion<%s,%i> L_st;\n", type.c_str(), P);
-	tprint("multipole<%s,%i> M_st;\n", type.c_str(), P);
-	tprint("T* G(G_st.data());\n", type.c_str(), P);
-	tprint("T* M(M_st.data());\n");
-	tprint("T* L(L_st.data());\n");
+	reset_running_flops();
 	if (scaled) {
 		init_real("a");
 		init_real("b");
-	}
-	reset_running_flops();
-	for (int n = 0; n < exp_sz(P); n++) {
-		tprint("L[%i] = TCAST(0);\n", n);
-	}
-	if (scaled) {
-		tprint("L_st.r = %s(1);\n", base_rtype[typenum].c_str());
-	}
-	if (periodic && P > 1) {
-		tprint("L_st.trace2() = TCAST(0);\n");
-	}
-	if (scaled) {
 		tprint("a = M0_st.r;\n");
 		tprint("b = a;\n");
 		tprint("M_st.r = %s(1);\n", base_rtype[typenum].c_str());
@@ -2683,19 +2668,9 @@ std::string M2L_ewald(int P) {
 			}
 		}
 		tprint("M_st.o[0] = M0_st.o[0];\n");
-	} else {
-		for (int n = 0; n < mul_sz(P); n++) {
-			tprint("M_st.o[%i] = M0_st.o[%i];\n", n, n);
-		}
-		if (P > 2) {
-			tprint("M_st.t = M0_st.t;\n");
-		}
-		if (scaled) {
-			tprint("M_st.r = M0_st.r;\n");
-		}
 	}
-	tprint("int flops = greens_ewald%s(G_st, vec3<T>(x, y, z));\n", "");
-	tprint("flops += M2LG%s(L_st, M_st, G_st);\n", "");
+	tprint("int flops = greens_ewald(G_st, dx);\n");
+	tprint("flops += M2LG%s(L0_st, M_st, G_st);\n", "");
 	if (scaled) {
 		tprint("a = L0_st.scale() / M_st.scale();\n");
 		tprint("b = a;\n");
@@ -2711,13 +2686,6 @@ std::string M2L_ewald(int P) {
 				tprint("b *= a;\n");
 			}
 		}
-	}
-
-	for (int n = 0; n < exp_sz(P); n++) {
-		tprint("L0[%i] += L[%i];\n", n, n);
-	}
-	if (periodic && P > 1) {
-		tprint("L0_st.trace2() += L_st.trace2();\n");
 	}
 	tprint("return flops+%i;\n", get_running_flops().load());
 	deindent();
