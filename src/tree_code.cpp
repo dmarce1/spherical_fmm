@@ -7,6 +7,8 @@
 #include <future>
 #include <atomic>
 
+#define DEBUG
+
 #define NDIM 3
 #define BUCKET_SIZE 32
 #define MIN_CLOUD 4
@@ -14,13 +16,130 @@
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE 1000000
+#define TEST_SIZE 100000
 //#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
 
 double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
+}
+
+sfmm::force_type<double> P2P_ewald(double m, sfmm::vec3<double> dx) {
+	sfmm::force_type<double> f;
+	double& pot = f.potential;
+	double& fx = f.force[0];
+	double& fy = f.force[1];
+	double& fz = f.force[2];
+	double& dx0 = dx[0];
+	double& dx1 = dx[1];
+	double& dx2 = dx[2];
+	const double cons1 = (double) (4.0 / sqrt(4.0 * atan(1)));
+	fx = 0.0;
+	fy = 0.0;
+	fz = 0.0;
+	pot = 0.0;
+	const auto r2 = sfmm::sqr(dx0) + sfmm::sqr(dx1) + sfmm::sqr(dx2);  // 5
+
+	if (r2 > 0.) {
+		const double dx = dx0;
+		const double dy = dx1;
+		const double dz = dx2;
+		const double r2 = sfmm::sqr(dx) + sfmm::sqr(dy) + sfmm::sqr(dz);
+		const double r = sqrt(r2);
+		const double rinv = 1. / r;
+		const double r2inv = rinv * rinv;
+		const double r3inv = r2inv * rinv;
+		double exp0 = exp(-4.0 * r2);
+		double erf0 = erf(2.0 * r);
+		const double expfactor = cons1 * r * exp0;
+		const double d0 = erf0 * rinv;
+		const double d1 = (expfactor - erf0) * r3inv;
+		pot += d0;
+		fx -= dx * d1;
+		fy -= dy * d1;
+		fz -= dz * d1;
+		for (int xi = -3; xi <= +3; xi++) {
+			for (int yi = -3; yi <= +3; yi++) {
+				for (int zi = -3; zi <= +3; zi++) {
+					const bool center = xi * xi + yi * yi + zi * zi == 0;
+					if (center || xi * xi + yi * yi + zi * zi > 12) {
+						continue;
+					}
+					const double dx = dx0 - xi;
+					const double dy = dx1 - yi;
+					const double dz = dx2 - zi;
+					const double r2 = dx * dx + dy * dy + dz * dz;
+					const double r = sqrt(r2);
+					const double rinv = 1. / r;
+					const double r2inv = rinv * rinv;
+					const double r3inv = r2inv * rinv;
+					double exp0 = exp(-4.0 * r2);
+					double erfc0 = erfc(2.0 * r);
+					const double expfactor = cons1 * r * exp0;
+					const double d0 = -erfc0 * rinv;
+					const double d1 = (expfactor + erfc0) * r3inv;
+					pot += d0;
+					fx -= dx * d1;
+					fy -= dy * d1;
+					fz -= dz * d1;
+				}
+			}
+		}
+		pot += (double) (M_PI / 4.0);
+		for (int xi = -2; xi <= +2; xi++) {
+			for (int yi = -2; yi <= +2; yi++) {
+				for (int zi = -2; zi <= +2; zi++) {
+					const double hx = xi;
+					const double hy = yi;
+					const double hz = zi;
+					const double h2 = hx * hx + hy * hy + hz * hz;
+					if (h2 > 0.0 && h2 <= 8) {
+						const double hdotx = dx0 * hx + dx1 * hy + dx2 * hz;
+						const double omega = (double) (2.0 * M_PI) * hdotx;
+						double c, s;
+						sincos(omega, &s, &c);
+						const double c0 = -1. / h2 * exp((double) (-sfmm::sqr(M_PI) * 0.25) * h2) * (double) (1. / (M_PI));
+						const double c1 = -s * 2.0 * M_PI * c0;
+						pot += c0 * c;
+						fx -= c1 * hx;
+						fy -= c1 * hy;
+						fz -= c1 * hz;
+					}
+				}
+			}
+		}
+	} else {
+		pot += 2.837291;
+	}
+	f.potential *= m;
+	f.force[0] *= m;
+	f.force[1] *= m;
+	f.force[2] *= m;
+	return f;
+}
+
+template<class W>
+static size_t P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
+	const static double hsoft = 0.01;
+	static const W h2(hsoft * hsoft);
+	static const W hinv(W(1) / hsoft);
+	static const W hinv3(sfmm::sqr(hinv) * hinv);
+	const W r2 = sfmm::sqr(dx[0]) + sfmm::sqr(dx[1]) + sfmm::sqr(dx[2]);
+	const W wn(m * (r2 < h2));
+	const W wf(m * (r2 >= h2));
+	sfmm::vec3<W> fn, ff;
+	W rzero(r2 < W(1e-30));
+	W pn, pf;
+	const W rinv = sfmm::rsqrt(r2 + rzero);
+	W rinv3 = sfmm::sqr(rinv) * rinv;
+	pf = rinv;
+	ff = dx * rinv3;
+	pn = (W(1.5) * hinv - W(0.5) * r2 * hinv3);
+	fn = dx * hinv3;
+	f.potential += pn * wn + pf * wf;
+	f.force -= fn * wn + ff * wf;
+	return 41;
 }
 
 template<class T, class V, class MV, int ORDER, int FLAGS>
@@ -48,6 +167,7 @@ class tree {
 
 	static const T theta_max;
 	static const T hsoft;
+	static const T mass;
 	static const int Ngrid;
 
 	static std::vector<particle> parts;
@@ -57,7 +177,6 @@ class tree {
 		tree* ptr;
 		bool opened;
 	};
-
 	template<class W>
 	static size_t P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
 		static const W h2(hsoft * hsoft);
@@ -90,12 +209,12 @@ class tree {
 			const int end = std::min(sfmm::simd_size<V>(), checklist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& check = checklist[i + j];
-				sfmm::load(dx, center - check.ptr->center, j);
+				sfmm::load(dx, sfmm::distance(center, check.ptr->center), j);
 				sfmm::load(rsum, radius + check.ptr->radius, j);
 			}
 			sfmm::apply_padding(dx, end);
 			sfmm::apply_padding(rsum, end);
-			V far(sqr(rsum) < c0 * sqr(dx));
+			V far(sfmm::sqr(rsum) < c0 * sfmm::sqr(dx));
 			for (int j = 0; j < end; j++) {
 				auto& check = checklist[i + j];
 				if (sfmm::access(far, j) || (leaf && check.opened)) {
@@ -120,6 +239,13 @@ class tree {
 			}
 		}
 		checklist = nextlist;
+		for (int i = 0; i < checklist.size(); i++) {
+			auto dx = sfmm::distance(center, checklist[i].ptr->center);
+			auto dr = radius + checklist[i].ptr->radius;
+			if (abs(dx) - dr > 0.5) {
+				printf("%e %e\n", abs(dx), dr);
+			}
+		}
 	}
 
 public:
@@ -142,11 +268,35 @@ public:
 			}
 			lo++;
 		}
-		return lo;
+		return hi;
 	}
 
 	static void sort_grid(sfmm::vec3<int> cell_begin = { 0, 0, 0 }, sfmm::vec3<int> cell_end = { Ngrid, Ngrid, Ngrid }, std::pair<int, int> part_range =
 			std::make_pair(0, parts.size())) {
+#ifdef DEBUG
+		bool flag = false;
+		for (int i = part_range.first; i < part_range.second; i++) {
+			for (int dim = 0; dim < NDIM; dim++) {
+				T begin = (T) cell_begin[dim] / Ngrid;
+				T end = (T) cell_end[dim] / Ngrid;
+				if (parts[i].x[dim] < begin || parts[i].x[dim] > end) {
+					flag = true;
+				}
+			}
+		}
+		for (int i = part_range.first; i < part_range.second; i++) {
+			if (flag) {
+				for (int dim = 0; dim < NDIM; dim++) {
+					T begin = (T) cell_begin[dim] / Ngrid;
+					T end = (T) cell_end[dim] / Ngrid;
+					printf("particle out of range! %e %e %e \n", begin, parts[i].x[dim], end);
+				}
+			}
+		}
+		if (flag) {
+			abort();
+		}
+#endif
 		sfmm::vec3<int> cell_end_left;
 		sfmm::vec3<int> cell_begin_right;
 		std::pair<int, int> range_left;
@@ -186,7 +336,7 @@ public:
 	}
 
 	static size_t form_trees() {
-		int flops = 0;
+		size_t flops = 0;
 		std::vector<std::future<size_t>> futs;
 		for (auto& tr : forest) {
 			auto* ptr = &tr;
@@ -206,6 +356,15 @@ public:
 		const int nparts = part_range.second - part_range.first;
 		T scale = end[0] - begin[0];
 		multipole.init(scale);
+#ifdef DEBUG
+		for (int i = part_range.first; i < part_range.second; i++) {
+			for (int dim = 0; dim < NDIM; dim++) {
+				if (parts[i].x[dim] < begin[dim] || parts[i].x[dim] > end[dim]) {
+					printf("particle out of range! %e %e %e %i\n", begin[dim], parts[i].x[dim], end[dim], depth);
+				}
+			}
+		}
+#endif
 		if (nparts > BUCKET_SIZE) {
 			sfmm::vec3<MV> dx;
 			multipole_type<MV> M;
@@ -237,7 +396,7 @@ public:
 					sfmm::load(M, children[ci].multipole, j);
 				}
 				radius = std::max(radius, sfmm::reduce_max(abs(dx) + cr));
-				flops += MV::size() * sfmm::M2M(M, dx, FLAGS);
+				flops += sfmm::simd_size<MV>() * sfmm::M2M(M, dx, FLAGS);
 				multipole += sfmm::reduce_sum(M);
 			}
 		} else {
@@ -257,7 +416,7 @@ public:
 					}
 					multipole_type<V> M;
 					radius = std::max(radius, sfmm::reduce_max(abs(dx)));
-					flops += V::size() * sfmm::P2M(M, sfmm::create_mask<V>(end), dx);
+					flops += sfmm::simd_size<V>() * sfmm::P2M(M, sfmm::create_mask<V>(end) * mass, dx);
 					multipole += sfmm::reduce_sum(M);
 				}
 				radius = std::max(hsoft, radius);
@@ -279,12 +438,33 @@ public:
 			entry.opened = false;
 			checklist.push_back(entry);
 		}
-		expansion_type<T> expansion;
-		expansion.init();
 		std::vector<std::future<size_t>> futs;
 		for (auto& tr : forest) {
 			auto* ptr = &tr;
-			futs.push_back(std::async([ptr,checklist,expansion]() {return ptr->compute_cell_gravity(expansion, checklist);}));
+			futs.push_back(std::async([ptr,checklist]() {
+				size_t flops = 0;
+				expansion_type<T> expansion;
+				expansion_type<V> L;
+				multipole_type<V> M;
+				sfmm::vec3<V> dx;
+				tree& tr = *ptr;
+				expansion.init();
+				for (int i = 0; i < checklist.size(); i += sfmm::simd_size<V>()) {
+					L.init();
+					const int end = std::min(sfmm::simd_size<V>(), checklist.size() - i);
+					for (int j = 0; j < end; j++) {
+						const auto& src = checklist[i + j].ptr;
+						load(dx, sfmm::distance(src->center, tr.center), j);
+						load(M, src->multipole, j);
+					}
+					apply_padding(dx, end);
+					apply_padding(M, end);
+					flops += sfmm::simd_size<V>() * sfmm::M2L_ewald(L, M, dx, FLAGS);
+					apply_mask(L, end);
+					expansion += reduce_sum(L);
+				}
+				return flops + ptr->compute_cell_gravity(expansion, checklist);
+			}));
 		}
 		for (auto& f : futs) {
 			flops += f.get();
@@ -313,12 +493,12 @@ public:
 			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
-				load(dx, src->center - center, j);
+				load(dx, sfmm::distance(src->center, center), j);
 				load(M, src->multipole, j);
 			}
 			apply_padding(dx, end);
 			apply_padding(M, end);
-			flops += V::size() * sfmm::M2L(L, M, dx, FLAGS);
+			flops += sfmm::simd_size<V>() * sfmm::M2L(L, M, dx, FLAGS);
 			apply_mask(L, end);
 			expansion += reduce_sum(L);
 		}
@@ -327,10 +507,10 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					load(dx, parts[j + k].x - center, k);
+					load(dx, sfmm::distance(parts[j + k].x, center), k);
 				}
 				apply_padding(dx, end);
-				flops += V::size() * sfmm::P2L(L, sfmm::create_mask<V>(end), dx);
+				flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(end) * mass, dx);
 				expansion += reduce_sum(L);
 			}
 		}
@@ -347,14 +527,13 @@ public:
 			}
 			load(L, expansion);
 			for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
-				sfmm::vec3<V> part_x;
 				force_type<V> F;
 				F.init();
 				const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 				for (int j = 0; j < end; j++) {
 					load(dx, center - parts[i + j].x, j);
 				}
-				flops += V::size() * sfmm::L2P(F, L, dx, FLAGS);
+				flops += sfmm::simd_size<V>() * sfmm::L2P(F, L, dx, FLAGS);
 				for (int j = 0; j < end; j++) {
 					store(parts[i + j].f, F, j);
 				}
@@ -366,12 +545,12 @@ public:
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
-						load(dx, src->center - part.x, j);
+						load(dx, sfmm::distance(src->center, part.x), j);
 						load(M, src->multipole, j);
 					}
 					apply_padding(dx, end);
 					apply_padding(M, end);
-					flops += V::size() * sfmm::M2P(F, M, dx, FLAGS);
+					flops += sfmm::simd_size<V>() * sfmm::M2P(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(part.f, F, j);
 					}
@@ -383,11 +562,11 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for (int k = 0; k < end; k++) {
-							load(dx, parts[j + k].x - part.x, k);
+							load(dx, sfmm::distance(parts[j + k].x, part.x), k);
 						}
 						apply_padding(dx, end);
 						F.init();
-						flops += V::size() * P2P(F, sfmm::create_mask<V>(end), dx);
+						flops += sfmm::simd_size<V>() * P2P(F, sfmm::create_mask<V>(end) * mass, dx);
 						part.f += sfmm::reduce_sum(F);
 					}
 				}
@@ -413,9 +592,10 @@ public:
 				const auto& src_part = parts[j];
 				sfmm::vec3<double> dx;
 				for (int dim = 0; dim < NDIM; dim++) {
-					dx[dim] = src_part.x[dim] - snk_part.x[dim];
+					dx[dim] = sfmm::distance(src_part.x[dim], snk_part.x[dim]);
 				}
-				P2P<double>(fa, double(1), dx);
+				fa += P2P_ewald(mass, dx);
+				P2P<double>(fa, mass, dx);
 			}
 			double famag = 0.0;
 			double fnmag = 0.0;
@@ -423,7 +603,7 @@ public:
 				famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
 				fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
 			}
-			//	printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
+			printf("%e %e %e\n", famag, fnmag, (famag - fnmag) / famag);
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
 			norm += sfmm::sqr(famag);
@@ -452,7 +632,10 @@ template<class T, class V, class M, int ORDER, int FLAGS>
 std::vector<typename tree<T, V, M, ORDER, FLAGS>::particle> tree<T, V, M, ORDER, FLAGS>::parts;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
-const T tree<T, V, M, ORDER, FLAGS>::theta_max = 0.6;
+const T tree<T, V, M, ORDER, FLAGS>::theta_max = 0.5;
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+const T tree<T, V, M, ORDER, FLAGS>::mass = 1.0 / TEST_SIZE;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
 const T tree<T, V, M, ORDER, FLAGS>::hsoft = 0.01;
@@ -484,7 +667,8 @@ struct run_tests {
 		force_time = tm.read();
 		tm.reset();
 		tm.start();
-		const auto error = tree_type::compare_analytic(100.0 / TEST_SIZE);
+		printf("Comparing analytic\n");
+		const auto error = tree_type::compare_analytic(10.0 / TEST_SIZE);
 		tm.stop();
 		printf("%i %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error, flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
 		run_tests<T, V, M, ORDER + 1, FLAGS> run;
@@ -498,17 +682,79 @@ struct run_tests<T, V, M, PMAX + 1, FLAGS> {
 	}
 };
 
+void ewald() {
+	constexpr int N = 6;
+	sfmm::multipole<sfmm::simd_f32, N> M;
+	sfmm::expansion<sfmm::simd_f32, N> L;
+	M.init();
+	M[0][0] = 1.0;
+	sfmm::vec3<sfmm::simd_f32> dx;
+	for (double x = 0.0; x < 0.5; x += 0.01) {
+		dx[2] = dx[1] = sfmm::simd_f32(0.0);
+		dx[0] = sfmm::simd_f32(x);
+		sfmm::M2L_ewald(L, M, dx);
+		printf("%e ", x);
+		for (int i = 0; i < L.size(); i++) {
+			printf("%e ", L[i][0]);
+		}
+		printf("\n");
+	}
+}
+
+void random_unit(float& x, float& y, float& z) {
+	const float theta = acos(2 * rand1() - 1.0);
+	const float phi = rand1() * 2.0 * M_PI;
+	x = cos(phi) * sin(theta);
+	y = sin(phi) * sin(theta);
+	z = cos(theta);
+}
+
 int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
+	/*sfmm::vec3<sfmm::simd_f32> x0;
+	sfmm::vec3<sfmm::simd_f32> x1;
+	sfmm::vec3<sfmm::simd_f32> x2;
+	rand1();
+	random_unit(x0[0][0], x0[1][0], x0[2][0]);
+	random_unit(x1[0][0], x1[1][0], x1[2][0]);
+	random_unit(x2[0][0], x2[1][0], x2[2][0]);
+	const auto alpha = 0.45 * rand1() + 0.05;
+	x0 *= alpha * 0.125;
+	x1 *= alpha;
+	x2 *= alpha * 0.125;
+	sfmm::multipole<sfmm::simd_f32, 5> M;
+	sfmm::expansion<sfmm::simd_f32, 5> L;
+	sfmm::force_type<sfmm::simd_f32> f1;
+//	sfmm::force_type<sfmm::simd_f32> f2;
+	f1.init();
+//	f2.init();
+	M.init();
+	L.init();
+	auto dx = x0;
+	dx += x1;
+	dx += x2;
+	x0 *= 0.5;
+	x1 *= 0.5;
+	sfmm::P2M(M, sfmm::simd_f32(0.5), x0);
+	sfmm::M2M(M, x0);
+	sfmm::M2L_ewald(L, M, x1);
+	sfmm::L2L(L, x2);
+	sfmm::L2P(f1, L, x2);
+	auto f2 = P2P_ewald(0.5, {dx[0][0],dx[1][0],dx[2][0]});
+	//printf( "%e %e %e\n", dx[0][0], dx[1][0], dx[2][0]);
+	printf( "%e %e\n", f1.potential[0], f2.potential);
+	return 0;*/
+	//ewald();
+	//return 0;
 	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithoutOptimization | sfmmProfilingOn> run1;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
+	run_tests<float, float, float, PMIN, sfmmWithoutOptimization | sfmmProfilingOn> run1;
+	//run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
+//	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
 	run1();
-	run2();
-	run3();
+//	run2();
+//	run3();
 	auto prof = sfmm::operator_profiling_results();
 	printf("%s\n", prof.c_str());
 	prof = sfmm::detail::operator_best_rotations();

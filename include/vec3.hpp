@@ -82,6 +82,19 @@ SFMM_PREFIX inline T abs(vec3<T> vec) {
 }
 
 template<class T>
+struct is_vec3 {
+	static constexpr bool value = false;
+};
+
+
+template<class T>
+struct is_vec3<vec3<T>> {
+	static constexpr bool value = true;
+};
+
+
+
+template<class T>
 struct is_compound_type {
 	static constexpr bool value = false;
 };

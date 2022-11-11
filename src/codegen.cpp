@@ -45,7 +45,7 @@ enum stage_t {
 	PRE1, PRE2, POST1, POST2, XZ1, XZ2, FULL
 };
 
-#define NO_DIPOLE
+//#define NO_DIPOLE
 #define USE_PERIODIC
 
 struct flops_t {
@@ -1875,10 +1875,12 @@ std::string M2LG(int P, int Q) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
 	}
 	if (P > 1 && periodic) {
-		tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, -1), lindex(1, -1), lindex(1, -1));
-		tprint("L[%i] -= O_st.trace2() * M[%i];\n", lindex(1, +0), lindex(1, +0), lindex(1, +0));
-		tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, +1), lindex(1, +1), lindex(1, +1));
-		tprint("L_st.trace2() = fma(TCAST(-0.5) * O_st.trace2(), M[%i], L_st.trace2());\n", lindex(0, 0));
+		if (!nodip) {
+			tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, -1), mindex(1, -1), lindex(1, -1));
+			tprint("L[%i] -= O_st.trace2() * M[%i];\n", lindex(1, +0), lindex(1, +0), mindex(1, +0));
+			tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, +1), mindex(1, +1), lindex(1, +1));
+		}
+		tprint("L_st.trace2() = TCAST(-0.5) * O_st.trace2() * M[%i];\n", mindex(0, 0));
 	}
 	deindent();
 	tprint("}\n");
@@ -2550,6 +2552,9 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("f.force[2] = -L[2];\n");
 		}
 	}
+	if (periodic && Q == P) {
+		tprint("L_st.trace2() = TCAST(0);\n");
+	}
 	close_timer();
 	deindent();
 	tprint("}");
@@ -2695,8 +2700,7 @@ std::string M2L_ewald(int P) {
 	tprint("expansion<%s, %i> L_st;\n", type.c_str(), P);
 	tprint("multipole<%s, %i> M_st;\n", type.c_str(), P);
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
-	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + M2LG(L_st, M_st, O_st) + %i;\n",
-			get_running_flops(false).load() + flops_map[P][type + "greens_ewald_real"].load());
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + M2LG(L_st, M_st, O_st) + %i;\n", get_running_flops(false).load());
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -3181,6 +3185,11 @@ void L2L_allrot(int P, int Q, int rot) {
 		init_real("ax0");
 		init_real("ay0");
 	}
+	if (periodic) {
+		init_real("x0");
+		init_real("y0");
+		init_real("z0");
+	}
 	init_real("R2");
 	if (periodic || rot == 0) {
 		init_real("r2");
@@ -3218,6 +3227,7 @@ void L2L_allrot(int P, int Q, int rot) {
 			tprint("L[%i] = L0[%i];\n", i, i);
 		}
 	}
+	reset_running_flops();
 	const auto init_L2 = [Q]() {
 		if (Q == 1) {
 			tprint("L2[0] = L[0];\n");
@@ -3231,7 +3241,11 @@ void L2L_allrot(int P, int Q, int rot) {
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
-	reset_running_flops();
+	if (periodic) {
+		tprint("x0 = x;\n");
+		tprint("y0 = y;\n");
+		tprint("z0 = z;\n");
+	}
 	tprint("x = -x;\n");
 	tprint("y = -y;\n");
 	tprint("z = -z;\n");
@@ -3394,14 +3408,14 @@ void L2L_allrot(int P, int Q, int rot) {
 
 	if (P > 1 && periodic) {
 		if (Q != 1) {
-			tprint("L0[%i] = fma(TCAST(2) * x, L0_st.trace2(), L0[%i]);\n", index(1, 1), index(1, 1));
-			tprint("L0[%i] = fma(TCAST(2) * y, L0_st.trace2(), L0[%i]);\n", index(1, -1), index(1, -1));
-			tprint("L0[%i] = fma(TCAST(2) * z, L0_st.trace2(), L0[%i]);\n", index(1, 0), index(1, 0));
-			tprint("L0[%i] = fma(r2, L0_st.trace2(), L0[%i]);\n", index(0, 0), index(0, 0));
+			tprint("L[%i] = fma(TCAST(-2) * x0, L0_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L[%i] = fma(TCAST(-2) * y0, L0_st.trace2(), L[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L[%i] = fma(TCAST(-2) * z0, L0_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L[%i] = fma(r2, L0_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		} else {
-			tprint("L2[%i] = fma(TCAST(2) * x, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
-			tprint("L2[%i] = fma(TCAST(2) * y, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
-			tprint("L2[%i] = fma(TCAST(2) * z, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L2[%i] = fma(TCAST(-2) * x0, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L2[%i] = fma(TCAST(-2) * y0, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L2[%i] = fma(TCAST(-2) * z0, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
 			tprint("L2[%i] = fma(r2, L0_st.trace2(), L2[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
@@ -3484,7 +3498,7 @@ std::string P2M(int P) {
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("M[0] = m;\n");
 	if (periodic & P > 2) {
-		tprint("M_st.trace2() = m * r2;\n");
+		tprint("M_st.trace2() = M[0] * r2;\n");
 	}
 	const auto mstr = [](int l, int m) {
 		if( nodip && l == 1 ) {
@@ -3513,7 +3527,7 @@ std::string P2M(int P) {
 	const double c0 = -0.25;
 	const double c1 = double(1) / (double((1) * (1)));
 	if (2 <= P) {
-		tprint("%s = TCAST(-0.25) * r2;\n", mstr(2, 0).c_str());
+		tprint("%s = TCAST(-0.25) * r2 * M[0];\n", mstr(2, 0).c_str());
 	}
 	if (1 <= P) {
 		tprint("%s = z * M[0];\n", mstr(1, 0).c_str());
@@ -3656,11 +3670,40 @@ void math_float(std::string _type) {
 	if (is_vec(_type)) {
 		fprintf(fp, "#ifndef __CUDACC__\n");
 	}
-	tprint("inline %s fma(%s a, %s b, %s c) {\n", type, type, type, type);
+	tprint("\ninline %s fma(%s a, %s b, %s c) {\n", type, type, type, type);
 	indent();
 	tprint("return a * b + c;\n");
 	deindent();
-	tprint("}\n");
+	tprint("}\n\n");
+	tprint("\ninline %s abs(%s a) {\n", type, type);
+	indent();
+	tprint("%s i = *((%s*) &a);\n", itype[typenum].c_str(), itype[typenum].c_str());
+	tprint("i &= %s(0x7FFFFFFF);\n", itype[typenum].c_str());
+	tprint("return *((%s*) &i);\n", type);
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s copysgn(%s x, %s y) {\n", type, type, type);
+	indent();
+	tprint("%s i = *((%s*) &x);\n", itype[typenum].c_str(), itype[typenum].c_str());
+	tprint("%s j = *((%s*) &y);\n", itype[typenum].c_str(), itype[typenum].c_str());
+	tprint("i &= %s(0x7FFFFFFF);\n", itype[typenum].c_str());
+	tprint("j &= %s(0x80000000);\n", itype[typenum].c_str());
+	tprint("i |= j;\n");
+	tprint("return *((%s*) &i);\n", type);
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s min(%s x, %s y) {\n", type, type, type);
+	indent();
+	tprint("%s flag = %s(x < y);\n", type, type);
+	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s max(%s x, %s y) {\n", type, type, type);
+	indent();
+	tprint("%s flag = %s(x > y);\n", type, type);
+	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
+	deindent();
+	tprint("}\n\n");
 	tprint("%s rsqrt(%s);\n", type, type);
 	tprint("%s sqrt(%s);\n", type, type);
 	tprint("void sincos(%s, %s*, %s*);\n", type, type, type, type);
@@ -3818,7 +3861,36 @@ void math_double(std::string _str) {
 	indent();
 	tprint("return a * b + c;\n");
 	deindent();
-	tprint("}\n");
+	tprint("}\n\n");
+	tprint("\ninline %s abs(%s a) {\n", type, type);
+	indent();
+	tprint("%s i = *((%s*) &a);\n", itype[typenum].c_str(), itype[typenum].c_str());
+	tprint("i &= %s(0x7FFFFFFFFFFFFFFFL);\n", itype[typenum].c_str());
+	tprint("return *((%s*) &i);\n", type);
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s copysgn(%s x, %s y) {\n", type, type, type);
+	indent();
+	tprint("%s i = *((%s*) &x);\n", itype[typenum].c_str(), itype[typenum].c_str());
+	tprint("%s j = *((%s*) &y);\n", itype[typenum].c_str(), itype[typenum].c_str());
+	tprint("i &= %s(0x7FFFFFFFFFFFFFFFL);\n", itype[typenum].c_str());
+	tprint("j &= %s(0x8000000000000000L);\n", itype[typenum].c_str());
+	tprint("i |= j;\n");
+	tprint("return *((%s*) &i);\n", type);
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s min(%s x, %s y) {\n", type, type, type);
+	indent();
+	tprint("%s flag = %s(x < y);\n", type, type);
+	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s max(%s x, %s y) {\n", type, type, type);
+	indent();
+	tprint("%s flag = %s(x > y);\n", type, type);
+	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
+	deindent();
+	tprint("}\n\n");
 	tprint("%s rsqrt(%s);\n", type, type);
 	tprint("%s sqrt(%s);\n", type, type);
 	tprint("void sincos(%s, %s*, %s*);\n", type, type, type);
@@ -4331,7 +4403,7 @@ int main() {
 		}
 		for (int P = pmin; P <= pmax; P++) {
 			std::string fname;
-			if (simd[typenum] && !m2monly[typenum]) {
+			if (!m2monly[typenum]) {
 				greens(P);
 				if (periodic) {
 					greens_safe(P);
@@ -4346,14 +4418,16 @@ int main() {
 			flops0.reset();
 			flops0 += sqrt_flops();
 			flops0 += erfcexp_flops();
+
 			//fma+2+(P+1)*(1+(2*P+1)) r+5+(P+1)*(5)  rdiv+(P+1)
 			flops0.fma += 2 + (P + 1) * (2 + 2 * (P + 1));
 			flops0.r += 5 + 5 * (P + 1);
 			flops0.rdiv += P + 1;
 			flops_map[P][type + "greens_ewald_real"] = flops0;
+			greens_ewald_real_flops = flops0;
 			const double alpha = is_float(type) ? 2.4 : 2.25;
 			M2LG(P, P);
-			if (periodic && simd[typenum] && !m2monly[typenum]) {
+			if (periodic && !m2monly[typenum]) {
 				greens_ewald(P, alpha);
 			}
 		}
@@ -4373,13 +4447,13 @@ int main() {
 			tprint("#ifndef __CUDACC__\n");
 		}
 		for (int P = pmin; P <= pmax; P++) {
-			if (!simd[ti]) {
+			if (!m2monly[ti]) {
 				L2L(P, P);
 				L2L_allrot(P, P, 0);
 				L2L_allrot(P, P, 1);
 				L2L_allrot(P, P, 2);
 			}
-			if (!m2monly[typenum] && simd[typenum]) {
+			if (!m2monly[typenum]) {
 				L2L(P, 1);
 				L2L_allrot(P, 1, 0);
 				L2L_allrot(P, 1, 1);
@@ -4396,16 +4470,16 @@ int main() {
 				M2L_allrot(P, 1, 2);
 				P2L(P);
 			}
-			if (periodic && !m2monly[typenum] && simd[typenum]) {
+			if (periodic && !m2monly[typenum]) {
 				M2L_ewald(P);
 			}
 
-			if (m2monly[typenum]) {
+		//	if (m2monly[typenum]) {
 				M2M(P);
 				M2M_allrot(P, 0);
 				M2M_allrot(P, 1);
 				M2M_allrot(P, 2);
-			}
+		//	}
 		}
 		fflush(stdout);
 		if (is_vec(type)) {
@@ -4956,6 +5030,7 @@ int main() {
 	}
 	include("complex_impl.hpp");
 	include("expansion.hpp");
+	include("periodic.hpp");
 
 	str = "template<class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>\n"
 			"inline void apply_padding(V& A, int n) {\n"
@@ -5089,8 +5164,8 @@ int main() {
 	str += print2str("static std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,%i> best_rotation;\n", PMAX + 1);
 	str += print2str("static std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,3>,%i> opflops;\n", PMAX + 1);
 	str += print2str("\n");
+	str += "\tstatic std::once_flag flag;\n\n";
 	str += "static void initialize() {\n"
-			"\tstatic std::once_flag flag;\n"
 			"\tstd::call_once(flag, []() {\n";
 	str += "\t\tstd::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>," + std::to_string(PMAX + 1) + "> best_flops;\n";
 	str += "\t\t\n"
