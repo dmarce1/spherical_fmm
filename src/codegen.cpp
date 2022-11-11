@@ -1980,6 +1980,9 @@ std::string greens_ewald(int P, double alpha) {
 			}
 		}
 	}
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("rzero = TCONVERT(r2 < TCAST(%0.20e));\n", tiny());
 	tprint("r = sqrt(r2) + rzero;\n");
@@ -2018,6 +2021,7 @@ std::string greens_ewald(int P, double alpha) {
 				if (ix != 0) {
 					xstr += std::string(" ") + (ix < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(ix)) + ")";
 				}
+
 				std::string ystr = "y";
 				if (iy != 0) {
 					ystr += std::string(" ") + (iy < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(iy)) + ")";
@@ -2230,9 +2234,14 @@ std::string greens_ewald(int P, double alpha) {
 	}
 	tprint_flush_chains();
 	if (P > 1) {
-		tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
+		tprint("G_st.trace2() = -TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
 	}
 	tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
+	for (int n = 0; n <= P; n++) {
+		for (int m = -n; m <= n; m++) {
+			tprint("G[%i] = -G[%i];\n", index(n,m), index(n,m));
+		}
+	}
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
@@ -3749,8 +3758,8 @@ void math_float(std::string _type) {
 	indent();
 	tprint("V ssgn, j, i, k;\n");
 	tprint("T x2;\n");
-	tprint("ssgn = V(((*((V*) &x) & VCAST(0x80000000)) >> VCAST(30)) - VCAST(1));\n");
-	tprint("j = V((*((V*) &x) & VCAST(0x7FFFFFFF)));\n");
+	tprint("ssgn = V(((*((U*) &x) & UCAST(0x80000000)) >> UCAST(30)) - UCAST(1));\n");
+	tprint("j = V((*((U*) &x) & UCAST(0x7FFFFFFF)));\n");
 	tprint("x = *((T*) &j);\n");
 	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
 	tprint("x -= T(i) * TCAST(%.20e);\n", M_PI);
@@ -3937,8 +3946,8 @@ void math_double(std::string _str) {
 	indent();
 	tprint("V ssgn, j, i, k;\n");
 	tprint("T x2;\n");
-	tprint("ssgn = V(((*((V*) &x) & VCAST(0x8000000000000000LL)) >> VCAST(62LL)) - VCAST(1LL));\n");
-	tprint("j = V((*((V*) &x) & VCAST(0x7FFFFFFFFFFFFFFFLL)));\n");
+	tprint("ssgn = V(((*((U*) &x) & UCAST(0x8000000000000000LL)) >> UCAST(62LL)) - UCAST(1LL));\n");
+	tprint("j = V((*((U*) &x) & UCAST(0x7FFFFFFFFFFFFFFFLL)));\n");
 	tprint("x = *((T*) &j);\n");
 	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
 	tprint("x -= T(i) * TCAST(%.20e);\n", M_PI);
@@ -4447,12 +4456,10 @@ int main() {
 			tprint("#ifndef __CUDACC__\n");
 		}
 		for (int P = pmin; P <= pmax; P++) {
-			if (!m2monly[ti]) {
-				L2L(P, P);
-				L2L_allrot(P, P, 0);
-				L2L_allrot(P, P, 1);
-				L2L_allrot(P, P, 2);
-			}
+			L2L(P, P);
+			L2L_allrot(P, P, 0);
+			L2L_allrot(P, P, 1);
+			L2L_allrot(P, P, 2);
 			if (!m2monly[typenum]) {
 				L2L(P, 1);
 				L2L_allrot(P, 1, 0);
@@ -4474,12 +4481,11 @@ int main() {
 				M2L_ewald(P);
 			}
 
-		//	if (m2monly[typenum]) {
-				M2M(P);
-				M2M_allrot(P, 0);
-				M2M_allrot(P, 1);
-				M2M_allrot(P, 2);
-		//	}
+			M2M(P);
+			M2M_allrot(P, 0);
+			M2M_allrot(P, 1);
+			M2M_allrot(P, 2);
+
 		}
 		fflush(stdout);
 		if (is_vec(type)) {
@@ -5164,8 +5170,8 @@ int main() {
 	str += print2str("static std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,%i> best_rotation;\n", PMAX + 1);
 	str += print2str("static std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,3>,%i> opflops;\n", PMAX + 1);
 	str += print2str("\n");
-	str += "\tstatic std::once_flag flag;\n\n";
 	str += "static void initialize() {\n"
+			"\tstatic std::once_flag flag;\n"
 			"\tstd::call_once(flag, []() {\n";
 	str += "\t\tstd::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>," + std::to_string(PMAX + 1) + "> best_flops;\n";
 	str += "\t\t\n"

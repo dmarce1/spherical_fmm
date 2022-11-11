@@ -27,6 +27,7 @@ execute_process(
 
 #add_compile_options(-Wunused -D_GLIBCXX_DEBUG -fsanitize=address)
 #add_link_options(-D_GLIBCXX_DEBUG -fsanitize=address)
+add_link_options( -pthread )
 
 if(NOT RESULT EQUAL 0)
 	message(STATUS "error in compilng code generator")
