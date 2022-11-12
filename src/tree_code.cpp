@@ -27,6 +27,7 @@ double rand1() {
 
 sfmm::force_type<float> P2P_ewald(float m, sfmm::vec3<float> dx) {
 	sfmm::force_type<float> f;
+	//dx = -dx;
 	float& pot = f.potential;
 	float& fx = f.force[0];
 	float& fy = f.force[1];
@@ -585,16 +586,19 @@ public:
 			force_type<float> fa;
 			fa.init();
 			for (int j = 0; j < parts.size(); j++) {
-				if (i == j) {
-					continue;
-				}
 				const auto& src_part = parts[j];
 				sfmm::vec3<float> dx;
 				for (int dim = 0; dim < NDIM; dim++) {
 					dx[dim] = sfmm::distance(src_part.x[dim], snk_part.x[dim]);
 				}
-				fa += P2P_ewald(mass, dx);
-				P2P<float>(fa, mass, dx);
+				auto fc =  P2P_ewald(mass, dx);
+				force_type<float> fd;
+				fd.init();
+				P2P<float>(fd, mass, dx);
+			//	printf( "%e\n", fc.force[0]*fd.force[0]+fc.force[1]*fd.force[1]+fc.force[2]*fd.force[2]);
+				fa.force += fd.force + fc.force;
+				fa.potential += fd.potential + fc.potential;
+//				fa += P2P_ewald(mass, dx);
 			}
 			double famag = 0.0;
 			double fnmag = 0.0;
@@ -732,7 +736,8 @@ int main(int argc, char **argv) {
 	 //	f2.init();
 	 M.init();
 	 L.init();
-	 //x0 *= 0.0;
+	 x0 *= 0.0;
+	 x2 *= 0.0;
 	 auto dx = x0;
 	 dx += x1;
 	 dx += x2;

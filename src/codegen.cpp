@@ -2234,14 +2234,14 @@ std::string greens_ewald(int P, double alpha) {
 	}
 	tprint_flush_chains();
 	if (P > 1) {
-		tprint("G_st.trace2() = -TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
+		tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
 	}
 	tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
-	for (int n = 0; n <= P; n++) {
+	/*for (int n = 0; n <= P; n++) {
 		for (int m = -n; m <= n; m++) {
 			tprint("G[%i] = -G[%i];\n", index(n,m), index(n,m));
 		}
-	}
+	}*/
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
@@ -2683,7 +2683,7 @@ std::string M2L_ewald(int P) {
 		}
 		tprint("M_st.o[0] = M0_st.o[0];\n");
 	}
-	tprint("int flops = greens_ewald(G_st, dx);\n");
+	tprint("int flops = greens_ewald(G_st, -dx);\n");
 	tprint("flops += M2LG%s(L0_st, M_st, G_st);\n", "");
 	if (scaled) {
 		tprint("a = L0_st.scale() / M_st.scale();\n");
