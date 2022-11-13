@@ -3442,19 +3442,19 @@ void L2L_allrot(int P, int Q, int rot) {
 
 	if (P > 1 && periodic) {
 		if (Q != 1) {
-			tprint("L[%i] = fma(TCAST(-1) * x0, L0_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
-			tprint("L[%i] = fma(TCAST(-1) * y0, L0_st.trace2(), L[%i]);\n", index(1, -1), index(1, -1));
-			tprint("L[%i] = fma(TCAST(-1) * z0, L0_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
-			tprint("L[%i] = fma(r2, L0_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
+			tprint("L[%i] = fma(x0, L0_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L[%i] = fma(y0, L0_st.trace2(), L[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L[%i] = fma(z0, L0_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L[%i] = fma(-TCAST(0.5)*r2, L0_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		} else {
 			if( !simd[typenum]) {
 			//	tprint( "printf( \"%e\\n\", L0_st.trace2());\n");
 			//	tprint( "fflush(stdout);\n");
 			}
-			tprint("L2[%i] = fma(TCAST(1) * x0, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
-			tprint("L2[%i] = fma(TCAST(1) * y0, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
-			tprint("L2[%i] = fma(TCAST(1) * z0, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
-			tprint("L2[%i] = fma(r2, L0_st.trace2(), L2[%i]);\n", index(0, 0), index(0, 0));
+			tprint("L2[%i] = fma(x0, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L2[%i] = fma(y0, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L2[%i] = fma(z0, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L2[%i] = fma(-TCAST(0.5)*r2, L0_st.trace2(), L2[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
 	if (Q == 1) {
