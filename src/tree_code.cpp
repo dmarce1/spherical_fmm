@@ -25,8 +25,7 @@ double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
 }
 
-sfmm::force_type<float> P2P_ewald(float m, sfmm::vec3<float> dx) {
-	sfmm::force_type<float> f;
+int P2P_ewald(sfmm::force_type<float>& f, float m, sfmm::vec3<float> dx) {
 	//dx = -dx;
 	float& pot = f.potential;
 	float& fx = f.force[0];
@@ -36,10 +35,6 @@ sfmm::force_type<float> P2P_ewald(float m, sfmm::vec3<float> dx) {
 	float& dx1 = dx[1];
 	float& dx2 = dx[2];
 	const float cons1 = (float) (4.0 / sqrt(4.0 * atan(1)));
-	fx = 0.0;
-	fy = 0.0;
-	fz = 0.0;
-	pot = 0.0;
 	const auto r2 = sfmm::sqr(dx0) + sfmm::sqr(dx1) + sfmm::sqr(dx2);  // 5
 
 	if (r2 > 0.) {
@@ -56,10 +51,10 @@ sfmm::force_type<float> P2P_ewald(float m, sfmm::vec3<float> dx) {
 		const float expfactor = cons1 * r * exp0;
 		const float d0 = erf0 * rinv;
 		const float d1 = (expfactor - erf0) * r3inv;
-		pot += d0;
-		fx -= dx * d1;
-		fy -= dy * d1;
-		fz -= dz * d1;
+		pot += m* d0;
+		fx += m* dx * d1;
+		fy += m* dy * d1;
+		fz += m* dz * d1;
 		for (int xi = -3; xi <= +3; xi++) {
 			for (int yi = -3; yi <= +3; yi++) {
 				for (int zi = -3; zi <= +3; zi++) {
@@ -80,14 +75,14 @@ sfmm::force_type<float> P2P_ewald(float m, sfmm::vec3<float> dx) {
 					const float expfactor = cons1 * r * exp0;
 					const float d0 = -erfc0 * rinv;
 					const float d1 = (expfactor + erfc0) * r3inv;
-					pot += d0;
-					fx -= dx * d1;
-					fy -= dy * d1;
-					fz -= dz * d1;
+					pot += m * d0;
+					fx += m * dx * d1;
+					fy += m * dy * d1;
+					fz += m * dz * d1;
 				}
 			}
 		}
-		pot += (float) (M_PI / 4.0);
+		pot += (float)  m *  (M_PI / 4.0);
 		for (int xi = -2; xi <= +2; xi++) {
 			for (int yi = -2; yi <= +2; yi++) {
 				for (int zi = -2; zi <= +2; zi++) {
@@ -102,22 +97,17 @@ sfmm::force_type<float> P2P_ewald(float m, sfmm::vec3<float> dx) {
 						sincosf(omega, &s, &c);
 						const float c0 = -1. / h2 * exp((float) (-sfmm::sqr(M_PI) * 0.25) * h2) * (float) (1. / (M_PI));
 						const float c1 = -s * 2.0 * M_PI * c0;
-						pot += c0 * c;
-						fx -= c1 * hx;
-						fy -= c1 * hy;
-						fz -= c1 * hz;
+						pot += m * c0 * c;
+						fx += m * c1 * hx;
+						fy += m * c1 * hy;
+						fz += m * c1 * hz;
 					}
 				}
 			}
 		}
 	} else {
-		pot += 2.837291;
+		pot += m* 2.837291;
 	}
-	f.potential *= m;
-	f.force[0] *= m;
-	f.force[1] *= m;
-	f.force[2] *= m;
-	return f;
 }
 
 template<class W>
@@ -138,8 +128,8 @@ static size_t P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
 	ff = dx * rinv3;
 	pn = (W(1.5) * hinv - W(0.5) * r2 * hinv3);
 	fn = dx * hinv3;
-	f.potential += pn * wn + pf * wf;
-	f.force -= fn * wn + ff * wf;
+	f.potential -= pn * wn + pf * wf;
+	f.force += fn * wn + ff * wf;
 	return 41;
 }
 
@@ -517,8 +507,8 @@ public:
 				flops += children[RIGHT].compute_cell_gravity(expansion, std::move(checklist), std::move(echecklist));
 			}
 		} else {
-			if( echecklist.size() ) {
-				printf( "error e %i\n", echecklist.size());
+			if (echecklist.size()) {
+				printf("error e %i\n", echecklist.size());
 			}
 			Plist.resize(0);
 			Clist.resize(0);
@@ -584,6 +574,7 @@ public:
 			}
 			const auto& snk_part = parts[i];
 			force_type<float> fa;
+			force_type<float> fc;
 			fa.init();
 			for (int j = 0; j < parts.size(); j++) {
 				const auto& src_part = parts[j];
@@ -591,11 +582,12 @@ public:
 				for (int dim = 0; dim < NDIM; dim++) {
 					dx[dim] = sfmm::distance(src_part.x[dim], snk_part.x[dim]);
 				}
-				auto fc =  P2P_ewald(mass, dx);
+				fc.init();
+				P2P_ewald(fc, mass, dx);
 				force_type<float> fd;
 				fd.init();
 				P2P<float>(fd, mass, dx);
-			//	printf( "%e\n", fc.force[0]*fd.force[0]+fc.force[1]*fd.force[1]+fc.force[2]*fd.force[2]);
+				//	printf( "%e\n", fc.force[0]*fd.force[0]+fc.force[1]*fd.force[1]+fc.force[2]*fd.force[2]);
 				fa.force += fd.force + fc.force;
 				fa.potential += fd.potential + fc.potential;
 //				fa += P2P_ewald(mass, dx);
@@ -686,22 +678,22 @@ struct run_tests<T, V, M, PMAX + 1, FLAGS> {
 };
 
 void ewald() {
-	constexpr int N = 6;
-	sfmm::multipole<sfmm::simd_f32, N> M;
-	sfmm::expansion<sfmm::simd_f32, N> L;
-	M.init();
-	M[0][0] = 1.0;
-	sfmm::vec3<sfmm::simd_f32> dx;
-	for (double x = 0.0; x < 0.5; x += 0.01) {
-		dx[2] = dx[1] = sfmm::simd_f32(0.0);
-		dx[0] = sfmm::simd_f32(x);
-		sfmm::M2L_ewald(L, M, dx);
-		printf("%e ", x);
-		for (int i = 0; i < L.size(); i++) {
-			printf("%e ", L[i][0]);
-		}
-		printf("\n");
-	}
+	/*	constexpr int N = 6;
+	 sfmm::multipole<sfmm::simd_f32, N> M;
+	 sfmm::expansion<sfmm::simd_f32, N> L;
+	 M.init();
+	 M[0][0] = 1.0;
+	 sfmm::vec3<sfmm::simd_f32> dx;
+	 for (double x = 0.0; x < 0.5; x += 0.01) {
+	 dx[2] = dx[1] = sfmm::simd_f32(0.0);
+	 dx[0] = sfmm::simd_f32(x);
+	 sfmm::M2L_ewald(L, M, dx);
+	 printf("%e ", x);
+	 for (int i = 0; i < L.size(); i++) {
+	 printf("%e ", L[i][0]);
+	 }
+	 printf("\n");
+	 }*/
 }
 
 void random_unit(float& x, float& y, float& z) {
@@ -712,49 +704,104 @@ void random_unit(float& x, float& y, float& z) {
 	z = cos(theta);
 }
 
+namespace sfmm {
+constexpr int P = 5;
+void M2L_ewald2(sfmm::expansion<float, P>, sfmm::multipole<float, P>, sfmm::vec3<float> x) {
+	constexpr float alpha = 2.0;
+	expansion<float, P> G;
+	expansion<float, P> Gr;
+	const auto index = [](int l, int m) {
+		return l*l + l + m;
+	};
+	G.init();
+	for (int xi = -3; xi <= 3; xi++) {
+		for (int yi = -3; yi <= 3; yi++) {
+			for (int zi = -3; zi <= 3; zi++) {
+				vec3<float> x0 = { (float) xi, (float) yi, (float) zi };
+				vec3<float> dx = x - x0;
+				greens(Gr, dx);
+				const float r = abs(dx);
+				const float r2 = r * r;
+				float igamma[P + 1];
+				float cgamma[P + 1];
+				igamma[0] = sqrt(M_PI) * erfc(alpha * r);
+				cgamma[0] = sqrt(M_PI);
+				for (int l = 0; l < P; l++) {
+					const float s = l + 0.5;
+					igamma[l + 1] = s * igamma[l] + pow(r2, s) * exp(-r2);
+					cgamma[l + 1] = s * cgamma[l];
+				}
+				for (int l = 0; l <= P; l++) {
+					for (int m = -l; m <= l; m++) {
+						G[index(l, m)] += igamma[l] / cgamma[l] * Gr[index(l, m)];
+					}
+				}
+			}
+		}
+
+	}
+	for (int xi = -2; xi <= 2; xi++) {
+		for (int yi = -2; yi <= 2; yi++) {
+			for (int zi = -2; zi <= 2; zi++) {
+				vec3<float> h = { (float) xi, (float) yi, (float) zi };
+				if (abs(h) > 0.0) {
+					const float hdotx = h[0] * x[0] + h[1] * x[1] + h[2] * x[2];
+					float cgamma[P + 1];
+					cgamma[0] = sqrt(M_PI);
+					for (int l = 0; l < P; l++) {
+						const float s = l + 0.5;
+						cgamma[l + 1] = s * cgamma[l];
+					}
+
+				}
+			}
+		}
+	}
+}
+}
+
 int main(int argc, char **argv) {
 	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
 	sfmm::vec3<float> x0;
-	 sfmm::vec3<float> x1;
-	 sfmm::vec3<float> x2;
-	 rand1();
-	 random_unit(x0[0], x0[1], x0[2]);
-	 random_unit(x1[0], x1[1], x1[2]);
-	 random_unit(x2[0], x2[1], x2[2]);
-	 const auto alpha = 0.25;
-	 x0 *= alpha * 0.125;
-	 x1 *= alpha;
-	 x2 *= alpha * 0.125;
-	 sfmm::multipole<float, 5> M;
-	 sfmm::expansion<float, 5> L;
-	 sfmm::force_type<float> f1;
-	 //	sfmm::force_type<sfmm::simd_f32> f2;
-	 f1.init();
-	 //	f2.init();
-	 M.init();
-	 L.init();
-	 x0 *= 0.0;
-	 x2 *= 0.0;
-	 auto dx = x0;
-	 dx += x1;
-	 dx += x2;
-	 x0 *= 0.5;
-	 x2 *= 0.5;
-	 sfmm::P2M(M, float(0.5), x0);
-	 sfmm::M2M(M, x0);
-	 sfmm::M2L_ewald(L, M, x1);
-
-	 // sfmm::M2L(L, M, x1);
-	 sfmm::L2L(L, x2);
-	 sfmm::L2P(f1, L, x2);
-//	 sfmm::force_type<float> f2;
-//	 P2P(f2,0.5f,dx);
-	 auto f2 = P2P_ewald(0.5, dx);
-	 //printf( "%e %e %e\n", dx[0][0], dx[1][0], dx[2][0]);
-	 printf( "%e %e\n", f1.force[0], f2.force[0]);
+	sfmm::vec3<float> x1;
+	sfmm::vec3<float> x2;
+	for (int i = 0; i < 10; i++) {
+		rand1();
+		random_unit(x0[0], x0[1], x0[2]);
+		random_unit(x1[0], x1[1], x1[2]);
+		random_unit(x2[0], x2[1], x2[2]);
+		const auto alpha = 0.25;
+		x0 *= alpha * 0.125;
+		x1 *= alpha;
+		x2 *= alpha * 0.125;
+		sfmm::multipole<float, 5> M;
+		sfmm::expansion<float, 5> L1;
+		sfmm::expansion<float, 5> L;
+		sfmm::force_type<float> f1;
+		M.init();
+		L.init();
+		x0 *= 0.0;
+		x2 *= 0.0;
+		auto dx = x0;
+		dx += x1;
+		dx += x2;
+		sfmm::P2M(M, float(0.5), x0);
+		sfmm::M2L_ewald(L1, M, x1);
+		L += L1;
+		f1.init();
+		sfmm::L2P(f1, L, x2);
+		sfmm::force_type<float> f2;
+		f2.init();
+		//	f1.init();
+		P2P(f2, 0.5f,dx);
+		P2P_ewald(f2, 0.5f, dx);
+		//	printf( "%e\n", f1.force[0]*f2.force[0]+f1.force[1]*f2.force[1]+f1.force[2]*f2.force[2]);
+		printf("%e %e %e | ", f1.potential, f2.potential, (f1.potential - f2.potential) / f2.potential);
+		printf("%e %e %e\n", f1.force[0], f2.force[0], (f1.force[0] - f2.force[0]) / f2.force[0]);
+	}
 //	 return 0;
 	//ewald();
 	//return 0;

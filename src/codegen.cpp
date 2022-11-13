@@ -1494,7 +1494,7 @@ void xz_swap2(int P, const char* dst, const char* src, bool inv, stage_t stage, 
 void greens_body(int P, const char* M = nullptr) {
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("r2inv = TCAST(1) / r2;\n");
-	tprint("O[0] = rsqrt(r2);\n");
+	tprint("O[0] = -rsqrt(r2);\n");
 	if (M) {
 		tprint("O[0] *= %s;\n", M);
 	}
@@ -1571,10 +1571,13 @@ std::string greens_safe(int P) {
 	init_real("ay");
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("r2inv = TCAST(1) / r2;\n");
-	tprint("O[0] = rsqrt(r2);\n");
+	tprint("O[0] = -rsqrt(r2);\n");
 	tprint("x *= r2inv;\n");
 	tprint("y *= r2inv;\n");
 	tprint("z *= r2inv;\n");
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
 	auto index = lindex;
 	const auto O = [index](int n, int m) {
 		return std::string("O[") + std::to_string(index(n, m)) + "]";
@@ -1880,7 +1883,7 @@ std::string M2LG(int P, int Q) {
 			tprint("L[%i] -= O_st.trace2() * M[%i];\n", lindex(1, +0), lindex(1, +0), mindex(1, +0));
 			tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, +1), mindex(1, +1), lindex(1, +1));
 		}
-		tprint("L_st.trace2() = TCAST(-0.5) * O_st.trace2() * M[%i];\n", mindex(0, 0));
+		tprint("L_st.trace2() = O_st.trace2() * M[%i];\n", mindex(0, 0));
 	}
 	deindent();
 	tprint("}\n");
@@ -1944,6 +1947,7 @@ std::string greens_ewald(int P, double alpha) {
 	init_real("hdotx");
 	init_real("phi");
 	init_real("rzero");
+//	tprint( "dx = -dx;\n");
 	const auto name = [](const char* base, int hx, int hy, int hz) {
 		std::string s = base;
 		const auto add_symbol = [&s](int h) {
@@ -1997,11 +2001,11 @@ std::string greens_ewald(int P, double alpha) {
 	for (int l = 0; l <= P; l++) {
 		tprint("gam = gam1 * TCAST(%.20e);\n", gam0inv);
 		for (int m = -l; m <= l; m++) {
-			tprint("G[%i] = sw * (TCAST(%.1e) - gam) * Gr[%i];\n", lindex(l, m), nonepow<double>(l), lindex(l, m));
+		//	tprint("G[%i] = sw * (TCAST(1) - gam) * Gr[%i];\n", lindex(l, m), lindex(l, m));
+			tprint("G[%i] = TCAST(0.0);\n", lindex(l, m));
 		}
-		if (l == 0) {
-			tprint("G[%i] += rzero * TCAST(%.20e);\n", lindex(0, 0), (2) * alpha / sqrt(M_PI));
-		}
+	//	if (l == 0) {
+	//	}
 		gam0inv *= 1.0 / -(l + 0.5);
 		if (l != P) {
 			tprint("gam1 = fma(TCAST(%.20e), gam1, xpow * exp0);\n", l + 0.5);
@@ -2014,7 +2018,7 @@ std::string greens_ewald(int P, double alpha) {
 		for (int iy = -R; iy <= R; iy++) {
 			for (int iz = -R; iz <= R; iz++) {
 				int ii = ix * ix + iy * iy + iz * iz;
-				if (ii > R2 || ii == 0) {
+				if (ii > R2) {
 					continue;
 				}
 				std::string xstr = "x";
@@ -2030,7 +2034,7 @@ std::string greens_ewald(int P, double alpha) {
 				if (iz != 0) {
 					zstr += std::string(" ") + (iz < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(iz)) + ")";
 				}
-				tprint("detail::greens_ewald_real<%s, %i, %i>(G_st, %s, %s, %s);\n", type.c_str(), P, lround(alpha * 100), xstr.c_str(), ystr.c_str(),
+				tprint("detail::greens_ewald_real<%s, %i, %i>(G_st, (%s), (%s), (%s));\n", type.c_str(), P, lround(alpha * 100), xstr.c_str(), ystr.c_str(),
 						zstr.c_str());
 			}
 		}
@@ -2233,15 +2237,13 @@ std::string greens_ewald(int P, double alpha) {
 		}
 	}
 	tprint_flush_chains();
+	for( int i = 0; i < exp_sz(P); i++) {
+	//	tprint( "G[%i] = -G[%i];\n", i, i);
+	}
 	if (P > 1) {
 		tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
 	}
 	tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
-	/*for (int n = 0; n <= P; n++) {
-		for (int m = -n; m <= n; m++) {
-			tprint("G[%i] = -G[%i];\n", index(n,m), index(n,m));
-		}
-	}*/
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
@@ -2391,6 +2393,9 @@ void M2L_allrot(int P, int Q, int rot) {
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
 	if (rot > 0) {
 		tprint("R2 = fma(x, x, y * y);\n");
 		tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
@@ -2459,7 +2464,7 @@ void M2L_allrot(int P, int Q, int rot) {
 	if (rot != 2) {
 		m2lg_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
 	} else {
-		tprint("A[0] = rinv;\n");
+		tprint("A[0] = -rinv;\n");
 		tprint("A[1] = rinv * rinv;\n");
 		for (int n = 2; n <= P; n++) {
 			const int i = (n - 1) / 2;
@@ -2658,7 +2663,7 @@ std::string M2L(int P, int Q) {
 }
 
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L0", EXP, "M", CMUL, "dx", VEC3);
+	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L", EXP, "M", MUL, "dx", VEC3);
 	reset_running_flops();
 	tprint("expansion<%s, %i> G_st;\n", type.c_str(), P);
 	reset_running_flops();
@@ -2683,8 +2688,28 @@ std::string M2L_ewald(int P) {
 		}
 		tprint("M_st.o[0] = M0_st.o[0];\n");
 	}
-	tprint("int flops = greens_ewald(G_st, -dx);\n");
-	tprint("flops += M2LG%s(L0_st, M_st, G_st);\n", "");
+	tprint("int flops = greens_ewald(G_st, dx);\n");
+	tprint( "T* M=M_st.data();\n");
+	tprint( "T* G=G_st.data();\n");
+	tprint( "T* L=L_st.data();\n");
+	for (int n = 1; n <= P; n += 2) {
+		for (int m = -n; m <= n; m++) {
+		//	tprint("G[%i] = -G[%i];\n", lindex(n, m), lindex(n, m));
+		}
+	}
+	for (int n = 1; n < P; n += 2) {
+		for (int m = -n; m <= n; m++) {
+		//	tprint("M[%i] = -M[%i];\n", mindex(n, m), mindex(n, m));
+		}
+	}
+
+	tprint("flops += M2LG%s(L_st, M_st, G_st);\n", "");
+	for (int n = 1; n <= P; n += 2) {
+		for (int m = -n; m <= n; m++) {
+//			tprint("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
+		}
+	}
+
 	if (scaled) {
 		tprint("a = L0_st.scale() / M_st.scale();\n");
 		tprint("b = a;\n");
@@ -3417,14 +3442,18 @@ void L2L_allrot(int P, int Q, int rot) {
 
 	if (P > 1 && periodic) {
 		if (Q != 1) {
-			tprint("L[%i] = fma(TCAST(-2) * x0, L0_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
-			tprint("L[%i] = fma(TCAST(-2) * y0, L0_st.trace2(), L[%i]);\n", index(1, -1), index(1, -1));
-			tprint("L[%i] = fma(TCAST(-2) * z0, L0_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
+			tprint("L[%i] = fma(TCAST(-1) * x0, L0_st.trace2(), L[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L[%i] = fma(TCAST(-1) * y0, L0_st.trace2(), L[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L[%i] = fma(TCAST(-1) * z0, L0_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
 			tprint("L[%i] = fma(r2, L0_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		} else {
-			tprint("L2[%i] = fma(TCAST(-2) * x0, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
-			tprint("L2[%i] = fma(TCAST(-2) * y0, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
-			tprint("L2[%i] = fma(TCAST(-2) * z0, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
+			if( !simd[typenum]) {
+			//	tprint( "printf( \"%e\\n\", L0_st.trace2());\n");
+			//	tprint( "fflush(stdout);\n");
+			}
+			tprint("L2[%i] = fma(TCAST(1) * x0, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
+			tprint("L2[%i] = fma(TCAST(1) * y0, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
+			tprint("L2[%i] = fma(TCAST(1) * z0, L0_st.trace2(), L2[%i]);\n", index(1, 0), index(1, 0));
 			tprint("L2[%i] = fma(r2, L0_st.trace2(), L2[%i]);\n", index(0, 0), index(0, 0));
 		}
 	}
@@ -4510,15 +4539,18 @@ int main() {
 	indent();
 	tprint("constexpr double ALPHA = ALPHA100 / 100.0;\n");
 	tprint("expansion<T, P> Gr_st;\n");
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
 	tprint("const T r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("const T r = sqrt(r2);\n");
-	tprint("greens(Gr_st, vec3<T>(x, y, z));\n");
+	tprint("greens(Gr_st, vec3<T>( x, y, z));\n");
 	tprint("const T* Gr(Gr_st.data());\n");
 	tprint("T* G (G_st.data());\n");
 	tprint("const T xxx = T(ALPHA) * r;\n");
 	tprint("T gam1, exp0;\n");
 	tprint("erfcexp(xxx, &gam1, &exp0);\n");
-	tprint("gam1 *= T(%.20e);\n", -sqrt(M_PI));
+	tprint("gam1 *= T(%.20e);\n", sqrt(M_PI));
 	tprint("const T xfac = T(ALPHA * ALPHA) * r2;\n");
 	tprint("T xpow = T(ALPHA) * r;\n");
 	tprint("T gam0inv = T(%.20e);\n", 1.0 / sqrt(M_PI));
@@ -4532,8 +4564,8 @@ int main() {
 	tprint("G[i] = fma(gam, Gr[i], G[i]);\n");
 	deindent();
 	tprint("}\n");
-	tprint("gam0inv /= -(T(l) + T(0.5));\n");
-	tprint("gam1 = fma(T(l + 0.5), gam1, -xpow * exp0);\n");
+	tprint("gam0inv /= (T(l) + T(0.5));\n");
+	tprint("gam1 = fma(T(l + 0.5), gam1, xpow * exp0);\n");
 	tprint("xpow *= xfac;\n");
 	deindent();
 	tprint("}\n");
