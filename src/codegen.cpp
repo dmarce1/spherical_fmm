@@ -3145,12 +3145,12 @@ void L2L_z(int P, int Q, const char* var = "z", const char* src = "") {
 	const char* two = P == Q ? "" : "2";
 	tprint("Y[0] = %s;\n", var);
 	tprint("Y[1] = %s * %s;\n", var, var);
-	for (int i = 2; i < P - 1; i++) {
+	for (int i = 2; i < P; i++) {
 		const int n = (i - 1) / 2;
 		const int m = (i - 1) - n;
 		tprint("Y[%i] = Y[%i] * Y[%i];\n", i, n, m);
 	}
-	for (int i = 1; i < P - 1; i++) {
+	for (int i = 1; i < P; i++) {
 		tprint("Y[%i] *= TCAST(%0.20e);\n", i, 1.0 / factorial(i + 1));
 	}
 	for (int n = 0; n <= Q; n++) {
