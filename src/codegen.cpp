@@ -2007,7 +2007,7 @@ std::string greens_ewald(int P, double alpha) {
 			tprint("G[%i] = cgam * Gr[%i];\n", lindex(l, m), lindex(l, m));
 		}
 		if (l == 0) {
-			tprint("G[0] += rzero * TCAST(2.837291);\n");
+			tprint("G[0] += rzero * TCAST(%.20e);\n", 2.0 * alpha / sqrt(M_PI));
 		}
 		gam0inv *= 1.0 / (l + 0.5);
 		if (l != P) {
@@ -2679,7 +2679,7 @@ std::string M2L_ewald(int P) {
 	tprint("T* M=M_st.data();\n");
 	tprint("T* G=G_st.data();\n");
 	tprint("T* L=L_st.data();\n");
-	tprint("flops += MG2L%s(L_st, M_st, G_st);\n", "");
+	tprint("flops += MG2L(L_st, M_st, G_st);\n");
 	tprint("return flops+%i;\n", get_running_flops().load());
 	deindent();
 	tprint("} else {\n");
@@ -2709,6 +2709,9 @@ std::string M2P_ewald(int P) {
 	init_reals("L", 4);
 	tprint("int flops = greens_ewald(O_st, dx);\n");
 	mg2l_body(P,1);
+	if (P > 2 && periodic) {
+		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
+	}
 	if (P > 1 && periodic) {
 		if (!nodip) {
 			tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, -1), mindex(1, -1), lindex(1, -1));

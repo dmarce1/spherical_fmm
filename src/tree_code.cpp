@@ -16,7 +16,7 @@
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE 30000
+#define TEST_SIZE 10000
 //#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
@@ -110,7 +110,7 @@ int P2P_ewald(sfmm::force_type<float>& f, float m, sfmm::vec3<float> dx) {
 			}
 		}
 	} else {
-		pot += m * 2.837291;
+		pot += m * 2.8372975;
 	}
 	return 0;
 }
@@ -191,7 +191,7 @@ class tree {
 			sfmm::apply_padding(rsum, end);
 			V far;
 			if (ewald) {
-				far = rsum < c0 * sfmm::max(abs(dx), V(0.5) - rsum);
+				far = (rsum < c0 * sfmm::max(abs(dx), V(0.5) - rsum));
 			} else {
 				far = sfmm::sqr(rsum) < sfmm::sqr(c0) * sfmm::sqr(dx);
 			}
@@ -597,9 +597,11 @@ public:
 		return flops;
 	}
 
-	static T compare_analytic(T sample_odds) {
+	static std::pair<T,T> compare_analytic(T sample_odds) {
 		double err = 0.0;
 		double norm = 0.0;
+		double perr = 0.0;
+		double pnorm = 0.0;
 		for (int i = 0; i < parts.size(); i++) {
 			if (rand1() > sample_odds) {
 				continue;
@@ -630,15 +632,17 @@ public:
 				famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
 				fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
 			}
-			//printf("%e %e | %e %e %e |  %e\n", fa.potential, snk_part.f.potential, famag, fnmag, (famag - fnmag) / famag,
-			//		(fa.force[0] - snk_part.f.force[0]) / fa.force[0]);
+			//printf("%i %e %e %e \n", i, fa.potential, snk_part.f.potential, (fa.potential - snk_part.f.potential)/fa.potential);
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
+			perr += sfmm::sqr(snk_part.f.potential - fa.potential);
+			pnorm += sfmm::sqr(fa.potential);
 			norm += sfmm::sqr(famag);
 			err += sfmm::sqr(famag - fnmag);
 		}
 		err = sqrt(err / norm);
-		return err;
+		perr = sqrt(perr / pnorm);
+		return std::make_pair(perr,err);
 	}
 
 	static void initialize() {
@@ -698,7 +702,7 @@ struct run_tests {
 		printf("Comparing analytic\n");
 		const auto error = tree_type::compare_analytic(50.0 / TEST_SIZE);
 		tm.stop();
-		printf("%i %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error, flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
+		printf("%i %e %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error.first, error.second, flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
 		run_tests<T, V, M, ORDER + 1, FLAGS> run;
 		run();
 	}
@@ -829,18 +833,22 @@ void test2() {
 		x4 = x3 + dx3;
 		x5 = x4 + dx4;
 
-		sfmm::multipole<float, P> M;
+		sfmm::multipole<float, P> M, M1;
 		sfmm::expansion<float, P> L1;
 		sfmm::expansion<float, P> L;
 		sfmm::force_type<float> f1;
 		M.init();
 		L.init();
+		M1.init();
 //		x0 *= 0.0;
 		//	x1 *= 0.0;
 		//x3 *= 0.0;
 		//	x4 *= 0.0;
 		sfmm::P2M(M, float(0.5), x0 - x1);
+		sfmm::P2M(M1, float(0.5), {0,0,0});
 		sfmm::M2M(M, x1 - x2);
+		sfmm::M2L_ewald(L1, M1, {0,0,0});
+		L += L1;
 		sfmm::M2L_ewald(L1, M, x3 - x2);
 		L += L1;
 		sfmm::M2L(L1, M, x3 - x2, sfmmWithSingleRotationOptimization);
@@ -852,6 +860,7 @@ void test2() {
 		f2.init();
 		//	f1.init();
 		P2P(f2, 0.5f, x5 - x0);
+		P2P_ewald(f2, 0.5f, {0,0,0});
 		P2P_ewald(f2, 0.5f, x5 - x0);
 		poterr += sfmm::sqr(f1.potential - f2.potential);
 		potnorm += sfmm::sqr(f1.potential);
@@ -861,7 +870,7 @@ void test2() {
 		fnorm += sfmm::sqr(fabs2);
 		//	printf( "%e\n", f1.force[0]*f2.force[0]+f1.force[1]*f2.force[1]+f1.force[2]*f2.force[2]);
 	}
-	printf( "%i %e %e\n", P, ferr / fnorm, poterr/potnorm);
+	printf( "%i %e %e\n", P, poterr/potnorm, ferr / fnorm);
 
 }
 
