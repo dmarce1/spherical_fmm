@@ -215,13 +215,11 @@ struct func_data_t {
 	double time;
 	unsigned long long ncalls;
 };
+void operator_update_timing(func_data_t* ptr, double time);
 
 func_data_t* operator_initialize(void*);
-void operator_update_timing(func_data_t*, double);
 int operator_count();
 func_data_t* operator_data(int index);
-void operator_write_new_bestops_source();
-std::string operator_best_rotations();
 }
 
 template<class V>

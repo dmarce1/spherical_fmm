@@ -6,7 +6,7 @@ set(SFMM_USE_DOUBLE "0" CACHE STRING "Enable Double Precision" )
 set(SFMM_USE_FLOAT "1" CACHE STRING "Enable Single Precision")
 set(SFMM_USE_SIMD "1" CACHE STRING "Enable SIMD")
 set(SFMM_PMIN "5" CACHE STRING "pmin")
-set(SFMM_PMAX "5" CACHE STRING "pmax")
+set(SFMM_PMAX "8" CACHE STRING "pmax")
 set(SFMM_DOUBLE_SIMD_WIDTH "4" CACHE STRING "width of float precision simd vectors (except for m2m)")
 set(SFMM_FLOAT_SIMD_WIDTH "8" CACHE STRING "width of double precision simd vectors (except for m2m)")
 set(SFMM_M2M_SIMD_WIDTH "2" CACHE STRING "width of m2m simd vectors")
@@ -25,8 +25,8 @@ execute_process(
   	RESULT_VARIABLE RESULT
 )
 
-#add_compile_options(-Wunused -D_GLIBCXX_DEBUG -fsanitize=address)
-#add_link_options(-D_GLIBCXX_DEBUG -fsanitize=address)
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
 add_link_options( -pthread )
 
 if(NOT RESULT EQUAL 0)

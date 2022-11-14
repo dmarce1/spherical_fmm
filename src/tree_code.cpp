@@ -16,7 +16,7 @@
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE 10000
+#define TEST_SIZE 30000
 //#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
@@ -51,15 +51,15 @@ int P2P_ewald(sfmm::force_type<float>& f, float m, sfmm::vec3<float> dx) {
 		const float expfactor = cons1 * r * exp0;
 		const float d0 = erf0 * rinv;
 		const float d1 = (expfactor - erf0) * r3inv;
-		pot += m* d0;
-		fx += m* dx * d1;
-		fy += m* dy * d1;
-		fz += m* dz * d1;
-		for (int xi = -3; xi <= +3; xi++) {
-			for (int yi = -3; yi <= +3; yi++) {
-				for (int zi = -3; zi <= +3; zi++) {
+		pot += m * d0;
+		fx -= m * dx * d1;
+		fy -= m * dy * d1;
+		fz -= m * dz * d1;
+		for (int xi = -4; xi <= +4; xi++) {
+			for (int yi = -4; yi <= +4; yi++) {
+				for (int zi = -4; zi <= +4; zi++) {
 					const bool center = xi * xi + yi * yi + zi * zi == 0;
-					if (center || xi * xi + yi * yi + zi * zi > 12) {
+					if (center) {
 						continue;
 					}
 					const float dx = dx0 - xi;
@@ -67,6 +67,9 @@ int P2P_ewald(sfmm::force_type<float>& f, float m, sfmm::vec3<float> dx) {
 					const float dz = dx2 - zi;
 					const float r2 = dx * dx + dy * dy + dz * dz;
 					const float r = sqrt(r2);
+					if( r > 2.6 ) {
+						continue;
+					}
 					const float rinv = 1. / r;
 					const float r2inv = rinv * rinv;
 					const float r3inv = r2inv * rinv;
@@ -76,14 +79,15 @@ int P2P_ewald(sfmm::force_type<float>& f, float m, sfmm::vec3<float> dx) {
 					const float d0 = -erfc0 * rinv;
 					const float d1 = (expfactor + erfc0) * r3inv;
 					pot += m * d0;
-					fx += m * dx * d1;
-					fy += m * dy * d1;
-					fz += m * dz * d1;
+					fx -= m * dx * d1;
+					fy -= m * dy * d1;
+					fz -= m * dz * d1;
 				}
 			}
 		}
-		pot += (float)  m *  (M_PI / 4.0);
+		pot += (float) m * (M_PI / 4.0);
 		for (int xi = -2; xi <= +2; xi++) {
+			//	printf( "%i\n", xi);
 			for (int yi = -2; yi <= +2; yi++) {
 				for (int zi = -2; zi <= +2; zi++) {
 					const float hx = xi;
@@ -98,16 +102,17 @@ int P2P_ewald(sfmm::force_type<float>& f, float m, sfmm::vec3<float> dx) {
 						const float c0 = -1. / h2 * exp((float) (-sfmm::sqr(M_PI) * 0.25) * h2) * (float) (1. / (M_PI));
 						const float c1 = -s * 2.0 * M_PI * c0;
 						pot += m * c0 * c;
-						fx += m * c1 * hx;
-						fy += m * c1 * hy;
-						fz += m * c1 * hz;
+						fx -= m * c1 * hx;
+						fy -= m * c1 * hy;
+						fz -= m * c1 * hz;
 					}
 				}
 			}
 		}
 	} else {
-		pot += m* 2.837291;
+		pot += m * 2.837291;
 	}
+	return 0;
 }
 
 template<class W>
@@ -129,7 +134,7 @@ static size_t P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
 	pn = (W(1.5) * hinv - W(0.5) * r2 * hinv3);
 	fn = dx * hinv3;
 	f.potential -= pn * wn + pf * wf;
-	f.force += fn * wn + ff * wf;
+	f.force -= fn * wn + ff * wf;
 	return 41;
 }
 
@@ -168,27 +173,6 @@ class tree {
 		tree* ptr;
 		bool opened;
 	};
-	template<class W>
-	static size_t P2P(sfmm::force_type<W>& f, W m, sfmm::vec3<W> dx) {
-		static const W h2(hsoft * hsoft);
-		static const W hinv(W(1) / hsoft);
-		static const W hinv3(sfmm::sqr(hinv) * hinv);
-		const W r2 = sfmm::sqr(dx[0]) + sfmm::sqr(dx[1]) + sfmm::sqr(dx[2]);
-		const W wn(m * (r2 < h2));
-		const W wf(m * (r2 >= h2));
-		sfmm::vec3<W> fn, ff;
-		W rzero(r2 < W(1e-30));
-		W pn, pf;
-		const W rinv = sfmm::rsqrt(r2 + rzero);
-		W rinv3 = sfmm::sqr(rinv) * rinv;
-		pf = rinv;
-		ff = dx * rinv3;
-		pn = (W(1.5) * hinv - W(0.5) * r2 * hinv3);
-		fn = dx * hinv3;
-		f.potential += pn * wn + pf * wf;
-		f.force -= fn * wn + ff * wf;
-		return 41;
-	}
 
 	void list_iterate(std::vector<check_type>& checklist, std::vector<tree*>& Plist, std::vector<tree*>& Clist, bool leaf, bool ewald) {
 		static thread_local std::vector<check_type> nextlist;
@@ -464,7 +448,7 @@ public:
 			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
-				load(dx, sfmm::distance(src->center, center), j);
+				load(dx, sfmm::distance(center, src->center), j);
 				load(M, src->multipole, j);
 			}
 			apply_padding(dx, end);
@@ -473,14 +457,27 @@ public:
 			apply_mask(L, end);
 			expansion += reduce_sum(L);
 		}
+		for (int i = 0; i < Plist.size(); i++) {
+			for (int j = Plist[i]->part_range.first; j < Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
+				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
+				L.init();
+				for (int k = 0; k < end; k++) {
+					load(dx, sfmm::distance(center, parts[j + k].x), k);
+				}
+				apply_padding(dx, end);
+				flops += sfmm::simd_size<V>() * sfmm::P2L_ewald(L, sfmm::create_mask<V>(end) * mass, dx);
+				expansion += reduce_sum(L);
+			}
+		}
 		Clist.resize(0);
+		Plist.resize(0);
 		list_iterate(checklist, Plist, Clist, false, false);
 		for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
 			L.init();
 			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
-				load(dx, sfmm::distance(src->center, center), j);
+				load(dx, sfmm::distance(center, src->center), j);
 				load(M, src->multipole, j);
 			}
 			apply_padding(dx, end);
@@ -494,7 +491,7 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					load(dx, sfmm::distance(parts[j + k].x, center), k);
+					load(dx, sfmm::distance(center, parts[j + k].x), k);
 				}
 				apply_padding(dx, end);
 				flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(end) * mass, dx);
@@ -507,14 +504,6 @@ public:
 				flops += children[RIGHT].compute_cell_gravity(expansion, std::move(checklist), std::move(echecklist));
 			}
 		} else {
-			if (echecklist.size()) {
-				printf("error e %i\n", echecklist.size());
-			}
-			Plist.resize(0);
-			Clist.resize(0);
-			while (checklist.size()) {
-				list_iterate(checklist, Plist, Clist, true, false);
-			}
 			load(L, expansion);
 			for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 				force_type<V> F;
@@ -528,6 +517,11 @@ public:
 					store(parts[i + j].f, F, j);
 				}
 			}
+			Plist.resize(0);
+			Clist.resize(0);
+			while (echecklist.size()) {
+				list_iterate(echecklist, Plist, Clist, true, true);
+			}
 			for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
 				for (int k = part_range.first; k < part_range.second; k++) {
 					auto& part = parts[k];
@@ -535,7 +529,45 @@ public:
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
-						load(dx, sfmm::distance(src->center, part.x), j);
+						load(dx, sfmm::distance(part.x, src->center), j);
+						load(M, src->multipole, j);
+					}
+					apply_padding(dx, end);
+					apply_padding(M, end);
+					flops += sfmm::simd_size<V>() * sfmm::M2P_ewald(F, M, dx, FLAGS);
+					for (int j = 0; j < end; j++) {
+						accumulate(part.f, F, j);
+					}
+				}
+			}
+			for (int i = 0; i < Plist.size(); i++) {
+				for (int j = Plist[i]->part_range.first; j < Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
+					const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
+					for (int l = part_range.first; l < part_range.second; l++) {
+						auto& part = parts[l];
+						for (int k = 0; k < end; k++) {
+							load(dx, sfmm::distance(part.x, parts[j + k].x), k);
+						}
+						apply_padding(dx, end);
+						F.init();
+						flops += sfmm::simd_size<V>() * P2P_ewald(F, sfmm::create_mask<V>(end) * mass, dx);
+						part.f += sfmm::reduce_sum(F);
+					}
+				}
+			}
+			Plist.resize(0);
+			Clist.resize(0);
+			while (checklist.size()) {
+				list_iterate(checklist, Plist, Clist, true, false);
+			}
+			for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
+				for (int k = part_range.first; k < part_range.second; k++) {
+					auto& part = parts[k];
+					F.init();
+					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
+					for (int j = 0; j < end; j++) {
+						const auto& src = Clist[i + j];
+						load(dx, sfmm::distance(part.x, src->center), j);
 						load(M, src->multipole, j);
 					}
 					apply_padding(dx, end);
@@ -552,7 +584,7 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for (int k = 0; k < end; k++) {
-							load(dx, sfmm::distance(parts[j + k].x, part.x), k);
+							load(dx, sfmm::distance(part.x, parts[j + k].x), k);
 						}
 						apply_padding(dx, end);
 						F.init();
@@ -580,7 +612,7 @@ public:
 				const auto& src_part = parts[j];
 				sfmm::vec3<float> dx;
 				for (int dim = 0; dim < NDIM; dim++) {
-					dx[dim] = sfmm::distance(src_part.x[dim], snk_part.x[dim]);
+					dx[dim] = sfmm::distance(snk_part.x[dim], src_part.x[dim]);
 				}
 				fc.init();
 				P2P_ewald(fc, mass, dx);
@@ -598,7 +630,8 @@ public:
 				famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
 				fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
 			}
-			printf("%e %e | %e %e %e\n", fa.potential, snk_part.f.potential, famag, fnmag, (famag - fnmag) / famag);
+			//printf("%e %e | %e %e %e |  %e\n", fa.potential, snk_part.f.potential, famag, fnmag, (famag - fnmag) / famag,
+			//		(fa.force[0] - snk_part.f.force[0]) / fa.force[0]);
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
 			norm += sfmm::sqr(famag);
@@ -636,7 +669,7 @@ template<class T, class V, class M, int ORDER, int FLAGS>
 const T tree<T, V, M, ORDER, FLAGS>::hsoft = 0.01;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
-const int tree<T, V, M, ORDER, FLAGS>::Ngrid = 12;
+const int tree<T, V, M, ORDER, FLAGS>::Ngrid = 4;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
 std::vector<tree<T, V, M, ORDER, FLAGS>> tree<T, V, M, ORDER, FLAGS>::forest;
@@ -663,7 +696,7 @@ struct run_tests {
 		tm.reset();
 		tm.start();
 		printf("Comparing analytic\n");
-		const auto error = tree_type::compare_analytic(10.0 / TEST_SIZE);
+		const auto error = tree_type::compare_analytic(50.0 / TEST_SIZE);
 		tm.stop();
 		printf("%i %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error, flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
 		run_tests<T, V, M, ORDER + 1, FLAGS> run;
@@ -760,56 +793,86 @@ void M2L_ewald2(sfmm::expansion<float, P>, sfmm::multipole<float, P>, sfmm::vec3
 }
 }
 
-int main(int argc, char **argv) {
-	printf("!\n%s\n", sfmm::operator_show_flops().c_str());
-	feenableexcept(FE_DIVBYZERO);
-	feenableexcept(FE_OVERFLOW);
-	feenableexcept(FE_INVALID);
+template<int P>
+void test2() {
+	sfmm::vec3<float> dx0;
+	sfmm::vec3<float> dx1;
+	sfmm::vec3<float> dx2;
+	sfmm::vec3<float> dx3;
+	sfmm::vec3<float> dx4;
 	sfmm::vec3<float> x0;
 	sfmm::vec3<float> x1;
 	sfmm::vec3<float> x2;
 	sfmm::vec3<float> x3;
 	sfmm::vec3<float> x4;
-	for (int i = 0; i < 10; i++) {
+	sfmm::vec3<float> x5;
+	constexpr int n = 1000;
+	float poterr = 0, potnorm = 0;
+	float ferr = 0, fnorm = 0;
+	for (int i = 0; i < n; i++) {
 		rand1();
-		random_unit(x0[0], x0[1], x0[2]);
-		random_unit(x1[0], x1[1], x1[2]);
-		random_unit(x2[0], x2[1], x2[2]);
-		random_unit(x3[0], x3[1], x3[2]);
-		random_unit(x4[0], x4[1], x4[2]);
+		random_unit(dx0[0], dx0[1], dx0[2]);
+		random_unit(dx1[0], dx1[1], dx1[2]);
+		random_unit(dx2[0], dx2[1], dx2[2]);
+		random_unit(dx3[0], dx3[1], dx3[2]);
+		random_unit(dx4[0], dx4[1], dx4[2]);
 		const auto alpha = 0.25;
-		x0 *= alpha * 0.125;
-		x1 *= alpha * 0.125;
-		x2 *= alpha;
-		x3 *= alpha * 0.125;
-		x4 *= alpha * 0.125;
-		sfmm::multipole<float, 5> M;
-		sfmm::expansion<float, 5> L1;
-		sfmm::expansion<float, 5> L;
+		dx0 *= alpha * 0.125;
+		dx1 *= alpha * 0.125;
+		dx2 *= alpha;
+		dx3 *= alpha * 0.125;
+		dx4 *= alpha * 0.125;
+		x0 = sfmm::vec3<float>( { 0, 0, 0 });
+		x1 = x0 + dx0;
+		x2 = x1 + dx1;
+		x3 = x2 + dx2;
+		x4 = x3 + dx3;
+		x5 = x4 + dx4;
+
+		sfmm::multipole<float, P> M;
+		sfmm::expansion<float, P> L1;
+		sfmm::expansion<float, P> L;
 		sfmm::force_type<float> f1;
 		M.init();
 		L.init();
 //		x0 *= 0.0;
-	//	x1 *= 0.0;
+		//	x1 *= 0.0;
 		//x3 *= 0.0;
-	//	x4 *= 0.0;
-		auto dx = x0 + x1 + x2 + x3 + x4;
-		sfmm::P2M(M, float(0.5), x0);
-		sfmm::M2M(M, x1);
-		sfmm::M2L_ewald(L1, M, x2);
+		//	x4 *= 0.0;
+		sfmm::P2M(M, float(0.5), x0 - x1);
+		sfmm::M2M(M, x1 - x2);
+		sfmm::M2L_ewald(L1, M, x3 - x2);
+		L += L1;
+		sfmm::M2L(L1, M, x3 - x2, sfmmWithSingleRotationOptimization);
 		L += L1;
 		f1.init();
-		sfmm::L2L(L, x3);
-		sfmm::L2P(f1, L, x4);
+		sfmm::L2L(L, x3 - x4);
+		sfmm::L2P(f1, L, x4 - x5);
 		sfmm::force_type<float> f2;
 		f2.init();
 		//	f1.init();
-		P2P(f2, 0.5f,dx);
-		P2P_ewald(f2, 0.5f, dx);
+		P2P(f2, 0.5f, x5 - x0);
+		P2P_ewald(f2, 0.5f, x5 - x0);
+		poterr += sfmm::sqr(f1.potential - f2.potential);
+		potnorm += sfmm::sqr(f1.potential);
+		const float fabs1 = sfmm::sqr(f1.force[0]) + sfmm::sqr(f1.force[1]) + sfmm::sqr(f1.force[2]);
+		const float fabs2 = sfmm::sqr(f2.force[0]) + sfmm::sqr(f2.force[1]) + sfmm::sqr(f2.force[2]);
+		ferr += sfmm::sqr(fabs1-fabs2);
+		fnorm += sfmm::sqr(fabs2);
 		//	printf( "%e\n", f1.force[0]*f2.force[0]+f1.force[1]*f2.force[1]+f1.force[2]*f2.force[2]);
-		printf("%e %e %e | ", f1.potential, f2.potential, (f1.potential - f2.potential) / f2.potential);
-		printf("%e %e %e\n", f1.force[0], f2.force[0], (f1.force[0] - f2.force[0]) / f2.force[0]);
 	}
+	printf( "%i %e %e\n", P, ferr / fnorm, poterr/potnorm);
+
+}
+
+int main(int argc, char **argv) {
+	feenableexcept(FE_DIVBYZERO);
+	feenableexcept(FE_OVERFLOW);
+	feenableexcept(FE_INVALID);
+	test2<5>();
+	test2<6>();
+	test2<7>();
+	test2<8>();
 //	 return 0;
 	//ewald();
 	//return 0;
@@ -819,11 +882,6 @@ int main(int argc, char **argv) {
 	run1();
 //	run2();
 //	run3();
-	auto prof = sfmm::operator_profiling_results();
-	printf("%s\n", prof.c_str());
-	prof = sfmm::detail::operator_best_rotations();
-	printf("%s\n", prof.c_str());
-	prof = sfmm::detail::operator_best_rotations();
 //	sfmm::detail::operator_write_new_bestops_source();
 	return 0;
 }

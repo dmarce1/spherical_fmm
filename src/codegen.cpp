@@ -13,7 +13,7 @@
 #include <array>
 #include <stack>
 
-//#define CHECK_NAN
+#define CHECK_NAN
 
 #if USE_DOUBLE_FLAG == 1
 #define USE_DOUBLE
@@ -844,7 +844,7 @@ void init_reals(std::string var, int cnt) {
 		tprint("T %s [%i];\n", var.c_str(), cnt);
 #ifdef CHECK_NAN
 		fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-		tprint("for (int i = 0; i < cnt; i++) {\n");
+		tprint("for (int i = 0; i < %i; i++) {\n", cnt);
 		indent();
 		tprint("%s[i].set_NaN();\n", var.c_str());
 		deindent();
@@ -1498,9 +1498,9 @@ void greens_body(int P, const char* M = nullptr) {
 	if (M) {
 		tprint("O[0] *= %s;\n", M);
 	}
-	tprint("x *= r2inv;\n");
-	tprint("y *= r2inv;\n");
-	tprint("z *= r2inv;\n");
+	tprint("x *= -r2inv;\n");
+	tprint("y *= -r2inv;\n");
+	tprint("z *= -r2inv;\n");
 	auto index = lindex;
 	tprint("O[%i] = x * O[0];\n", index(1, 1));
 	tprint("O[%i] = y * O[0];\n", index(1, -1));
@@ -1652,7 +1652,7 @@ std::string greens_safe(int P) {
 	return fname;
 }
 
-void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex) {
+void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex) {
 	std::vector<entry_t> pos;
 	std::vector<entry_t> neg;
 	for (int n = 0; n <= Q; n++) {
@@ -1674,10 +1674,10 @@ void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 					int gysgn = 1;
 					int mxsgn = 1;
 					int mysgn = 1;
-					int gxstr;
-					int gystr;
-					int mxstr;
-					int mystr;
+					int gxstr = -1;
+					int gystr = -1;
+					int mxstr = -1;
+					int mystr = -1;
 					if (m + l > 0) {
 						gxstr = oindex(n + k, m + l);
 						gystr = oindex(n + k, -m - l);
@@ -1718,18 +1718,22 @@ void m2lg_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 					};
 					const auto add_work = [n,ronly,&gystr,&pos,&neg](int sgn, int m, int mstr, int gstr) {
 						if( ronly && gystr == gstr) {
-							return;
+							if( gystr == 0 && mstr == 0 ) {
+								//			abort();
 						}
-						entry_t entry;
-						entry.l = lindex(n, m);
-						entry.m = mstr;
-						entry.o = gstr;
-						if( sgn == 1) {
-							pos.push_back(entry);
-						} else {
-							neg.push_back(entry);
-						}
-					};
+						//		printf( " %i %i\n", mstr, gstr);
+						return;
+					}
+					entry_t entry;
+					entry.l = lindex(n, m);
+					entry.m = mstr;
+					entry.o = gstr;
+					if( sgn == 1) {
+						pos.push_back(entry);
+					} else {
+						neg.push_back(entry);
+					}
+				}	;
 					if (!mreal) {
 						if (!greal) {
 							add_work(mxsgn * gxsgn, m, mxstr, gxstr);
@@ -1870,10 +1874,10 @@ std::string greens(int P) {
 	return fname;
 }
 
-std::string M2LG(int P, int Q) {
-	auto fname = func_header("M2LG", P, true, true, false, true, false, "", "L", EXP, "M", CMUL, "O", EXP);
+void MG2L(int P) {
+	func_header("MG2L", P, true, true, false, true, false, "", "L", EXP, "M", CMUL, "O", EXP);
 	reset_running_flops();
-	m2lg_body(P, Q);
+	mg2l_body(P,P);
 	if (P > 2 && periodic) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
 	}
@@ -1888,7 +1892,7 @@ std::string M2LG(int P, int Q) {
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
-	flops_map[P][type + "M2LG"] = get_running_flops();
+	flops_map[P][type + "MG2L"] = get_running_flops();
 	deindent();
 	tprint("}\n");
 
@@ -1896,8 +1900,8 @@ std::string M2LG(int P, int Q) {
 	tprint("}\n");
 	tprint("\n");
 	TAB0();
-	return fname;
 }
+
 
 std::string greens_ewald(int P, double alpha) {
 	auto index = lindex;
@@ -1939,6 +1943,7 @@ std::string greens_ewald(int P, double alpha) {
 	init_real("tmp2");
 	init_real("gam1");
 	init_real("exp0");
+	init_real("cgam");
 	init_real("xfac");
 	init_real("xpow");
 	init_real("gam");
@@ -1984,13 +1989,10 @@ std::string greens_ewald(int P, double alpha) {
 			}
 		}
 	}
-	tprint("x = -x;\n");
-	tprint("y = -y;\n");
-	tprint("z = -z;\n");
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("rzero = TCONVERT(r2 < TCAST(%0.20e));\n", tiny());
 	tprint("r = sqrt(r2) + rzero;\n");
-	tprint("greens_safe(Gr_st, vec3<T>(x + rzero, y, z));\n");
+	tprint("greens(Gr_st, vec3<T>(x + rzero, y, z));\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
 	tprint("erfcexp(xxx, &gam1, &exp0);\n");
 	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
@@ -2000,13 +2002,14 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("sw = TCAST(1) - rzero;\n");
 	for (int l = 0; l <= P; l++) {
 		tprint("gam = gam1 * TCAST(%.20e);\n", gam0inv);
+		tprint("cgam = (gam - TCAST(1)) * sw;\n");
 		for (int m = -l; m <= l; m++) {
-		//	tprint("G[%i] = sw * (TCAST(1) - gam) * Gr[%i];\n", lindex(l, m), lindex(l, m));
-			tprint("G[%i] = TCAST(0.0);\n", lindex(l, m));
+			tprint("G[%i] = cgam * Gr[%i];\n", lindex(l, m), lindex(l, m));
 		}
-	//	if (l == 0) {
-	//	}
-		gam0inv *= 1.0 / -(l + 0.5);
+		if (l == 0) {
+			tprint("G[0] += rzero * TCAST(2.837291);\n");
+		}
+		gam0inv *= 1.0 / (l + 0.5);
 		if (l != P) {
 			tprint("gam1 = fma(TCAST(%.20e), gam1, xpow * exp0);\n", l + 0.5);
 			if (l != P - 1) {
@@ -2018,7 +2021,7 @@ std::string greens_ewald(int P, double alpha) {
 		for (int iy = -R; iy <= R; iy++) {
 			for (int iz = -R; iz <= R; iz++) {
 				int ii = ix * ix + iy * iy + iz * iz;
-				if (ii > R2) {
+				if (ii > R2 || ii == 0) {
 					continue;
 				}
 				std::string xstr = "x";
@@ -2237,8 +2240,8 @@ std::string greens_ewald(int P, double alpha) {
 		}
 	}
 	tprint_flush_chains();
-	for( int i = 0; i < exp_sz(P); i++) {
-	//	tprint( "G[%i] = -G[%i];\n", i, i);
+	for (int i = 0; i < exp_sz(P); i++) {
+		//	tprint( "G[%i] = -G[%i];\n", i, i);
 	}
 	if (P > 1) {
 		tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
@@ -2263,9 +2266,9 @@ const char* boolstr(bool b) {
 }
 
 void greens_xz_body(int P) {
-	tprint("O[0] = sqrt(r2inv);\n");
-	tprint("R *= r2inv;\n");
-	tprint("z *= r2inv;\n");
+	tprint("O[0] = -sqrt(r2inv);\n");
+	tprint("R *= -r2inv;\n");
+	tprint("z *= -r2inv;\n");
 	const auto index = [](int l, int m) {
 		return l*(l+1)/2+m;
 	};
@@ -2297,7 +2300,7 @@ void greens_xz_body(int P) {
 	}
 }
 
-void M2L_allrot(int P, int Q, int rot) {
+int M2L_allrot(int P, int Q, int rot) {
 	std::string name = print2str("M2%cr%i", P == Q ? 'L' : 'P', rot);
 	if (Q > 1) {
 		func_header(name.c_str(), P, true, true, true, true, true, "", "L", EXP, rot == 0 ? "M" : "Min", CMUL, "dx", VEC3);
@@ -2381,21 +2384,15 @@ void M2L_allrot(int P, int Q, int rot) {
 			init_reals("A", P + 1);
 		}
 	}
-	if (rot != 2) {
-		init_real("zx1");
-		for (int m = 1; m < P; m++) {
-			init_real(std::string("zx") + std::to_string(2 * m + 1));
-		}
-	}
 	if (scaled) {
 		tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
 		tprint("x *= tmp1;\n");
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
 	}
-	tprint("x = -x;\n");
-	tprint("y = -y;\n");
-	tprint("z = -z;\n");
+//	tprint("x = -x;\n");
+//	tprint("y = -y;\n");
+//	tprint("z = -z;\n");
 	if (rot > 0) {
 		tprint("R2 = fma(x, x, y * y);\n");
 		tprint("Rzero = TCONVERT( R2 < TCAST(%.20e) );\n", tiny());
@@ -2415,9 +2412,7 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("sinphi = fma(x, Rinv, Rzero);\n");
 		}
 	}
-	if (rot == 1) {
-		z_rot2(P - 1, "M", "Min", FULL, P != Q ? "M2P" : "M2L", true);
-	} else if (rot == 2) {
+	if (rot != 0) {
 		tprint("r0[0] = cosphi;\n");
 		tprint("ip[0] = sinphi;\n");
 		tprint("in[0] = -sinphi;\n");
@@ -2428,6 +2423,10 @@ void M2L_allrot(int P, int Q, int rot) {
 			tprint("ip[%i] = fma(r0[%i], sinphi, ip[%i]);\n", m, m - 1, m);
 			tprint("in[%i] = -ip[%i];\n", m, m);
 		}
+	}
+	if (rot == 1) {
+		z_rot2(P - 1, "M", "Min", FULL, P != Q ? "M2P" : "M2L", false);
+	} else if (rot == 2) {
 		z_rot2(P - 1, "M0", "Min", PRE1, P != Q ? "M2P" : "M2L", false);
 		xz_swap2(P - 1, "M", "M0", false, PRE1, P != Q ? "M2P" : "M2L");
 		tprint("cosphi = fma(z, rinv, rzero);\n");
@@ -2462,7 +2461,7 @@ void M2L_allrot(int P, int Q, int rot) {
 		tprint("L=ptr;\n");
 	}
 	if (rot != 2) {
-		m2lg_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
+		mg2l_body(P, Q, rot == 1, rot == 0 ? lindex : cindex);
 	} else {
 		tprint("A[0] = -rinv;\n");
 		tprint("A[1] = rinv * rinv;\n");
@@ -2581,11 +2580,12 @@ void M2L_allrot(int P, int Q, int rot) {
 	tprint("\n");
 	timing_body += print2str("\"M2%c\", %i, %i, %i, 0.0, 0}", Q == P ? 'L' : 'P', P, rot, get_running_flops(false).load());
 	TAB0();
+	return get_running_flops().load();
 }
 
-std::string flags_header(const char* op, int P) {
+std::string flags_header(const char* op, int P, int best) {
 	std::string str;
-	str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), op);
+//	str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), op);
 	str += "\tint rot = -1;\n";
 	str += "\tif( flags & sfmmWithRandomOptimization ) {\n";
 	str += "\t\tflags &= ~sfmmWithRandomOptimization;\n";
@@ -2596,7 +2596,7 @@ std::string flags_header(const char* op, int P) {
 	str += "\t\trot = num % 3;\n";
 	str += "\t} else if( flags & sfmmWithBestOptimization ) {\n";
 	str += "\t\tflags &= ~sfmmWithBestOptimization;\n";
-	str += "\t\trot = best_rot;\n";
+	str += "\t\trot = " + std::to_string(best) + ";\n";
 	str += "\t}\n";
 	str += "\tif( rot >= 0 ) {\n";
 	str += "\t\tflags |= (rot == 1 ? sfmmWithSingleRotationOptimization : (rot == 2 ? sfmmWithDoubleRotationOptimization : 0));\n";
@@ -2625,16 +2625,25 @@ std::string flags_choose2(std::string name, std::string name2) {
 	return str;
 }
 
-std::string M2L(int P, int Q) {
-	std::string fname;
+void M2L(int P, int Q) {
 	std::string str;
+	int flops[3];
+	int bestrot;
+	int bestflops = 1000000000;
+	for (int rot = 0; rot < 3; rot++) {
+		flops[rot] = M2L_allrot(P, Q, rot);
+		if (flops[rot] < bestflops) {
+			bestflops = flops[rot];
+			bestrot = rot;
+		}
+	}
 	if (Q > 1) {
-		fname = func_header("M2L", P, true, false, false, false, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
-		str = flags_header("M2L", P);
+		func_header("M2L", P, true, false, false, false, true, "", "L0", EXP, "M0", CMUL, "dx", VEC3);
+		str = flags_header("M2L", P, bestflops);
 		str += flags_choose3("M2L", "L0_st");
 	} else {
-		fname = func_header("M2P", P, true, false, false, false, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
-		str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), "M2P");
+		func_header("M2P", P, true, false, false, false, true, "", "f", FORCE, "M0", CMUL, "dx", VEC3);
+		//str += print2str("static const int best_rot = operator_best_rotation(%i, \"%s\", \"%s\");\n", P, type.c_str(), "M2P");
 		str += "\tint rot = -1;\n";
 		str += "\tif( flags & sfmmWithRandomOptimization ) {\n";
 		str += "\t\tflags &= ~sfmmWithRandomOptimization;\n";
@@ -2645,7 +2654,7 @@ std::string M2L(int P, int Q) {
 		str += "\t\trot = num % 3;\n";
 		str += "\t} else if( flags & sfmmWithBestOptimization ) {\n";
 		str += "\t\tflags &= ~sfmmWithBestOptimization;\n";
-		str += "\t\trot = best_rot;\n";
+		str += "\t\trot = " + std::to_string(bestrot) + ";\n";
 		str += "\t}\n";
 		str += "\tif( rot >= 0 ) {\n";
 		str += "\t\tflags |= (rot == 1 ? sfmmWithSingleRotationOptimization : (rot == 2 ? sfmmWithDoubleRotationOptimization : 0));\n";
@@ -2659,7 +2668,6 @@ std::string M2L(int P, int Q) {
 	tprint("}\n");
 	tprint("\n");
 	TAB0();
-	return fname;
 }
 
 std::string M2L_ewald(int P) {
@@ -2667,74 +2675,84 @@ std::string M2L_ewald(int P) {
 	reset_running_flops();
 	tprint("expansion<%s, %i> G_st;\n", type.c_str(), P);
 	reset_running_flops();
-	if (scaled) {
-		init_real("a");
-		init_real("b");
-		tprint("a = M0_st.r;\n");
-		tprint("b = a;\n");
-		tprint("M_st.r = %s(1);\n", base_rtype[typenum].c_str());
-		for (int n = 1; n < P; n++) {
-			if (!(n == 1 && nodip)) {
-				for (int m = -n; m <= n; m++) {
-					tprint("M_st.o[%i] = M0_st.o[%i] * b;\n", mindex(n, m), mindex(n, m));
-				}
-			}
-			if (periodic && P > 2 && n == 2) {
-				tprint("M_st.t = M0_st.t * b;\n");
-			}
-			if (n != P - 1) {
-				tprint("b *= a;\n");
-			}
-		}
-		tprint("M_st.o[0] = M0_st.o[0];\n");
-	}
 	tprint("int flops = greens_ewald(G_st, dx);\n");
-	tprint( "T* M=M_st.data();\n");
-	tprint( "T* G=G_st.data();\n");
-	tprint( "T* L=L_st.data();\n");
-	for (int n = 1; n <= P; n += 2) {
-		for (int m = -n; m <= n; m++) {
-		//	tprint("G[%i] = -G[%i];\n", lindex(n, m), lindex(n, m));
-		}
-	}
-	for (int n = 1; n < P; n += 2) {
-		for (int m = -n; m <= n; m++) {
-		//	tprint("M[%i] = -M[%i];\n", mindex(n, m), mindex(n, m));
-		}
-	}
-
-	tprint("flops += M2LG%s(L_st, M_st, G_st);\n", "");
-	for (int n = 1; n <= P; n += 2) {
-		for (int m = -n; m <= n; m++) {
-//			tprint("L[%i] = -L[%i];\n", lindex(n, m), lindex(n, m));
-		}
-	}
-
-	if (scaled) {
-		tprint("a = L0_st.scale() / M_st.scale();\n");
-		tprint("b = a;\n");
-		tprint("L_st.r = L0_st.scale();\n");
-		for (int n = 0; n <= P; n++) {
-			for (int m = -n; m <= n; m++) {
-				tprint("L_st.o[%i] *= b;\n", lindex(n, m));
-			}
-			if (periodic && P > 1 && n == 2) {
-				tprint("L_st.t *= b;\n", exp_sz(P));
-			}
-			if (n != P) {
-				tprint("b *= a;\n");
-			}
-		}
-	}
+	tprint("T* M=M_st.data();\n");
+	tprint("T* G=G_st.data();\n");
+	tprint("T* L=L_st.data();\n");
+	tprint("flops += MG2L%s(L_st, M_st, G_st);\n", "");
 	tprint("return flops+%i;\n", get_running_flops().load());
 	deindent();
 	tprint("} else {\n");
 	indent();
-
 	tprint("expansion<%s, %i> L_st;\n", type.c_str(), P);
 	tprint("multipole<%s, %i> M_st;\n", type.c_str(), P);
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
-	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + M2LG(L_st, M_st, O_st) + %i;\n", get_running_flops(false).load());
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + MG2L(L_st, M_st, O_st) + %i;\n", get_running_flops(false).load());
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+	tprint("}\n");
+	tprint("\n");
+	TAB0();
+	return fname;
+}
+
+std::string M2P_ewald(int P) {
+	auto fname = func_header("M2P_ewald", P, true, false, false, true, true, "", "f", FORCE, "M", MUL, "dx", VEC3);
+	reset_running_flops();
+	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
+	tprint("T* O=O_st.data();\n");
+	tprint("T* M=M_st.data();\n");
+	reset_running_flops();
+	init_reals("L", 4);
+	tprint("int flops = greens_ewald(O_st, dx);\n");
+	mg2l_body(P,1);
+	if (P > 1 && periodic) {
+		if (!nodip) {
+			tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, -1), mindex(1, -1), lindex(1, -1));
+			tprint("L[%i] -= O_st.trace2() * M[%i];\n", lindex(1, +0), lindex(1, +0), mindex(1, +0));
+			tprint("L[%i] = fma(TCAST(-2) * O_st.trace2(), M[%i], L[%i]);\n", lindex(1, +1), mindex(1, +1), lindex(1, +1));
+		}
+	}
+	tprint("f.potential = L[0];\n");
+	tprint("f.force[0] = -L[3];\n");
+	tprint("f.force[1] = -L[1];\n");
+	tprint("f.force[2] = -L[2];\n");
+	tprint("return flops+%i;\n", get_running_flops().load());
+	deindent();
+	tprint("} else {\n");
+	indent();
+	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + %i;\n", get_running_flops(false).load());
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+	tprint("\n");
+	tprint("}\n");
+	tprint("\n");
+	TAB0();
+	return fname;
+}
+
+std::string P2L_ewald(int P) {
+	auto fname = func_header("P2L_ewald", P, true, false, false, true, true, "", "L", EXP, "M", LIT, "dx", VEC3);
+	reset_running_flops();
+	tprint("T* L=L_st.data();\n");
+	reset_running_flops();
+	tprint("int flops = greens_ewald(L_st, dx);\n");
+	for( int i = 0; i < exp_sz(P); i++) {
+		tprint( "L[%i] *= M;\n", i);
+	}
+	tprint("L_st.trace2() *= M;\n");
+	tprint("return flops+%i;\n", get_running_flops().load());
+	deindent();
+	tprint("} else {\n");
+	indent();
+	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + %i;\n", get_running_flops(false).load());
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -2920,11 +2938,11 @@ void regular_harmonic_xy(int P) {
 	}
 }
 
-std::string M2M_allrot(int P, int rot) {
+int M2M_allrot(int P, int rot) {
 	auto index = mindex;
 	int flops = 0;
 	const auto name = std::string("M2Mr") + std::to_string(rot);
-	auto fname = func_header(name.c_str(), P, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
+	func_header(name.c_str(), P, true, true, true, true, true, "", "M", MUL, "dx", VEC3);
 	open_timer(name);
 	init_real("tmp1");
 	init_real("ax0");
@@ -3163,7 +3181,7 @@ std::string M2M_allrot(int P, int rot) {
 	tprint("\n");
 	timing_body += print2str("\"M2M\", %i, %i, %i, 0.0, 0}", P, rot, flops);
 	TAB0();
-	return fname;
+	return flops;
 }
 
 void L2L_z(int P, int Q, const char* var = "z", const char* src = "") {
@@ -3201,7 +3219,7 @@ void L2L_z(int P, int Q, const char* var = "z", const char* src = "") {
 	}
 }
 
-void L2L_allrot(int P, int Q, int rot) {
+int L2L_allrot(int P, int Q, int rot) {
 	auto index = lindex;
 	int flops = 0;
 	const auto name = std::string("L2") + (P == Q ? "L" : "P") + "r" + std::to_string(rot);
@@ -3447,9 +3465,9 @@ void L2L_allrot(int P, int Q, int rot) {
 			tprint("L[%i] = fma(z0, L0_st.trace2(), L[%i]);\n", index(1, 0), index(1, 0));
 			tprint("L[%i] = fma(-TCAST(0.5)*r2, L0_st.trace2(), L[%i]);\n", index(0, 0), index(0, 0));
 		} else {
-			if( !simd[typenum]) {
-			//	tprint( "printf( \"%e\\n\", L0_st.trace2());\n");
-			//	tprint( "fflush(stdout);\n");
+			if (!simd[typenum]) {
+				//	tprint( "printf( \"%e\\n\", L0_st.trace2());\n");
+				//	tprint( "fflush(stdout);\n");
 			}
 			tprint("L2[%i] = fma(x0, L0_st.trace2(), L2[%i]);\n", index(1, 1), index(1, 1));
 			tprint("L2[%i] = fma(y0, L0_st.trace2(), L2[%i]);\n", index(1, -1), index(1, -1));
@@ -3476,6 +3494,7 @@ void L2L_allrot(int P, int Q, int rot) {
 	tprint("\n");
 	timing_body += print2str("\"L2%s\", %i, %i, %i, 0.0, 0}", (P == Q ? "L" : "P"), P, rot, flops);
 	TAB0();
+	return flops;
 }
 
 void cuda_header() {
@@ -3483,10 +3502,20 @@ void cuda_header() {
 	tprint("const int& bsz = blockDim.x;\n");
 }
 
-std::string M2M(int P) {
+void M2M(int P) {
 	std::string str;
-	auto fname = func_header("M2M", P, true, false, false, false, true, "", "M", MUL, "dx", VEC3);
-	str = flags_header("M2M", P);
+	int flops[3];
+	int bestrot;
+	int bestflops = 1000000000;
+	for (int rot = 0; rot < 3; rot++) {
+		flops[rot] = M2M_allrot(P, rot);
+		if (flops[rot] < bestflops) {
+			bestflops = flops[rot];
+			bestrot = rot;
+		}
+	}
+	func_header("M2M", P, true, false, false, false, true, "", "M", MUL, "dx", VEC3);
+	str = flags_header("M2M", P, bestrot);
 	str += "\tif( flags & sfmmWithSingleRotationOptimization ) {\n";
 	str += print2str("\t\treturn M2Mr1(M_st, dx, flags);\n");
 	str += "\t} else if( flags & sfmmWithDoubleRotationOptimization ) {\n";
@@ -3501,7 +3530,6 @@ std::string M2M(int P) {
 	tprint("}\n");
 	tprint("\n");
 	TAB0();
-	return fname;
 }
 
 std::string P2M(int P) {
@@ -3611,12 +3639,22 @@ std::string P2M(int P) {
 	return fname;
 }
 
-std::string L2L(int P, int Q) {
+void L2L(int P, int Q) {
 	std::string str;
-	std::string fname;
+	int flops[3];
+	int bestrot;
+	int bestflops = 1000000000;
+	for (int rot = 0; rot < 3; rot++) {
+		flops[rot] = L2L_allrot(P, Q, rot);
+		if (flops[rot] < bestflops) {
+			bestflops = flops[rot];
+			bestrot = rot;
+		}
+	}
+
 	if (Q == P) {
-		fname = func_header("L2L", P, true, false, false, false, true, "", "L", EXP, "dx", VEC3);
-		str = flags_header("L2L", P);
+		func_header("L2L", P, true, false, false, false, true, "", "L", EXP, "dx", VEC3);
+		str = flags_header("L2L", P, bestflops);
 		str += "\tif( flags & sfmmWithSingleRotationOptimization ) {\n";
 		str += print2str("\t\treturn L2Lr1(L_st, dx, flags);\n");
 		str += "\t} else if( flags & sfmmWithDoubleRotationOptimization ) {\n";
@@ -3625,8 +3663,8 @@ std::string L2L(int P, int Q) {
 		str += print2str("\t\treturn L2Lr0(L_st, dx, flags);\n");
 		str += "\t}\n";
 	} else {
-		fname = func_header("L2P", P, true, false, false, false, true, "", "f", FORCE, "L", CEXP, "dx", VEC3);
-		str = flags_header("L2P", P);
+		func_header("L2P", P, true, false, false, false, true, "", "f", FORCE, "L", CEXP, "dx", VEC3);
+		str = flags_header("L2P", P, bestflops);
 		str += "\tif( flags & sfmmWithSingleRotationOptimization ) {\n";
 		str += print2str("\t\treturn L2Pr1(f, L_st, dx, flags);\n");
 		str += "\t} else if( flags & sfmmWithDoubleRotationOptimization ) {\n";
@@ -3642,7 +3680,7 @@ std::string L2L(int P, int Q) {
 	tprint("}\n");
 	tprint("\n");
 	TAB0();
-	return fname;
+
 }
 
 void safe_math_float() {
@@ -4234,17 +4272,15 @@ int main() {
 	tprint("#include <time.h>\n");
 	tprint("#include <utility>\n");
 	tprint("\n");
-	tprint("#define sfmmCalculateWithPotential    0\n");
 	tprint("#define sfmmProfilingOff 0\n");
-	tprint("#define sfmmWithoutOptimization 0\n");
-	tprint("#define sfmmCalculateWithoutPotential 1\n");
+	tprint("#define sfmmWithoutOptimization 1\n");
 	tprint("#define sfmmWithSingleRotationOptimization 2\n");
 	tprint("#define sfmmWithDoubleRotationOptimization 4\n");
 	tprint("#define sfmmWithRandomOptimization 8\n");
 	tprint("#define sfmmWithBestOptimization 16\n");
 	tprint("#define sfmmProfilingOn 32\n");
 	tprint("#define sfmmFLOPsOnly 64\n");
-	tprint("#define sfmmDefaultFlags (sfmmCalculateWithPotential | sfmmWithBestOptimization)\n");
+	tprint("#define sfmmDefaultFlags (sfmmWithBestOptimization)\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	tprint("\n");
@@ -4464,7 +4500,7 @@ int main() {
 			flops_map[P][type + "greens_ewald_real"] = flops0;
 			greens_ewald_real_flops = flops0;
 			const double alpha = is_float(type) ? 2.4 : 2.25;
-			M2LG(P, P);
+			MG2L(P);
 			if (periodic && !m2monly[typenum]) {
 				greens_ewald(P, alpha);
 			}
@@ -4485,36 +4521,20 @@ int main() {
 			tprint("#ifndef __CUDACC__\n");
 		}
 		for (int P = pmin; P <= pmax; P++) {
-			L2L(P, P);
-			L2L_allrot(P, P, 0);
-			L2L_allrot(P, P, 1);
-			L2L_allrot(P, P, 2);
 			if (!m2monly[typenum]) {
+				L2L(P, P);
 				L2L(P, 1);
-				L2L_allrot(P, 1, 0);
-				L2L_allrot(P, 1, 1);
-				L2L_allrot(P, 1, 2);
 				P2M(P);
 				M2L(P, P);
-				M2L_allrot(P, P, 0);
-				M2L_allrot(P, P, 1);
-				M2L_allrot(P, P, 2);
 				M2L(P, 1);
-				M2L_allrot(P, 1, 0);
-				M2L_allrot(P, 1, 1);
-
-				M2L_allrot(P, 1, 2);
 				P2L(P);
 			}
 			if (periodic && !m2monly[typenum]) {
 				M2L_ewald(P);
+				M2P_ewald(P);
+				P2L_ewald(P);
 			}
-
 			M2M(P);
-			M2M_allrot(P, 0);
-			M2M_allrot(P, 1);
-			M2M_allrot(P, 2);
-
 		}
 		fflush(stdout);
 		if (is_vec(type)) {
@@ -4539,9 +4559,6 @@ int main() {
 	indent();
 	tprint("constexpr double ALPHA = ALPHA100 / 100.0;\n");
 	tprint("expansion<T, P> Gr_st;\n");
-	tprint("x = -x;\n");
-	tprint("y = -y;\n");
-	tprint("z = -z;\n");
 	tprint("const T r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("const T r = sqrt(r2);\n");
 	tprint("greens(Gr_st, vec3<T>( x, y, z));\n");
@@ -5169,6 +5186,7 @@ int main() {
 	 }
 	 }
 	 }
+
 	 }
 	 }
 	 }
@@ -5189,135 +5207,5 @@ int main() {
 	 tprint("}\n\n");
 	 tprint("}\n");*/
 
-	set_file("./generated_code/src/best_flops.cpp");
-	str = print2str("#include \"sfmm.hpp\"\n");
-	str += print2str("#include <unordered_map>\n");
-	str += print2str("#include <mutex>\n");
-	str += print2str("#include <stdio.h>\n");
-	str += print2str("\n");
-	str += print2str("namespace sfmm {\n");
-	str += print2str("namespace detail {\n");
-	str += print2str("\n");
-	str += print2str("static constexpr int pmax = %i;\n", PMAX);
-	str += print2str("static std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,%i> best_rotation;\n", PMAX + 1);
-	str += print2str("static std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,3>,%i> opflops;\n", PMAX + 1);
-	str += print2str("\n");
-	str += "static void initialize() {\n"
-			"\tstatic std::once_flag flag;\n"
-			"\tstd::call_once(flag, []() {\n";
-	str += "\t\tstd::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>," + std::to_string(PMAX + 1) + "> best_flops;\n";
-	str += "\t\t\n"
-			"\t\tfor (int i = 0; i < detail::operator_count(); i++) {\n"
-			"\t\t\tconst detail::func_data_t& func = *(detail::operator_data(i));\n"
-			"\t\t\tbest_flops[func.P][func.type][func.name] = std::numeric_limits<int>::max();\n"
-			"\t\t}\n"
-			"\t\tfor (int i = 0; i < detail::operator_count(); i++) {\n"
-			"\t\t\tconst detail::func_data_t& func = *(detail::operator_data(i));\n"
-			"\t\t\tauto& flops = best_flops[func.P][func.type][func.name];\n"
-			"\t\t\tif( func.flops < flops ) {\n"
-			"\t\t\t\tflops = func.flops;\n"
-			"\t\t\t\tdetail::best_rotation[func.P][func.type][func.name] = func.nrot;\n"
-			"\t\t\t}\n"
-			"\t\t\tdetail::opflops[func.P][func.nrot][func.type][func.name] = func.flops;\n"
-			"\t\t}\n"
-			"\t});\n"
-			"}\n\n"
-			"";
-	str += "std::string operator_best_rotations() {\n";
-	str += "\tdetail::initialize();\n";
-	str += "\tstd::string str;\n";
-	str += "\n\treturn str;\n";
-	str += ("}\n\n");
-	str += print2str("}\n\n");
-	str += "int operator_best_rotation(int P, const char* type, const char* name) {\n"
-			"\tdetail::initialize();\n"
-			"\treturn detail::best_rotation[P][type][name];\n"
-			"}\n"
-			"\n"
-			""
-			"void operator_write_new_bestops_source() {\n"
-			"}\n"
-			"";
-	str += "\nstd::string operator_show_flops() {\n";
-	str += "detail::initialize();\n";
-	str += "\tstd::string str;\n";
-	str += "\n\n\tstr += detail::print2str( \"-----M2L---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (simd[ti] && !m2monly[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str +=
-						print2str(
-								"\tstr += detail::print2str( \"%2i %%4i/%%4i/%%4i (%%i) \\n\", detail::opflops[%i][0][\"%s\"][\"M2L\"], detail::opflops[%i][1][\"%s\"][\"M2L\"], detail::opflops[%i][2][\"%s\"][\"M2L\"], detail::best_rotation[%i][\"%s\"][\"M2L\"] );\n",
-								p, p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str());
-			}
-		}
-	}
-	str += "\n\n\tstr += detail::print2str( \"-----M2P---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (simd[ti] && !m2monly[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str +=
-						print2str(
-								"\tstr += detail::print2str( \"%2i %%4i/%%4i/%%4i (%%i) \\n\", detail::opflops[%i][0][\"%s\"][\"M2P\"], detail::opflops[%i][1][\"%s\"][\"M2P\"], detail::opflops[%i][2][\"%s\"][\"M2P\"], detail::best_rotation[%i][\"%s\"][\"M2P\"] );\n",
-								p, p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str());
-			}
-		}
-	}
-	str += "\n\n\tstr += detail::print2str( \"-----L2P---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (simd[ti] && !m2monly[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str +=
-						print2str(
-								"\tstr += detail::print2str( \"%2i %%4i/%%4i/%%4i (%%i) \\n\", detail::opflops[%i][0][\"%s\"][\"L2P\"], detail::opflops[%i][1][\"%s\"][\"L2P\"], detail::opflops[%i][2][\"%s\"][\"L2P\"], detail::best_rotation[%i][\"%s\"][\"L2P\"] );\n",
-								p, p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str());
-			}
-		}
-	}
-	str += "\n\n\tstr += detail::print2str( \"-----L2L---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (!simd[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str +=
-						print2str(
-								"\tstr += detail::print2str( \"%2i %%4i/%%4i/%%4i (%%i) \\n\", detail::opflops[%i][0][\"%s\"][\"L2L\"], detail::opflops[%i][1][\"%s\"][\"L2L\"], detail::opflops[%i][2][\"%s\"][\"L2L\"], detail::best_rotation[%i][\"%s\"][\"L2L\"] );\n",
-								p, p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str());
-			}
-		}
-	}
-
-	str += "\n\n\tstr += detail::print2str( \"-----M2M---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (m2monly[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str +=
-						print2str(
-								"\tstr += detail::print2str( \"%2i %%4i/%%4i/%%4i (%%i) \\n\", detail::opflops[%i][0][\"%s\"][\"M2M\"], detail::opflops[%i][1][\"%s\"][\"M2M\"], detail::opflops[%i][2][\"%s\"][\"M2M\"], detail::best_rotation[%i][\"%s\"][\"M2M\"] );\n",
-								p, p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str(), p, rtype[ti].c_str());
-			}
-		}
-	}
-	str += "\n\n\tstr += detail::print2str( \"-----P2L---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (!m2monly[ti] && simd[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str += print2str("\tstr += detail::print2str( \"%2i %%4i\\n\", detail::opflops[%i][0][\"%s\"][\"P2L\"] );\n", p, p, rtype[ti].c_str());
-			}
-		}
-	}
-	str += "\n\n\tstr += detail::print2str( \"-----P2M---------\\n\" );\n";
-	for (int ti = 0; ti < ntypenames; ti++) {
-		if (!m2monly[ti] && simd[ti]) {
-			for (int p = pmin; p <= pmax; p++) {
-				str += print2str("\tstr += detail::print2str( \"%2i %%4i\\n\", detail::opflops[%i][0][\"%s\"][\"P2M\"] );\n", p, p, rtype[ti].c_str());
-			}
-		}
-	}
-	str += "\n\treturn str;\n";
-	str += ("}\n\n");
-
-	str += print2str("}\n");
-
-	tprint("%s\n", str.c_str());
 	return 0;
 }
