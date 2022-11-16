@@ -428,7 +428,7 @@ flops_t sincos_flops() {
 
 flops_t erfcexp_flops() {
 	flops_t fps;
-	fps.r += 4;
+	fps.r += 5;
 	fps.rdiv += 1;
 	fps.con += 2;
 	fps.rcmp++;
@@ -454,13 +454,13 @@ flops_t erfcexp_flops() {
 		}
 	} else {
 		if (is_vec(type)) {
-			fps.r += 16;
+			fps.r += 17;
 			fps.rcmp += 4;
 			fps.asgn += 5;
 			fps.rdiv += 2;
 			fps.fma += 76;
 		} else {
-			fps.r += 4;
+			fps.r += 5;
 			fps.rcmp += 2;
 			fps.asgn += 2;
 			fps.rdiv++;
@@ -3362,6 +3362,148 @@ void L2L_z(int P, int Q, const char* var = "z", const char* src = "") {
 	}
 }
 
+int P2P_ewald() {
+	func_header("P2P_ewald", 0, true, false, false, false, false, "", "f", FORCE, "m", LIT, "dx", VEC3);
+	reset_running_flops();
+	int R2, H2;
+	init_real("x");
+	init_real("y");
+	init_real("z");
+	init_real("r");
+	init_real("r2");
+	init_real("rinv");
+	init_real("r2inv");
+	init_real("r3inv");
+	init_real("rzero");
+	init_real("flag");
+	init_real("exp0");
+	init_real("erfc0");
+	init_real("d0");
+	init_real("d1");
+	init_real("hdotx");
+	init_real("phi");
+	init_real("tmp");
+	init_real("c");
+	init_real("s");
+	constexpr double alpha = 2.0;
+	tprint("force_type<%s> f0;\n", type.c_str());
+	tprint("f.potential = m * TCAST(%.20e);\n", M_PI / (alpha*alpha));
+	tprint("f.force[0] = TCAST(0);\n");
+	tprint("f.force[1] = TCAST(0);\n");
+	tprint("f.force[2] = TCAST(0);\n");
+	if (is_float(type)) {
+		ewald_limits<float>(R2, H2, alpha);
+	} else {
+		ewald_limits<double>(R2, H2, alpha);
+	}
+
+	const int R = sqrt(R2);
+	const int H = sqrt(H2);
+	tprint( "rzero = fma(dx[0], dx[0], fma(dx[1], dx[1], dx[2] * dx[2])) < TCAST(%0.20e);\n", tiny());
+	tprint( "flag = TCAST(1) - rzero;\n");
+	for( int xi = -R; xi <= R; xi++) {
+		for( int yi = -R; yi <= R; yi++) {
+			for( int zi = -R; zi <= R; zi++) {
+				const int ii = xi * xi + yi * yi + zi * zi;
+				if( ii > R2) {
+					continue;
+				}
+				if( xi == 0 ) {
+					tprint("x = dx[0];\n");
+				} else {
+					tprint("x = dx[0] - TCAST(%i);\n", xi);
+				}
+				if( yi == 0 ) {
+					tprint("y = dx[1];\n");
+				} else {
+					tprint("y = dx[1] - TCAST(%i);\n", yi);
+				}
+				if( zi == 0 ) {
+					tprint("z = dx[2];\n");
+				} else {
+					tprint("z = dx[2] - TCAST(%i);\n", zi);
+				}
+				tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
+				tprint("r = sqrt(r2);\n");
+				tprint("rinv = TCAST(1) / (r + rzero);\n");
+				tprint("r2inv = rinv * rinv;\n");
+				tprint("r3inv = r2inv * rinv;\n");
+				tprint("erfcexp(TCAST(%.20e) * r, &erfc0, &exp0);\n", alpha);
+				tprint("tmp = TCAST(%.20e) * r * exp0;\n", 2.0 * alpha  / sqrt(M_PI) );
+				tprint("d0 = -flag * m * erfc0 * rinv;\n");
+				tprint("d1 = flag * m * (tmp + erfc0) * r3inv;\n");
+				tprint("f.potential += d0;\n");
+				tprint("f.force[0] -= x * d1;\n");
+				tprint("f.force[1] -= y * d1;\n");
+				tprint("f.force[2] -= z * d1;\n");
+			}
+		}
+	}
+	for( int xi = -H; xi <= H; xi++) {
+		for( int yi = -H; yi <= H; yi++) {
+			for( int zi = -H; zi <= H; zi++) {
+				const int h2 = xi * xi + yi * yi + zi * zi;
+				if( h2 == 0 || h2 > H2) {
+					continue;
+				}
+				if( xi == 0 ) {
+					if( yi == 0 ) {
+						tprint("hdotx = dx[2] * TCAST(%i);\n", zi);
+					} else {
+						if( zi == 0 ) {
+							tprint("hdotx = dx[1] * TCAST(%i);\n", yi);
+						} else {
+							tprint("hdotx = dx[1] * TCAST(%i) + dx[2] * TCAST(%i);\n", yi, zi);
+						}
+					}
+				} else {
+					if( yi == 0 ) {
+						if( zi == 0 ) {
+							tprint("hdotx = dx[0] * TCAST(%i);\n", xi);
+						} else {
+							tprint("hdotx = dx[0] * TCAST(%i) + dx[2] * TCAST(%i);\n", xi, zi);
+						}
+					} else {
+						if( zi == 0 ) {
+							tprint("hdotx = dx[0] * TCAST(%i) + dx[1] * TCAST(%i);\n", xi, yi);
+						} else {
+							tprint("hdotx = dx[0] * TCAST(%i) + dx[1] * TCAST(%i) + dx[2] * TCAST(%i);\n", xi, yi, zi);
+						}
+					}
+				}
+				tprint( "phi = TCAST(%.20e) * hdotx;\n", 2.0 * M_PI);
+				tprint( "sincos(phi, &s, &c);\n");
+				const double c0 = -1.0 / h2 * exp((double) (-(M_PI * M_PI) / alpha / alpha) * h2) * (double) (1. / (M_PI));
+				const float c1 = 2.0 * M_PI * c0;
+				tprint( "f.potential = flag * fma( m, c * TCAST(%.20e), f.potential);\n", c0);
+				tprint( "tmp = flag * m * s * TCAST(%.20e);\n", c1);
+				if( xi ) {
+					tprint( "f.force[0] = fma( TCAST(%i), tmp, f.force[0]);\n", xi);
+				}
+				if( yi ) {
+					tprint( "f.force[1] = fma( TCAST(%i), tmp, f.force[1]);\n", yi);
+				}
+				if( zi ) {
+					tprint( "f.force[2] = fma( TCAST(%i), tmp, f.force[2]);\n", zi);
+				}
+			}
+		}
+	}
+	tprint( "r2 = fma(dx[0], dx[0], fma(dx[1], dx[1], dx[2] * dx[2]));\n");
+	tprint( "rinv = rsqrt(r2 + rzero);\n");
+	tprint( "r3inv = rinv * rinv * rinv;\n");
+	tprint("f.potential += flag * m * rinv;\n");
+	tprint("f.force[0] += flag * m * dx[0] * r3inv;\n");
+	tprint("f.force[1] += flag * m * dx[1] * r3inv;\n");
+	tprint("f.force[2] += flag * m * dx[2] * r3inv;\n");
+	tprint( "f.potential = fma(flag, f.potential, rzero * m * TCAST(2.8372975));\n");
+	tprint( "return %i;\n", get_running_flops().load() + 39);
+	deindent();
+	tprint("}\n");
+	tprint("}\n");
+	return get_running_flops().load();
+}
+
 int L2L_allrot(int P, int Q, int rot) {
 	auto index = lindex;
 	int flops = 0;
@@ -3989,8 +4131,8 @@ void math_float(std::string _type) {
 		tprint("sw1 = TCAST(1) - sw0;\n", x0);
 		constexpr int N0 = 25;
 		constexpr int N1 = x0 * x0 + 0.5;
-		tprint("q0 = TCAST(2) * x * x;\n");
-		tprint("q1 = TCAST(1) / (TCAST(2) * x * x);\n");
+		tprint("q0 = TCAST(2) * x * x * sw0;\n");
+		tprint("q1 = sw1 / (TCAST(2) * x * x);\n");
 		tprint("tmp0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N0 + 1));
 		tprint("tmp1 = TCAST(%.20e);\n", dfactorial(2 * N1 - 1) * nonepow(N1));
 		int n1 = N1 - 1;
@@ -4008,7 +4150,7 @@ void math_float(std::string _type) {
 		tprint("tmp0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
 		tprint("tmp1 = fma(tmp1, q1, TCAST(1));\n");
 		tprint("tmp0 = TCAST(1) - tmp0;\n");
-		tprint("tmp1 *= *exp0 * TCAST(%.20e) / x;\n", 1.0 / sqrt(M_PI));
+		tprint("tmp1 *= *exp0 * TCAST(%.20e) / (x + sw1);\n", 1.0 / sqrt(M_PI));
 		tprint("*erfc0 = fma(sw0, tmp0, sw1 * tmp1);\n");
 		deindent();
 		tprint("}\n");
@@ -4172,7 +4314,7 @@ void math_double(std::string _str) {
 	{
 		constexpr int N0 = 17;
 		tprint("x0 = x;\n");
-		tprint("q0 = TCAST(2) * x0 * x0;\n");
+		tprint("q0 = TCAST(2) * x0 * x0 * sw0;\n");
 		tprint("res0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N0 + 1));
 		constexpr int N1 = 35;
 		constexpr double a = (x1 - x0) * 0.5 + x0;
@@ -4189,11 +4331,11 @@ void math_double(std::string _str) {
 		for (int n = 1; n <= N1; n++) {
 			c0[n] = q[n - 1] + (a) * q[n];
 		}
-		tprint("x1 = x0 - TCAST(%.20e);\n", a);
+		tprint("x1 = (x0 - TCAST(%.20e)) * sw1;\n", a);
 		tprint("res1 = TCAST(%.20e);\n", c0[N1]);
 		constexpr int N2 = x1 * x1 + 0.5;
 		tprint("x2 = x0;\n");
-		tprint("q2 = TCAST(1) / (TCAST(2) * x2 * x2);\n");
+		tprint("q2 = sw2 / (TCAST(2) * x2 * x2);\n");
 		tprint("res2 = TCAST(%.20e);\n", dfactorial(2 * N2 - 1) * nonepow(N2));
 		int n0 = N0 - 1;
 		int n1 = N1 - 1;
@@ -4607,6 +4749,9 @@ int main() {
 		if (is_vec(type)) {
 			set_file(full_header.c_str());
 			tprint("#ifndef __CUDACC__\n");
+		}
+		if( !m2monly[ti]) {
+			P2P_ewald();
 		}
 		for (int P = pmin; P <= pmax; P++) {
 			if (!m2monly[typenum]) {
@@ -5177,7 +5322,7 @@ int main() {
 	include("complex_impl.hpp");
 	include("expansion.hpp");
 	include("periodic.hpp");
-
+	include( "p2p.hpp");
 	str = "template<class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>\n"
 			"inline void apply_padding(V& A, int n) {\n"
 			"\tfor (int i = 0; i < V::size(); i++) {\n"
@@ -5250,7 +5395,6 @@ int main() {
 	include("timing.cpp");
 	set_file("./generated_code/src/atomic.c");
 	include("atomic.c");
-
 	/*set_file("./generated_code/src/flops.cpp");
 	 tprint("#include \"sfmm.hpp\"\n");
 	 tprint("#include <unordered_map>\n");
