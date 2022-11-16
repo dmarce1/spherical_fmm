@@ -10,13 +10,13 @@
 #define DEBUG
 
 #define NDIM 3
-#define BUCKET_SIZE 32
+#define BUCKET_SIZE 8
 #define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE 10000
+#define TEST_SIZE 100000
 //#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
@@ -165,6 +165,15 @@ class tree {
 	static const T hsoft;
 	static const T mass;
 	static const int Ngrid;
+	static std::atomic<long long> p2p;
+	static std::atomic<long long> m2p;
+	static std::atomic<long long> p2l;
+	static std::atomic<long long> m2l;
+	static std::atomic<long long> p2p_ewald;
+	static std::atomic<long long> m2p_ewald;
+	static std::atomic<long long> p2l_ewald;
+	static std::atomic<long long> m2l_ewald;
+	static std::atomic<long long> node_count;
 
 	static std::vector<particle> parts;
 	static std::vector<tree> forest;
@@ -177,33 +186,65 @@ class tree {
 	void list_iterate(std::vector<check_type>& checklist, std::vector<tree*>& Plist, std::vector<tree*>& Clist, bool leaf, bool ewald) {
 		static thread_local std::vector<check_type> nextlist;
 		nextlist.resize(0);
-		auto c0 = V(theta_max);
+		auto c0 = T(1.0 / theta_max);
 		for (int i = 0; i < checklist.size(); i += sfmm::simd_size<V>()) {
 			sfmm::vec3<V> dx;
 			V rsum;
+			V rsum0;
+			V rsum1;
+			V rsum2;
 			const int end = std::min(sfmm::simd_size<V>(), checklist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& check = checklist[i + j];
 				sfmm::load(dx, sfmm::distance(center, check.ptr->center), j);
 				sfmm::load(rsum, radius + check.ptr->radius, j);
+				sfmm::load(rsum0, c0 * radius + c0 * check.ptr->radius, j);
+				sfmm::load(rsum1, radius + c0 * check.ptr->radius, j);
+				sfmm::load(rsum2, c0 * radius + check.ptr->radius, j);
 			}
 			sfmm::apply_padding(dx, end);
 			sfmm::apply_padding(rsum, end);
-			V far;
+			sfmm::apply_padding(rsum0, end);
+			sfmm::apply_padding(rsum1, end);
+			sfmm::apply_padding(rsum2, end);
+			V far0, far1, far2;
 			if (ewald) {
-				far = (rsum < c0 * sfmm::max(abs(dx), V(0.5) - rsum));
+				const auto max = sfmm::max(abs(dx), V(0.5) - rsum);
+				far0 = (rsum0 < max);
+				far1 = (rsum1 < max);
+				far2 = (rsum2 < max);
 			} else {
-				far = sfmm::sqr(rsum) < sfmm::sqr(c0) * sfmm::sqr(dx);
+				far0 = sfmm::sqr(rsum0) < sfmm::sqr(dx);
+				far1 = sfmm::sqr(rsum1) < sfmm::sqr(dx);
+				far2 = sfmm::sqr(rsum2) < sfmm::sqr(dx);
 			}
 			for (int j = 0; j < end; j++) {
 				auto& check = checklist[i + j];
-				if (sfmm::access(far, j) || (leaf && check.opened)) {
+				bool used = false;
+				if (leaf) {
 					if (check.opened) {
 						Plist.push_back(check.ptr);
+						used = true;
 					} else {
-						Clist.push_back(check.ptr);
+						if (sfmm::access(far1, j)) {
+							Clist.push_back(check.ptr);
+							used = true;
+						}
 					}
 				} else {
+					if (check.opened) {
+						if (sfmm::access(far2, j)) {
+							Plist.push_back(check.ptr);
+							used = true;
+						}
+					} else {
+						if (sfmm::access(far0, j)) {
+							Clist.push_back(check.ptr);
+							used = true;
+						}
+					}
+				}
+				if (!used) {
 					if (check.ptr->children.size()) {
 						for (int ci = 0; ci < NCHILD; ci++) {
 							check_type chk;
@@ -322,6 +363,7 @@ public:
 	}
 
 	size_t form_tree(tree* par = nullptr, int depth = 0) {
+		node_count++;
 		size_t flops = 0;
 		const int xdim = depth % SFMM_NDIM;
 		parent = par;
@@ -338,6 +380,7 @@ public:
 			}
 		}
 #endif
+		center = (begin + end) * 0.5;
 		if (nparts > BUCKET_SIZE) {
 			sfmm::vec3<MV> dx;
 			multipole_type<MV> M;
@@ -356,9 +399,9 @@ public:
 			}
 			const auto& cleft = children[LEFT];
 			const auto& cright = children[RIGHT];
-			center = left.center * cleft.multipole(0, 0).real() + right.center * cright.multipole(0, 0).real();
+/*			center = left.center * cleft.multipole(0, 0).real() + right.center * cright.multipole(0, 0).real();
 			const T total = cleft.multipole(0, 0).real() + cright.multipole(0, 0).real();
-			center /= total;
+			center /= total;*/
 			radius = 0.0;
 			for (int i = 0; i < NCHILD; i += sfmm::simd_size<MV>()) {
 				const int end = std::min((int) sfmm::simd_size<MV>(), NCHILD - i);
@@ -374,11 +417,11 @@ public:
 			}
 		} else {
 			if (nparts) {
-				center = T(0);
+			/*	center = T(0);
 				for (int i = part_range.first; i < part_range.second; i++) {
 					center += parts[i].x;
 				}
-				center /= nparts;
+				center /= nparts;*/
 				radius = 0.0;
 				for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 					sfmm::vec3<V> dx;
@@ -451,6 +494,7 @@ public:
 				load(dx, sfmm::distance(center, src->center), j);
 				load(M, src->multipole, j);
 			}
+			m2l_ewald += end;
 			apply_padding(dx, end);
 			apply_padding(M, end);
 			flops += sfmm::simd_size<V>() * sfmm::M2L_ewald(L, M, dx, FLAGS);
@@ -464,6 +508,7 @@ public:
 				for (int k = 0; k < end; k++) {
 					load(dx, sfmm::distance(center, parts[j + k].x), k);
 				}
+				p2l_ewald += end;
 				apply_padding(dx, end);
 				flops += sfmm::simd_size<V>() * sfmm::P2L_ewald(L, sfmm::create_mask<V>(end) * mass, dx);
 				expansion += reduce_sum(L);
@@ -480,6 +525,7 @@ public:
 				load(dx, sfmm::distance(center, src->center), j);
 				load(M, src->multipole, j);
 			}
+			m2l += end;
 			apply_padding(dx, end);
 			apply_padding(M, end);
 			flops += sfmm::simd_size<V>() * sfmm::M2L(L, M, dx, FLAGS);
@@ -493,6 +539,7 @@ public:
 				for (int k = 0; k < end; k++) {
 					load(dx, sfmm::distance(center, parts[j + k].x), k);
 				}
+				p2l += end;
 				apply_padding(dx, end);
 				flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(end) * mass, dx);
 				expansion += reduce_sum(L);
@@ -532,6 +579,7 @@ public:
 						load(dx, sfmm::distance(part.x, src->center), j);
 						load(M, src->multipole, j);
 					}
+					m2p_ewald += end;
 					apply_padding(dx, end);
 					apply_padding(M, end);
 					flops += sfmm::simd_size<V>() * sfmm::M2P_ewald(F, M, dx, FLAGS);
@@ -548,9 +596,10 @@ public:
 						for (int k = 0; k < end; k++) {
 							load(dx, sfmm::distance(part.x, parts[j + k].x), k);
 						}
+						p2p_ewald += end;
 						apply_padding(dx, end);
 						F.init();
-						flops += sfmm::simd_size<V>() * P2P_ewald(F, sfmm::create_mask<V>(end) * mass, dx);
+//						flops += sfmm::simd_size<V>() * P2P_ewald(F, sfmm::create_mask<V>(end) * mass, dx);
 						part.f += sfmm::reduce_sum(F);
 					}
 				}
@@ -570,6 +619,7 @@ public:
 						load(dx, sfmm::distance(part.x, src->center), j);
 						load(M, src->multipole, j);
 					}
+					m2p += end;
 					apply_padding(dx, end);
 					apply_padding(M, end);
 					flops += sfmm::simd_size<V>() * sfmm::M2P(F, M, dx, FLAGS);
@@ -586,6 +636,7 @@ public:
 						for (int k = 0; k < end; k++) {
 							load(dx, sfmm::distance(part.x, parts[j + k].x), k);
 						}
+						p2p += end;
 						apply_padding(dx, end);
 						F.init();
 						flops += sfmm::simd_size<V>() * P2P(F, sfmm::create_mask<V>(end) * mass, dx);
@@ -671,6 +722,22 @@ public:
 		}
 	}
 
+	static void show_counters() {
+		printf("Node count = %lli\n", (long long) node_count);
+		printf("P2P = %lli (%e)\n", (long long) p2p, (long long) p2p / (double) node_count);
+		printf("P2L = %lli (%e)\n", (long long) p2l, (long long) p2l / (double) node_count);
+		printf("M2P = %lli (%e)\n", (long long) m2p, (long long) m2p / (double) node_count);
+		printf("M2L = %lli (%e)\n", (long long) m2l, (long long) m2l / (double) node_count);
+		printf("P2P_ewald = %lli (%e)\n", (long long) p2p_ewald, (long long) p2p_ewald / (double) node_count);
+		printf("P2L_ewald = %lli (%e)\n", (long long) p2l_ewald, (long long) p2l_ewald / (double) node_count);
+		printf("M2P_ewald = %lli (%e)\n", (long long) m2p_ewald, (long long) m2p_ewald / (double) node_count);
+		printf("M2L_ewald = %lli (%e)\n", (long long) m2l_ewald, (long long) m2l_ewald / (double) node_count);
+	}
+
+	static void reset_counters() {
+		node_count = p2p = m2p = p2l = m2l = p2p_ewald = m2p_ewald = p2l_ewald = p2p_ewald = 0;
+	}
+
 };
 
 template<class T, class V, class M, int ORDER, int FLAGS>
@@ -686,10 +753,37 @@ template<class T, class V, class M, int ORDER, int FLAGS>
 const T tree<T, V, M, ORDER, FLAGS>::hsoft = 0.01;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
-const int tree<T, V, M, ORDER, FLAGS>::Ngrid = 12;
+const int tree<T, V, M, ORDER, FLAGS>::Ngrid = 8;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
 std::vector<tree<T, V, M, ORDER, FLAGS>> tree<T, V, M, ORDER, FLAGS>::forest;
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2p(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2p(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2l(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2l(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2p_ewald(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2p_ewald(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2l_ewald(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2l_ewald(0);
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::node_count(0);
 
 template<class T, class V, class M, int ORDER, int FLAGS>
 struct run_tests {
@@ -709,12 +803,11 @@ struct run_tests {
 		tm.stop();
 		ftm.stop();
 		force_time = tm.read();
-		tm.reset();
-		tm.start();
 		const auto error = tree_type::compare_analytic(50.0 / TEST_SIZE);
-		tm.stop();
 		printf("%i %e %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error.first, error.second,
 				flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
+		tree_type::show_counters();
+		tree_type::reset_counters();
 		run_tests<T, V, M, ORDER + 1, FLAGS> run;
 		run();
 	}
@@ -727,22 +820,22 @@ struct run_tests<T, V, M, PMAX + 1, FLAGS> {
 };
 
 void ewald() {
-	constexpr int N = 8;
-	sfmm::multipole<double, N> M;
-	sfmm::expansion<double, N> L;
-	M.init();
-	M[0] = 1.0;
-	sfmm::vec3<double> dx;
-	for (double x = 0.0; x < 0.5; x += 0.001) {
-		dx[2] = dx[1] = double(0.0);
-		dx[0] = double(x);
-		sfmm::M2L_ewald(L, M, dx);
-		printf("%e ", x);
-		for (int i = 0; i < L.size(); i++) {
-			printf("%e ", L[i]);
-		}
-		printf("\n");
-	}
+	/*	constexpr int N = 8;
+	 sfmm::multipole<double, N> M;
+	 sfmm::expansion<double, N> L;
+	 M.init();
+	 M[0] = 1.0;
+	 sfmm::vec3<double> dx;
+	 for (double x = 0.0; x < 0.5; x += 0.001) {
+	 dx[2] = dx[1] = double(0.0);
+	 dx[0] = double(x);
+	 sfmm::M2L_ewald(L, M, dx);
+	 printf("%e ", x);
+	 for (int i = 0; i < L.size(); i++) {
+	 printf("%e ", L[i]);
+	 }
+	 printf("\n");
+	 }*/
 }
 
 void random_unit(double& x, double& y, double& z) {
@@ -751,62 +844,6 @@ void random_unit(double& x, double& y, double& z) {
 	x = cos(phi) * sin(theta);
 	y = sin(phi) * sin(theta);
 	z = cos(theta);
-}
-
-namespace sfmm {
-constexpr int P = 5;
-void M2L_ewald2(sfmm::expansion<double, P>, sfmm::multipole<double, P>, sfmm::vec3<double> x) {
-	constexpr double alpha = 2.0;
-	expansion<double, P> G;
-	expansion<double, P> Gr;
-	const auto index = [](int l, int m) {
-		return l*l + l + m;
-	};
-	G.init();
-	for (int xi = -3; xi <= 3; xi++) {
-		for (int yi = -3; yi <= 3; yi++) {
-			for (int zi = -3; zi <= 3; zi++) {
-				vec3<double> x0 = { (double) xi, (double) yi, (double) zi };
-				vec3<double> dx = x - x0;
-				greens(Gr, dx);
-				const double r = abs(dx);
-				const double r2 = r * r;
-				double igamma[P + 1];
-				double cgamma[P + 1];
-				igamma[0] = sqrt(M_PI) * erfc(alpha * r);
-				cgamma[0] = sqrt(M_PI);
-				for (int l = 0; l < P; l++) {
-					const double s = l + 0.5;
-					igamma[l + 1] = s * igamma[l] + pow(r2, s) * exp(-r2);
-					cgamma[l + 1] = s * cgamma[l];
-				}
-				for (int l = 0; l <= P; l++) {
-					for (int m = -l; m <= l; m++) {
-						G[index(l, m)] += igamma[l] / cgamma[l] * Gr[index(l, m)];
-					}
-				}
-			}
-		}
-
-	}
-	for (int xi = -2; xi <= 2; xi++) {
-		for (int yi = -2; yi <= 2; yi++) {
-			for (int zi = -2; zi <= 2; zi++) {
-				vec3<double> h = { (double) xi, (double) yi, (double) zi };
-				if (abs(h) > 0.0) {
-					const double hdotx = h[0] * x[0] + h[1] * x[1] + h[2] * x[2];
-					double cgamma[P + 1];
-					cgamma[0] = sqrt(M_PI);
-					for (int l = 0; l < P; l++) {
-						const double s = l + 0.5;
-						cgamma[l + 1] = s * cgamma[l];
-					}
-
-				}
-			}
-		}
-	}
-}
 }
 
 template<int P>
@@ -890,8 +927,8 @@ int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-	ewald();
-	return 0;
+//	ewald();
+//	return 0;
 	//return 0;
 	//test2<5>();
 	//test2<6>();
@@ -900,7 +937,7 @@ int main(int argc, char **argv) {
 //	 return 0;
 	//ewald();
 	//return 0;
-	run_tests<double, double, double, PMIN, sfmmWithoutOptimization | sfmmProfilingOn> run1;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithBestOptimization> run1;
 	//run_tests<double, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
 //	run_tests<double, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
 	run1();

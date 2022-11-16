@@ -110,6 +110,7 @@ using complex = std::complex<double>;
 
 static int ntab = 0;
 static int tprint_on = true;
+static std::string* tprint_str;
 
 #define TAB0() if( ntab != 0 ) { printf( "Tab mismatch (%i) %s %i\n", ntab,  __FILE__, __LINE__); ntab = 0; }
 
@@ -336,7 +337,7 @@ int mul_sz(int P) {
 	}
 }
 
-static flops_t greens_ewald_real_flops;
+static flops_t greens_flops;
 
 double tiny() {
 	if (is_float(type)) {
@@ -552,10 +553,17 @@ void tprint(const char* str, Args&&...args) {
 	auto line = print2str(str, std::forward<Args>(args)...);
 	running_flops += parse_flops(line.c_str());
 	if (tprint_on) {
-		for (int i = 0; i < ntab; i++) {
-			fprintf(fp, "\t");
+		if( tprint_str) {
+			for( int i = 0; i < ntab; i++) {
+				*tprint_str += "\t";
+			}
+			*tprint_str += line;
+		} else {
+			for (int i = 0; i < ntab; i++) {
+				fprintf(fp, "\t");
+			}
+			fprintf(fp, "%s", line.c_str());
 		}
-		fprintf(fp, "%s", line.c_str());
 	}
 }
 
@@ -794,20 +802,8 @@ flops_t parse_flops(const char* line) {
 		} else if (strncmp(line + j, "sincos", 6) == 0) {
 			fps0 += sincos_flops();
 			j += 6;
-		} else if (strncmp(line + j, "safe_mul", 8) == 0) {
-			fps0.i += 5;
-			fps0.icmp++;
-			fps0.con++;
-			fps0.r += 2;
-			j += 8;
-		} else if (strncmp(line + j, "safe_add", 8) == 0) {
-			fps0.i += 4;
-			fps0.icmp += 2;
-			fps0.con += 2;
-			fps0.fma++;
-			j += 8;
-		} else if (strncmp(line + j, "greens_ewald_real", 17) == 0) {
-			fps0 += greens_ewald_real_flops;
+		} else if (strncmp(line + j, "greens(", 7) == 0) {
+			fps0 += greens_flops;
 			j += 17;
 		} else {
 			j++;
@@ -1274,7 +1270,11 @@ bool close21(double a) {
 	return std::abs(1.0 - a) < 1.0e-20;
 }
 
-void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string opname, bool init) {
+void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string opname, bool init, bool multipole, std::pair<int,int> range = std::make_pair(-1,-1)) {
+	if( range.first == -1 ) {
+		range.first = 1;
+		range.second = P;
+	}
 	if (init) {
 		tprint("r0[0] = cosphi;\n");
 		tprint("ip[0] = sinphi;\n");
@@ -1290,7 +1290,7 @@ void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string 
 	int mmin = 1;
 	bool initR = true;
 	std::function<int(int, int)> index;
-	if (dst[0] == 'M') {
+	if (multipole) {
 		index = mindex;
 	} else {
 		index = lindex;
@@ -1299,12 +1299,12 @@ void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string 
 	using cmd_t = std::pair<int,std::string>;
 	std::vector<cmd_t> cmds;
 	cmds.push_back(std::make_pair(0, print2str("%s[0] = %s[0];\n", dst, src)));
-	for (int m = 1; m <= P; m++) {
-		if (!(nodip && m == 1 && dst[0] == 'M')) {
+	for (int m = range.first; m <= range.second; m++) {
+		if (!(nodip && m == 1 && multipole)) {
 			cmds.push_back(std::make_pair(index(m, 0), print2str("%s[%i] = %s[%i];\n", dst, index(m, 0), src, index(m, 0))));
 		}
 		for (int l = m; l <= P; l++) {
-			if (dst[0] == 'M' && nodip && l == 1) {
+			if (multipole && nodip && l == 1) {
 				continue;
 			}
 			if (stage == POST1) {
@@ -1543,119 +1543,6 @@ void greens_body(int P, const char* M = nullptr) {
 	}
 }
 
-std::string greens_safe(int P) {
-	TAB0();
-	reset_running_flops();
-	auto fname = func_header("greens_safe", P, true, true, false, true, true, "", "O", EXP, "dx", VEC3);
-	const auto mul = [](std::string a, std::string b, std::string c, int l) {
-		tprint( "sw[%i] *= safe_mul(%s, %s, %s);\n", l, a.c_str(), b.c_str(), c.c_str());
-	};
-	const auto mul2 = [](std::string a, std::string b, std::string c, int l) {
-		tprint( "sw[%i] *= safe_mul(%s, %s, %s);\n", l, a.c_str(), b.c_str(), c.c_str());
-	};
-	const auto add = [](std::string a, std::string b, std::string c, int l) {
-		tprint( "sw[%i] *= safe_add(%s, %s, %s);\n", l, a.c_str(), b.c_str(), c.c_str());
-	};
-	tprint("T sw[]={");
-	int otab = ntab;
-	ntab = 0;
-	for (int i = 0; i <= P; i++) {
-		tprint("TCAST(1)%s", i != exp_sz(P) - 1 ? "," : "");
-	}
-	tprint("};\n");
-	ntab = otab;
-	init_real("flag");
-	init_real("tmp0");
-	init_real("tmp1");
-	init_real("tmp2");
-	init_real("tmp3");
-	init_real("rinv");
-	init_real("r2");
-	init_real("r2inv");
-	init_real("ax");
-	init_real("ay");
-	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
-	tprint("r2inv = TCAST(1) / r2;\n");
-	tprint("O[0] = -rsqrt(r2);\n");
-	tprint("x *= r2inv;\n");
-	tprint("y *= r2inv;\n");
-	tprint("z *= r2inv;\n");
-	tprint("x = -x;\n");
-	tprint("y = -y;\n");
-	tprint("z = -z;\n");
-	auto index = lindex;
-	const auto O = [index](int n, int m) {
-		return std::string("O[") + std::to_string(index(n, m)) + "]";
-	};
-	const auto tcast = []( int n ) {
-		return std::string("TCAST(") + std::to_string(n) + ")";
-	};
-	for (int m = 0; m <= P; m++) {
-		if (m == 1) {
-			mul(O(m, m), "x", "O[0]", m);
-			mul(O(m, -m), "y", "O[0]", m);
-		} else if (m > 0) {
-			mul2("ax", O(m - 1, m - 1), tcast(2 * m - 1), m);
-			mul2("ay", O(m - 1, -(m - 1)), tcast(2 * m - 1), m);
-			mul("tmp2", "x", "ax", m);
-			mul("tmp3", "y", "ay", m);
-			tprint("tmp3 = -tmp3;\n");
-			add(O(m, m), "tmp2", "tmp3", m);
-			mul("tmp2", "x", "ay", m);
-			mul("tmp3", "y", "ax", m);
-			add(O(m, -m), "tmp2", "tmp3", m);
-		}
-		if (m + 1 <= P) {
-			//	tprint("O[%i] = TCAST(%i) * z * O[%i];\n", index(m + 1, m), 2 * m + 1, index(m, m));
-			mul("tmp2", "z", O(m, m), m + 1);
-			mul2(O(m + 1, m), "tmp2", tcast(2 * m + 1), m + 1);
-			if (m != 0) {
-				mul("tmp2", "z", O(m, -m), m + 1);
-				mul2(O(m + 1, -m), "tmp2", tcast(2 * m + 1), m + 1);
-			}
-		}
-		for (int n = m + 2; n <= P; n++) {
-			if (m != 0) {
-				mul2("ax", "z", tcast(2 * n - 1), n);
-				mul2("ay", "r2inv", tcast(-((n - 1) * (n - 1) - m * m)), n);
-				mul("tmp2", O(n - 1, m), "ax", n);
-				mul("tmp3", O(n - 2, m), "ay", n);
-				add(O(n, m), "tmp2", "tmp3", n);
-				mul("tmp2", O(n - 1, -m), "ax", n);
-				mul("tmp3", O(n - 2, -m), "ay", n);
-				add(O(n, -m), "tmp2", "tmp3", n);
-			} else {
-				mul("tmp2", "z", O(n - 1, 0), n);
-				mul2("tmp2", "tmp2", tcast(2 * n - 1), n);
-				mul("tmp3", "r2inv", O(n - 2, 0), n);
-				if ((n - 1) * (n - 1) != 1) {
-					mul2("tmp3", "tmp3", tcast((n - 1) * (n - 1)), n);
-				}
-				tprint("tmp3 = -tmp3;\n");
-				add(O(n, 0), "tmp2", "tmp3", n);
-			}
-		}
-	}
-	tprint("O[0] *= sw[0];\n");
-	for (int n = 1; n <= P; n++) {
-		tprint("sw[%i] *= sw[%i];\n", n, n - 1);
-		tprint("flag = sw[%i];\n", n);
-		for (int m = -n; m <= n; m++) {
-			tprint("O[%i] *= flag;\n", index(n, m), n);
-		}
-	}
-	deindent();
-	tprint("}\n");
-	tprint("return %i;\n", get_running_flops().load());
-	flops_map[P][type + "greens_safe"] = get_running_flops();
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("}\n");
-	tprint("\n");
-	TAB0();
-	return fname;
-}
 
 void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex) {
 	std::vector<entry_t> pos;
@@ -1856,7 +1743,7 @@ std::string P2L(int P) {
 	return fname;
 }
 
-std::string greens(int P) {
+flops_t greens(int P) {
 	auto fname = func_header("greens", P, true, true, false, true, true, "", "O", EXP, "dx", VEC3);
 	init_real("r2");
 	init_real("r2inv");
@@ -1876,7 +1763,7 @@ std::string greens(int P) {
 	tprint("}\n");
 	tprint("\n");
 	TAB0();
-	return fname;
+	return get_running_flops();
 }
 
 void MG2L(int P) {
@@ -2096,6 +1983,36 @@ std::string greens_ewald(int P, double alpha) {
 			}
 		}
 	}
+	auto flops = get_running_flops();
+	reset_running_flops();
+	tprint("const auto ewald_real = [&G,&Gr,&Gr_st](T x, T y, T z) {\n");
+	indent();
+	tprint("T gam1, exp0, gam;\n");
+	tprint("const T r2 = fma(x, x, fma(y, y, z * z));\n");
+	tprint("const T r = sqrt(r2);\n");
+	tprint("greens(Gr_st, vec3<T>( x, y, z));\n");
+	tprint("const T xxx = T(%.20e) * r;\n", alpha);
+	tprint("erfcexp(xxx, &gam1, &exp0);\n");
+	tprint("gam1 *= T(%.20e);\n", sqrt(M_PI));
+	tprint("const T xfac = T(%.20e) * r2;\n", alpha * alpha);
+	tprint("T xpow = T(%.20e) * r;\n", alpha);
+	double gam0inv = 1.0 / sqrt(M_PI);
+	for (int l = 0; l <= P; l++) {
+
+		tprint("gam = gam1 * T(%.20e);\n", gam0inv);
+		for (int m = -l; m <= l; m++) {
+			tprint("G[%i] = fma(gam, Gr[%i], G[%i]);\n", index(l, m), index(l, m), index(l, m));
+		}
+		gam0inv /= (double(l) + double(0.5));
+		if (l != P) {
+			tprint("gam1 = fma(T(%f), gam1, xpow * exp0);\n", l + 0.5);
+			tprint("xpow *= xfac;\n");
+		}
+	}
+	deindent();
+	tprint("};\n");
+	flops_t real_flops = get_running_flops();
+	reset_running_flops();
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("rzero = TCONVERT(r2 < TCAST(%0.20e));\n", tiny());
 	tprint("rsmall = TCONVERT(r2 < TCAST(.05*.05));\n");
@@ -2106,7 +2023,7 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
 	tprint("xfac = TCAST(%.20e) * r2;\n", alpha * alpha);
 	tprint("xpow = TCAST(%.20e) * r;\n", alpha);
-	double gam0inv = 1.0 / sqrt(M_PI);
+	gam0inv = 1.0 / sqrt(M_PI);
 	tprint("sw = TCAST(1) - rzero;\n");
 	for (int l = 0; l <= P; l++) {
 		tprint("gam = gam1 * TCAST(%.20e);\n", gam0inv);
@@ -2145,8 +2062,8 @@ std::string greens_ewald(int P, double alpha) {
 				if (iz != 0) {
 					zstr += std::string(" ") + (iz < 0 ? "+" : "-") + " TCAST(" + std::to_string(abs(iz)) + ")";
 				}
-				tprint("detail::greens_ewald_real<%s, %i, %i>(G_st, (%s), (%s), (%s));\n", type.c_str(), P, lround(alpha * 100), xstr.c_str(), ystr.c_str(),
-						zstr.c_str());
+				tprint("ewald_real((%s), (%s), (%s));\n", xstr.c_str(), ystr.c_str(), zstr.c_str());
+				flops += real_flops;
 			}
 		}
 	}
@@ -2458,16 +2375,17 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("G0[%i] = fma(y, G0_st.trace2(), G0[%i]);\n", index(1, -1), index(1, -1));
 	tprint("G0[%i] = fma(z, G0_st.trace2(), G0[%i]);\n", index(1, 0), index(1, 0));
 	tprint("G0[%i] = fma(-TCAST(0.5)*r2, G0_st.trace2(), G0[%i]);\n", index(0, 0), index(0, 0));
-
+	tprint("sw = TCAST(1) - rsmall;\n");
 	for (int n = 0; n <= P; n++) {
 		for (int m = -n; m <= n; m++) {
-			tprint("G[%i] = (TCAST(1) - rsmall) * G[%i] + rsmall * G0[%i];\n", index(n, m), index(n, m), index(n, m));
+			tprint("G[%i] = fma(sw, G[%i], rsmall * G0[%i]);\n", index(n, m), index(n, m), index(n, m));
 		}
 	}
 	deindent();
 	tprint("}\n");
-	tprint("return %i;\n", get_running_flops().load());
-	flops_map[P][type + "greens_ewald"] = get_running_flops();
+	flops += get_running_flops();
+	tprint("return %i;\n", flops.load());
+	flops_map[P][type + "greens_ewald"] = flops;
 	deindent();
 	tprint("}\n");
 	tprint("\n");
@@ -2524,6 +2442,12 @@ int M2L_allrot(int P, int Q, int rot) {
 	} else {
 		func_header(name.c_str(), P, true, true, true, true, true, "", "f", FORCE, rot == 0 ? "M" : "Min", CMUL, "dx", VEC3);
 	}
+	struct fentry_t {
+		std::string name;
+		std::string body;
+		flops_t flops;
+	};
+	fentry_t functors[4][P+1];
 	open_timer(name);
 	init_real("tmp1");
 	bool minit = false;
@@ -2642,9 +2566,9 @@ int M2L_allrot(int P, int Q, int rot) {
 		}
 	}
 	if (rot == 1) {
-		z_rot2(P - 1, "M", "Min", FULL, P != Q ? "M2P" : "M2L", false);
+		z_rot2(P - 1, "M", "Min", FULL, P != Q ? "M2P" : "M2L", false, true);
 	} else if (rot == 2) {
-		z_rot2(P - 1, "M0", "Min", PRE1, P != Q ? "M2P" : "M2L", false);
+		z_rot2(P - 1, "M0", "Min", PRE1, P != Q ? "M2P" : "M2L", false, true);
 		xz_swap2(P - 1, "M", "M0", false, PRE1, P != Q ? "M2P" : "M2L");
 		tprint("cosphi = fma(z, rinv, rzero);\n");
 		tprint("sinphi = -R * rinv;\n");
@@ -2661,7 +2585,7 @@ int M2L_allrot(int P, int Q, int rot) {
 			tprint("ip[%i] = fma(r0[%i], sinphi, ip[%i]);\n", m, m - 1, m);
 			tprint("in[%i] = -ip[%i];\n", m, m);
 		}
-		z_rot2(P - 1, "M0", "M", PRE2, P != Q ? "M2P" : "M2L", false);
+		z_rot2(P - 1, "M0", "M", PRE2, P != Q ? "M2P" : "M2L", false, true);
 		tprint("in=ipB;\n");
 		tprint("ip=inB;\n");
 		xz_swap2(P - 1, "M", "M0", false, PRE2, P != Q ? "M2P" : "M2L");
@@ -2751,18 +2675,18 @@ int M2L_allrot(int P, int Q, int rot) {
 		tprint("ip=inA;\n");
 		tprint("in=ipA;\n");
 		if (nodip) {
-			z_rot2(Q, "L0", "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL, P != Q ? "M2P" : "M2L", false);
+			z_rot2(Q, "L0", "L", ((Q == P) || (Q == 1 && P == 2)) ? XZ2 : FULL, P != Q ? "M2P" : "M2L", false, false);
 		} else {
-			z_rot2(Q, "L0", "L", Q == P ? XZ1 : FULL, P != Q ? "M2P" : "M2L", false);
+			z_rot2(Q, "L0", "L", Q == P ? XZ1 : FULL, P != Q ? "M2P" : "M2L", false, false);
 		}
 	} else if (rot == 2) {
 		xz_swap2(Q, "L0", "L", true, P == Q ? POST1 : FULL, P != Q ? "M2P" : "M2L");
-		z_rot2(Q, "L", "L0", P == Q ? POST1 : FULL, P != Q ? "M2P" : "M2L", false);
+		z_rot2(Q, "L", "L0", P == Q ? POST1 : FULL, P != Q ? "M2P" : "M2L", false, false);
 		xz_swap2(Q, "L0", "L", true, P == Q ? POST2 : FULL, P != Q ? "M2P" : "M2L");
 		tprint("r0=r0A;\n");
 		tprint("in=ipA;\n");
 		tprint("ip=inA;\n");
-		z_rot2(Q, "L", "L0", P == Q ? POST2 : FULL, P != Q ? "M2P" : "M2L", false);
+		z_rot2(Q, "L", "L0", P == Q ? POST2 : FULL, P != Q ? "M2P" : "M2L", false, false);
 	}
 	if (Q == 1) {
 		if (rot == 1) {
@@ -2891,11 +2815,11 @@ std::string M2L_ewald(int P) {
 	reset_running_flops();
 	tprint("expansion<%s, %i> G_st;\n", type.c_str(), P);
 	reset_running_flops();
-	tprint("int flops = greens_ewald(G_st, dx);\n");
+	tprint("int flops=greens_ewald(G_st, dx);\n");
 	tprint("T* M=M_st.data();\n");
 	tprint("T* G=G_st.data();\n");
 	tprint("T* L=L_st.data();\n");
-	tprint("flops += MG2L(L_st, M_st, G_st);\n");
+	tprint("flops+=MG2L(L_st, M_st, G_st);\n");
 	tprint("return flops+%i;\n", get_running_flops().load());
 	deindent();
 	tprint("} else {\n");
@@ -3242,7 +3166,7 @@ int M2M_allrot(int P, int rot) {
 		tprint("cosphi = fma(x, Rinv, Rzero);\n");
 		tprint("sinphi = -y * Rinv;\n");
 		M2M_z(P, +1);
-		z_rot2(P - 1, "M0", "M", FULL, "M2M", true);
+		z_rot2(P - 1, "M0", "M", FULL, "M2M", true, true);
 		xz_swap2(P - 1, "M", "M0", false, FULL, "M2M");
 		if (nodip) {
 			tprint("Md *= TCAST(0.5);\n");
@@ -3252,7 +3176,7 @@ int M2M_allrot(int P, int rot) {
 		xz_swap2(P - 1, "M0", "M", false, FULL, "M2M");
 		tprint("in=ipA;\n");
 		tprint("ip=inA;\n");
-		z_rot2(P - 1, "M", "M0", FULL, "M2M", false);
+		z_rot2(P - 1, "M", "M0", FULL, "M2M", false, true);
 	} else {
 		std::vector<entry_t> pos;
 		std::vector<entry_t> neg;
@@ -3551,24 +3475,24 @@ int L2L_allrot(int P, int Q, int rot) {
 		tprint("sinphi = -y * Rinv;\n");
 		if (Q != 1) {
 			L2L_z(P, P);
-			z_rot2(P, "L2", "L", FULL, "L2L", true);
+			z_rot2(P, "L2", "L", FULL, "L2L", true, false);
 			xz_swap2(P, "L", "L2", true, FULL, "L2L");
 			tprint("z = R;\n");
 			L2L_z(P, P);
 			xz_swap2(P, "L2", "L", true, FULL, "L2L");
 			tprint("in=ipA;\n");
 			tprint("ip=inA;\n");
-			z_rot2(P, "L", "L2", FULL, "L2L", false);
+			z_rot2(P, "L", "L2", FULL, "L2L", false, false);
 		} else {
 			L2L_z(P, P, "z", "0");
-			z_rot2(P, "L2", "L", PRE2, "L2P", true);
+			z_rot2(P, "L2", "L", PRE2, "L2P", true, false);
 			xz_swap2(P, "L", "L2", true, PRE2, "L2P");
 			init_L2();
 			L2L_z(P, Q, "R");
 			xz_swap2(Q, "L", "L2", true, FULL, "L2P");
 			tprint("in=ipA;\n");
 			tprint("ip=inA;\n");
-			z_rot2(Q, "L2", "L", FULL, "L2P", false);
+			z_rot2(Q, "L2", "L", FULL, "L2P", false, false);
 			flops += get_running_flops().load();
 			reset_running_flops();
 		}
@@ -3912,51 +3836,6 @@ void L2L(int P, int Q) {
 
 }
 
-void safe_math_float() {
-
-	tprint("T safe_mul(T& a, T b, T c) {\n");
-	indent();
-	tprint("const V be = ((V&)b & VCAST(0x7F800000)) >> VCAST(23);\n");
-	tprint("const V ce = ((V&)c & VCAST(0x7F800000)) >> VCAST(23);\n");
-	tprint("const T flag = T(be + ce < V(381));\n");
-	tprint("a = (flag * b) * c;\n");
-	tprint("return flag;\n");
-	deindent();
-	tprint("}\n\n");
-	tprint("T safe_add(T& a, T b, T c) {\n");
-	indent();
-	tprint("const V be = ((V&)b & VCAST(0x7F800000)) >> VCAST(23);\n");
-	tprint("const V ce = ((V&)c & VCAST(0x7F800000)) >> VCAST(23);\n");
-	tprint("const T flag = T(be < V(254)) * T(ce < V(254));\n");
-	tprint("a = fma(flag, b, flag * c);\n");
-	tprint("return flag;\n");
-	deindent();
-	tprint("}\n\n");
-	tprint("\n");
-}
-
-void safe_math_double() {
-
-	tprint("T safe_mul(T& a, T b, T c) {\n");
-	indent();
-	tprint("const V be = ((V&)b & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const V ce = ((V&)c & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const T flag = T(be + ce < V(3069));\n");
-	tprint("a = (flag * b) * c;\n");
-	tprint("return flag;\n");
-	deindent();
-	tprint("}\n\n");
-	tprint("T safe_add(T& a, T b, T c) {\n");
-	indent();
-	tprint("const V be = ((V&)b & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const V ce = ((V&)c & VCAST(0x7FF0000000000000LL)) >> VCAST(52);\n");
-	tprint("const T flag = T(be < V(2046)) * T(ce < V(2046));\n");
-	tprint("a = fma(flag, b, c);\n");
-	tprint("return flag;\n");
-	deindent();
-	tprint("}\n\n");
-	tprint("\n");
-}
 
 int flops_t::load() const {
 	return r + 2 * fma + 4 * rdiv;				// + con + rcmp;
@@ -4013,8 +3892,6 @@ void math_float(std::string _type) {
 	tprint("%s sqrt(%s);\n", type, type);
 	tprint("void sincos(%s, %s*, %s*);\n", type, type, type, type);
 	tprint("void erfcexp(%s, %s*, %s*);\n", type, type, type, type);
-	tprint("%s safe_mul(%s&, %s, %s);\n", type, type, type, type);
-	tprint("%s safe_add(%s&, %s, %s);\n", type, type, type, type);
 	if (is_vec(_type)) {
 		tprint("#endif /* __CUDACC__ */ \n");
 	}
@@ -4137,7 +4014,6 @@ void math_float(std::string _type) {
 		tprint("}\n");
 		tprint("\n");
 	}
-	safe_math_float();
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
@@ -4200,8 +4076,6 @@ void math_double(std::string _str) {
 	tprint("%s sqrt(%s);\n", type, type);
 	tprint("void sincos(%s, %s*, %s*);\n", type, type, type);
 	tprint("void erfcexp(%s, %s*, %s*);\n", type, type, type);
-	tprint("%s safe_mul(%s&, %s, %s);\n", type, type, type, type);
-	tprint("%s safe_add(%s&, %s, %s);\n", type, type, type, type);
 	if (is_vec(_str)) {
 		tprint("#endif /* __CUDACC__ */\n");
 	}
@@ -4349,7 +4223,6 @@ void math_double(std::string _str) {
 	deindent();
 	tprint("}\n");
 	tprint("\n");
-	safe_math_double();
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
@@ -4707,27 +4580,13 @@ int main() {
 		for (int P = pmin; P <= pmax; P++) {
 			std::string fname;
 			if (!m2monly[typenum]) {
-				greens(P);
-				if (periodic) {
-					greens_safe(P);
-				}
+				greens_flops = greens(P);
 			}
 		}
 		for (int P = pmin; P <= pmax && !m2monly[ti]; P++) {
 			flops_t flops0, flops1, flops2;
 			std::string fname;
 			flops_t fps;
-
-			flops0.reset();
-			flops0 += sqrt_flops();
-			flops0 += erfcexp_flops();
-
-			//fma+2+(P+1)*(1+(2*P+1)) r+5+(P+1)*(5)  rdiv+(P+1)
-			flops0.fma += 2 + (P + 1) * (2 + 2 * (P + 1));
-			flops0.r += 5 + 5 * (P + 1);
-			flops0.rdiv += P + 1;
-			flops_map[P][type + "greens_ewald_real"] = flops0;
-			greens_ewald_real_flops = flops0;
 			const double alpha = is_float(type) ? 2.4 : 2.25;
 			MG2L(P);
 			if (periodic && !m2monly[typenum]) {

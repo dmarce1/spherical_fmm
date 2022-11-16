@@ -79,18 +79,6 @@ class vtype
       return sz; \
    }
 
-#define SFMM_SIMD_FUNCTIONS(vtype, type, size) \
-	inline vtype max(const vtype& A, const vtype& B) { \
-		const vtype wa = A >= B; \
-		const vtype wb = vtype(1) - wa; \
-		return wa * A + wb * B; \
-	} \
-	inline vtype min(const vtype& A, const vtype& B) { \
-		const vtype wa = A < B; \
-		const vtype wb = vtype(1) - wa; \
-		return wa * A + wb * B; \
-	}
-
 #define SFMM_SIMD_REAL_TYPE(vtype, type, vstype, stype, vutype, utype, size)              \
    class vtype {                                           \
       typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \
@@ -196,5 +184,4 @@ class vtype
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, <=); \
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, >=); \
    SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, ==); \
-   SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, !=); \
-   SFMM_SIMD_FUNCTIONS(vrtype, rtype, size)
+   SFMM_SIMD_CMP_OP_DEF(vstype, vstype, stype, !=)
