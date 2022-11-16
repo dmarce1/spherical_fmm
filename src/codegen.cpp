@@ -31,6 +31,9 @@ struct entry_t {
 	int o;
 };
 
+int L2L_allrot(int P, int Q, int rot);
+int greens_ewald2(int P, int Q, double alpha);
+
 const auto cmp = [](entry_t a, entry_t b) {
 	if( a.m < b.m ) {
 		return true;
@@ -146,6 +149,7 @@ std::vector<std::string> base_itype;
 std::vector<std::string> itype;
 std::vector<std::string> base_uitype;
 std::vector<std::string> uitype;
+void regular_harmonic_full(int);
 
 static std::string root_dir = std::string(ROOT_DIR) + "/include/";
 
@@ -1385,6 +1389,7 @@ void z_rot2(int P, const char* dst, const char* src, stage_t stage, std::string 
 	}
 #endif
 }
+
 void xz_swap2(int P, const char* dst, const char* src, bool inv, stage_t stage, const char* opname = "") {
 	auto brot = [inv](int n, int m, int l) {
 		if( inv ) {
@@ -1877,7 +1882,7 @@ std::string greens(int P) {
 void MG2L(int P) {
 	func_header("MG2L", P, true, true, false, true, false, "", "L", EXP, "M", CMUL, "O", EXP);
 	reset_running_flops();
-	mg2l_body(P,P);
+	mg2l_body(P, P);
 	if (P > 2 && periodic) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
 	}
@@ -1902,6 +1907,99 @@ void MG2L(int P) {
 	TAB0();
 }
 
+using etype = long double;
+
+std::vector<std::complex<etype>> accurate_greens(int P, etype x, etype y, etype z) {
+	const etype r2 = x * x + y * y + z * z;
+	const etype r2inv = etype(1) / r2;
+	std::complex<etype> R = std::complex<etype>(x, y);
+	std::vector<std::complex<etype>> O(exp_sz(P));
+	O[cindex(0, 0)] = std::complex<etype>(-sqrt(r2inv), etype(0));
+	R *= r2inv;
+	z *= r2inv;
+	for (int m = 0; m <= P; m++) {
+		if (m > 0) {
+			O[cindex(m, m)] = O[cindex(m - 1, m - 1)] * R * etype(2 * m - 1);
+		}
+		if (m + 1 <= P) {
+			O[cindex(m + 1, m)] = etype(2 * m + 1) * z * O[cindex(m, m)];
+		}
+		for (int n = m + 2; n <= P; n++) {
+			O[cindex(n, m)] = (etype(2 * n - 1) * z * O[cindex(n - 1, m)] - etype((n - 1) * (n - 1) - m * m) * r2inv * O[cindex(n - 2, m)]);
+		}
+	}
+	return O;
+}
+
+void ewald_zero(std::complex<etype>* G, int P) {
+	constexpr int R = 5;
+	constexpr int H = 3;
+	for (int i = 0; i < exp_sz(P); i++) {
+		G[i] = 0.0;
+	}
+	const etype pi = 4.0L * atanl(1.0L);
+	G[0].real(4.0L / sqrtl(M_PI) + M_PI / 4.0);
+	for (int xi = -R; xi <= R; xi++) {
+		for (int yi = -R; yi <= R; yi++) {
+			for (int zi = -R; zi <= R; zi++) {
+				const int iii = xi * xi + yi * yi + zi * zi;
+				if (iii > 12 || iii == 0) {
+					continue;
+				}
+				const etype x = xi;
+				const etype y = yi;
+				const etype z = zi;
+				const etype r2 = x * x + y * y + z * z;
+				const etype r = sqrtl(r2);
+				auto greal = accurate_greens(P, x, y, z);
+				const etype xxx = 2.0L * r;
+				etype gam1 = erfcl(xxx);
+				const etype exp0 = expl(-xxx * xxx);
+				gam1 *= sqrtl(pi);
+				const etype xfac = (4.0L) * r2;
+				etype xpow = (2.0L) * r;
+				etype gam0inv = 1.0L / sqrtl(pi);
+				for (int l = 0; l <= P; l++) {
+					const etype gam = gam1 * gam0inv;
+					for (int m = 0; m <= l; m++) {
+						G[cindex(l, m)] += gam * greal[cindex(l, m)];
+					}
+					gam0inv /= (etype(l) + (0.5L));
+					gam1 = fma((etype(l) + etype(0.5)), gam1, xpow * exp0);
+					xpow *= xfac;
+				}
+			}
+		}
+	}
+	for (int xi = -R; xi <= R; xi++) {
+		for (int yi = -R; yi <= R; yi++) {
+			for (int zi = -R; zi <= R; zi++) {
+				const int iii = xi * xi + yi * yi + zi * zi;
+				if (iii > 10 || iii == 0) {
+					continue;
+				}
+				const etype hx = xi;
+				const etype hy = yi;
+				const etype hz = zi;
+				const etype h2 = hx * hx + hy * hy + hz * hz;
+				auto R = std::complex<etype>(1.0L, 0.0L) * expl(-0.25L * pi * pi * h2);
+				auto gfour = accurate_greens(P, hx, hy, hz);
+				const auto I = std::complex<etype>(0, -pi);
+				etype gam0inv = 1.0L / sqrtl(pi);
+				for (int l = 0; l <= P; l++) {
+					const etype hpow = powl(h2, l - 0.5L);
+					for (int m = 0; m <= l; m++) {
+						G[cindex(l, m)] += R * hpow * gfour[cindex(l, m)] * gam0inv / sqrtl(pi);
+					}
+					R *= I;
+					gam0inv /= (etype(l) + (0.5L));
+				}
+			}
+		}
+	}
+}
+
+constexpr int PEXTRA = 4;
 
 std::string greens_ewald(int P, double alpha) {
 	auto index = lindex;
@@ -1911,6 +2009,7 @@ std::string greens_ewald(int P, double alpha) {
 	} else {
 		ewald_limits<double>(R2, H2, alpha);
 	}
+
 	int R = sqrt(R2);
 	int H = sqrt(H2);
 	if (!periodic) {
@@ -1934,8 +2033,15 @@ std::string greens_ewald(int P, double alpha) {
 		}
 	}
 	bool first = true;
+	tprint("expansion<%s,%i> G0_st;\n", type.c_str(), P);
+	tprint("T* G0=G0_st.data();\n");
+	int PY = P + PEXTRA;
+	PY = 2 * (PY / 2);
+	init_reals("Y", exp_sz(PY));
 	init_real("sw");
 	init_real("r");
+	init_real("ax0");
+	init_real("ay0");
 	init_real("r2");
 	init_real("xxx");
 	init_real("tmp0");
@@ -1952,6 +2058,7 @@ std::string greens_ewald(int P, double alpha) {
 	init_real("hdotx");
 	init_real("phi");
 	init_real("rzero");
+	init_real("rsmall");
 //	tprint( "dx = -dx;\n");
 	const auto name = [](const char* base, int hx, int hy, int hz) {
 		std::string s = base;
@@ -1991,6 +2098,7 @@ std::string greens_ewald(int P, double alpha) {
 	}
 	tprint("r2 = fma(x, x, fma(y, y, z * z));\n");
 	tprint("rzero = TCONVERT(r2 < TCAST(%0.20e));\n", tiny());
+	tprint("rsmall = TCONVERT(r2 < TCAST(.05*.05));\n");
 	tprint("r = sqrt(r2) + rzero;\n");
 	tprint("greens(Gr_st, vec3<T>(x + rzero, y, z));\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
@@ -2240,13 +2348,122 @@ std::string greens_ewald(int P, double alpha) {
 		}
 	}
 	tprint_flush_chains();
-	for (int i = 0; i < exp_sz(P); i++) {
-		//	tprint( "G[%i] = -G[%i];\n", i, i);
-	}
-	if (P > 1) {
-		tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
-	}
+
+	std::complex<etype> G0[(P + PEXTRA + 1) * (P + PEXTRA + 1)];
 	tprint("G[%i] += TCAST(%.20e);\n", index(0, 0), M_PI / (alpha * alpha));
+	ewald_zero(G0, P + PEXTRA);
+
+	struct entry_t {
+		int l;
+		double v;
+		int o;
+	};
+	tprint("x = -x;\n");
+	tprint("y = -y;\n");
+	tprint("z = -z;\n");
+	regular_harmonic_full(PY);
+	std::vector<entry_t> pos;
+	std::vector<bool> used((P + 1) * (P + 1), false);
+	for (int n = 0; n <= P; n++) {
+		for (int m = 0; m <= n; m++) {
+			const auto add_work = [&pos,n](int sgn, int m, double mstr, int gstr) {
+				if( std::abs(mstr) < 1 ) {
+					return;
+				}
+				entry_t entry;
+				entry.l = lindex(n, m);
+				entry.v = sgn * mstr;
+				entry.o = gstr;
+				pos.push_back(entry);
+			};
+			for (int k = 0; k <= P + PEXTRA - n; k++) {
+				for (int l = -k; l <= k; l++) {
+					double mxstr = -99;
+					int mystr = -99;
+					int gxstr = -99;
+					int gystr = -99;
+					int mxsgn = 1;
+					int mysgn = 1;
+					int gxsgn = 1;
+					int gysgn = 1;
+					if (abs(m + l) > n + k) {
+						continue;
+					}
+					if (-abs(m + l) < -(k + n)) {
+						continue;
+					}
+					mxstr = G0[cindex(n + k, abs(m + l))].real();
+					if (m + l > 0) {
+					} else if (m + l < 0) {
+						if (abs(m + l) % 2 == 0) {
+						} else {
+							mxsgn = -1;
+						}
+					}
+					if (l > 0) {
+						gxstr = lindex(k, abs(l));
+						gystr = lindex(k, -abs(l));
+						gysgn = -1;
+					} else if (l < 0) {
+						if (abs(l) % 2 == 0) {
+							gxstr = lindex(k, abs(l));
+							gystr = lindex(k, -abs(l));
+						} else {
+							gxstr = lindex(k, abs(l));
+							gystr = lindex(k, -abs(l));
+							gysgn = -1;
+							gxsgn = -1;
+						}
+					} else {
+						gxstr = lindex(k, 0);
+					}
+					add_work(mxsgn * gxsgn, m, mxstr, gxstr);
+					if (m > 0) {
+						if (gystr != -99) {
+							add_work(mxsgn * gysgn, -m, mxstr, gystr);
+						}
+					}
+				}
+			}
+		}
+
+		const auto cmp = [](entry_t a, entry_t b) {
+			if( a.l < b.l ) {
+				return true;
+			} else if( a.l > b.l ) {
+				return false;
+			} else {
+				return std::abs(a.v) < std::abs(b.v);
+			}
+		};
+		std::sort(pos.begin(), pos.end(), cmp);
+		for (const auto& e : pos) {
+			if (used[e.l]) {
+				tprint("G0[%i] = fma(Y[%i], TCAST(%.20e), G0[%i]);\n", e.l, e.o, e.v, e.l);
+			} else {
+				tprint("G0[%i] = Y[%i] * TCAST(%.20e);\n", e.l, e.o, e.v);
+				used[e.l] = true;
+			}
+		}
+		pos.resize(0);
+	}
+	for (int i = 0; i < exp_sz(P); i++) {
+		if (!used[i]) {
+			tprint("G0[%i] = TCAST(0);\n", i);
+		}
+	}
+	tprint("G_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
+	tprint("G0_st.trace2() = TCAST(%.20e);\n", (4.0 * M_PI / 3.0));
+	tprint("G0[%i] = fma(x, G0_st.trace2(), G0[%i]);\n", index(1, 1), index(1, 1));
+	tprint("G0[%i] = fma(y, G0_st.trace2(), G0[%i]);\n", index(1, -1), index(1, -1));
+	tprint("G0[%i] = fma(z, G0_st.trace2(), G0[%i]);\n", index(1, 0), index(1, 0));
+	tprint("G0[%i] = fma(-TCAST(0.5)*r2, G0_st.trace2(), G0[%i]);\n", index(0, 0), index(0, 0));
+
+	for (int n = 0; n <= P; n++) {
+		for (int m = -n; m <= n; m++) {
+			tprint("G[%i] = (TCAST(1) - rsmall) * G[%i] + rsmall * G0[%i];\n", index(n, m), index(n, m), index(n, m));
+		}
+	}
 	deindent();
 	tprint("}\n");
 	tprint("return %i;\n", get_running_flops().load());
@@ -2669,7 +2886,6 @@ void M2L(int P, int Q) {
 	tprint("\n");
 	TAB0();
 }
-
 std::string M2L_ewald(int P) {
 	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L", EXP, "M", MUL, "dx", VEC3);
 	reset_running_flops();
@@ -2708,7 +2924,7 @@ std::string M2P_ewald(int P) {
 	reset_running_flops();
 	init_reals("L", 4);
 	tprint("int flops = greens_ewald(O_st, dx);\n");
-	mg2l_body(P,1);
+	mg2l_body(P, 1);
 	if (P > 2 && periodic) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
 	}
@@ -2746,8 +2962,8 @@ std::string P2L_ewald(int P) {
 	tprint("T* L=L_st.data();\n");
 	reset_running_flops();
 	tprint("int flops = greens_ewald(L_st, dx);\n");
-	for( int i = 0; i < exp_sz(P); i++) {
-		tprint( "L[%i] *= M;\n", i);
+	for (int i = 0; i < exp_sz(P); i++) {
+		tprint("L[%i] *= M;\n", i);
 	}
 	tprint("L_st.trace2() *= M;\n");
 	tprint("return flops+%i;\n", get_running_flops().load());
@@ -3225,13 +3441,18 @@ void L2L_z(int P, int Q, const char* var = "z", const char* src = "") {
 int L2L_allrot(int P, int Q, int rot) {
 	auto index = lindex;
 	int flops = 0;
-	const auto name = std::string("L2") + (P == Q ? "L" : "P") + "r" + std::to_string(rot);
-	if (P == Q) {
-		func_header(name.c_str(), P, true, true, true, true, true, "", "L0", EXP, "dx", VEC3);
+	auto name = std::string("L2") + (Q != 1 ? "L" : "P") + "r" + std::to_string(rot);
+	if (Q != 1) {
+		if (P == Q) {
+			func_header(name.c_str(), P, true, true, true, true, true, "", "L0", EXP, "dx", VEC3);
+		} else {
+			name += "_ewald";
+			func_header(name.c_str(), P, true, true, false, true, true, "", "L0", EXP, "dx", VEC3);
+		}
 	} else {
 		func_header(name.c_str(), P, true, true, true, true, true, "", "f", FORCE, "L0", CEXP, "dx", VEC3);
 	}
-	const char* two = P == Q ? "" : "2";
+	const char* two = Q != 1 ? "" : "2";
 	open_timer(name);
 	if (rot == 2) {
 		init_real("tmp1");
@@ -3273,7 +3494,7 @@ int L2L_allrot(int P, int Q, int rot) {
 		tprint("T* in=inA;\n");
 		tprint("T* L2=La;\n");
 	}
-	if (P == Q) {
+	if (Q != 1) {
 		tprint("auto* L=L0;\n");
 	} else {
 		tprint("expansion<%s,%i> L_st;\n", type.c_str(), P);
@@ -3328,7 +3549,7 @@ int L2L_allrot(int P, int Q, int rot) {
 		tprint("R = (TCAST(1) - Rzero) / Rinv;\n");
 		tprint("cosphi = fma(x, Rinv, Rzero);\n");
 		tprint("sinphi = -y * Rinv;\n");
-		if (P == Q) {
+		if (Q != 1) {
 			L2L_z(P, P);
 			z_rot2(P, "L2", "L", FULL, "L2L", true);
 			xz_swap2(P, "L", "L2", true, FULL, "L2L");
@@ -3495,7 +3716,12 @@ int L2L_allrot(int P, int Q, int rot) {
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
-	timing_body += print2str("\"L2%s\", %i, %i, %i, 0.0, 0}", (P == Q ? "L" : "P"), P, rot, flops);
+	if (Q != 1 && P != Q) {
+		//	tprint("}\n");
+	}
+	if (Q == 1 || P == Q) {
+		timing_body += print2str("\"L2%s\", %i, %i, %i, 0.0, 0}", (P == Q ? "L" : "P"), P, rot, flops);
+	}
 	TAB0();
 	return flops;
 }
@@ -4552,7 +4778,6 @@ int main() {
 	set_file(full_header.c_str());
 	tprint("namespace detail {\n");
 	tprint("\n");
-//	tprint("%s", detail_header.c_str());
 //	tprint("#ifndef __CUDACC__\n");
 //	tprint("%s", detail_header_vec.c_str());
 //	tprint("#endif /* __CUDACC__ */\n\n");
@@ -4602,7 +4827,10 @@ int main() {
 		if (simd[ti]) {
 			fprintf(fp, "#ifndef __CUDACC__\n");
 		}
-		for (int P = pmin - 1; P <= pmax; P++) {
+		for (int P = pmin - 1; P <= pmax + PEXTRA; P++) {
+			if (P > pmax && P - PEXTRA < pmin) {
+				continue;
+			}
 			tprint("\n");
 			tprint("template<>\n");
 			tprint("class expansion<%s,%i> {\n", type.c_str(), P);
@@ -4808,213 +5036,214 @@ int main() {
 			}
 			deindent();
 			tprint("};\n");
-			if (P > pmin - 1) {
-				tprint("\n");
-				tprint("template<>\n");
-				tprint("class multipole<%s,%i> {\n", type.c_str(), P);
-				indent();
-				tprint("typedef %s T;\n", type.c_str());
-				tprint("typedef typename type_traits<T>::type base_type;\n");
-				tprint("T o[%i];\n", mul_sz(P));
-				if (periodic && P > 2) {
-					tprint("T t;\n");
-				}
-				if (scaled) {
-					tprint("base_type r;\n");
-				}
-				deindent();
-				tprint("public:\n");
-				indent();
-				tprint("typedef T type;\n");
-				if (scaled) {
-					tprint("multipole& load( multipole<base_type,%i> other, int index ) {\n", P);
-					indent();
-					tprint("other.rescale(r);\n");
-				} else {
-					tprint("multipole& load( const multipole<base_type,%i>& other, int index ) {\n", P);
-					indent();
-				}
-				if (simd[typenum]) {
-					tprint("if( index == -1 ) {\n");
-					indent();
-					tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
-					indent();
-					tprint("o[i] = other[i];\n");
-					deindent();
-					tprint("}\n");
-					if (periodic && P > 2) {
-						tprint("t = other.trace2();\n");
-					}
-					deindent();
-					tprint("} else {\n");
-					indent();
-					tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
-					indent();
-					tprint("o[i][index] = other[i];\n");
-					if (periodic && P > 2) {
-						tprint("t[index] = other.trace2();\n");
-					}
-					deindent();
-					tprint("}\n");
-					deindent();
-					tprint("}\n");
-				} else {
-					tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
-					indent();
-					tprint("o[i] = other[i];\n");
-					deindent();
-					tprint("}\n");
-					if (periodic && P > 2) {
-						tprint("t = other.trace2();\n");
-					}
-				}
-				tprint("return *this;\n");
-				deindent();
-				tprint("}\n");
 
-				tprint("SFMM_EXPANSION_MEMBERS(multipole, %s, %i);\n", type.c_str(), P);
-				tprint("SFMM_PREFIX multipole& operator=(const multipole& other) {\n");
-				indent();
-				tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-				indent();
-				tprint("o[n] = other.o[n];\n");
-				deindent();
-				tprint("}\n");
-				if (periodic && P > 2) {
-					tprint("t = other.t;\n");
-				}
-				if (scaled) {
-					tprint("r = other.r;\n");
-				}
-				tprint("return *this;\n");
-				deindent();
-				tprint("}\n");
-
-				tprint("SFMM_PREFIX multipole& operator+=(multipole other) {\n");
-				indent();
-				if (scaled) {
-					tprint("other.rescale(r);\n");
-				}
-				tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-				indent();
-				tprint("o[n] += other.o[n];\n");
-				deindent();
-				tprint("}\n");
-				if (periodic && P > 2) {
-					tprint("t += other.t;\n");
-				}
-				if (scaled) {
-					tprint("r = other.r;\n");
-				}
-				tprint("return *this;\n");
-				deindent();
-				tprint("}\n");
-
-				tprint("SFMM_PREFIX multipole(base_type r0 = base_type(1)) {\n");
-				indent();
-				fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
-				tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-				indent();
-				tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
-				deindent();
-				tprint("}\n");
-				if (periodic && P > 2) {
-					tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
-				}
-				fprintf(fp, "#endif\n");
-				if (scaled) {
-					tprint("r = r0;\n");
-				}
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX void init(base_type r0 = base_type(1)) {\n");
-				indent();
-				tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
-				indent();
-				tprint("o[n] = T(0);\n");
-				deindent();
-				tprint("}\n");
-				if (periodic && P > 2) {
-					tprint("t = T(0);\n");
-				}
-				if (scaled) {
-					tprint("r = r0;\n");
-				}
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX void rescale(base_type r0) {\n");
-				indent();
-				if (scaled) {
-					tprint("const base_type a = r / r0;\n");
-					tprint("base_type b = a;\n");
-					tprint("r = r0;\n");
-					for (int n = 1; n < P; n++) {
-						if (!(nodip && n == 1)) {
-							for (int m = -n; m <= n; m++) {
-								tprint("o[%i] *= T(b);\n", mindex(n, m));
-							}
-							if (periodic && P > 2 && n == 2) {
-								tprint("t *= T(b);\n");
-							}
-						}
-						if (n != P - 1) {
-							tprint("b *= base_type(a);\n");
-						}
-					}
-				}
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX base_type scale() const {\n");
-				indent();
-				if (scaled) {
-					tprint("return r;\n");
-				} else {
-					tprint("return base_type(1);\n");
-				}
-				deindent();
-				tprint("}\n");
-				if (periodic && P > 2 && P > 1) {
-					tprint("SFMM_PREFIX T& trace2() {\n");
-					indent();
-					tprint("return t;\n");
-					deindent();
-					tprint("}\n");
-					tprint("SFMM_PREFIX T trace2() const {\n");
-					indent();
-					tprint("return t;\n");
-					deindent();
-					tprint("}\n");
-				}
-				tprint("SFMM_PREFIX static constexpr size_t size() {\n");
-				indent();
-				tprint("return %i;\n", mul_sz(P));
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX const T& operator[](int i) const {\n");
-				indent();
-				tprint("return o[i];\n");
-				deindent();
-				tprint("}\n");
-				tprint("SFMM_PREFIX T& operator[](int i) {\n");
-				indent();
-				tprint("return o[i];\n");
-				deindent();
-				tprint("}\n");
-				if (!m2monly[typenum] && simd[typenum]) {
-					if (periodic) {
-						tprint("friend int M2L_ewald(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", P, P);
-					}
-					for (int rot = 0; rot <= 2; rot++) {
-						tprint("friend int M2Lr%i(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", rot, P, P);
-						//	if (rot < 2) {
-						tprint("friend int M2Pr%i(force_type<T>&, const multipole<T, %i>&, vec3<T>, int);\n", rot, P);
-						//		}
-					}
-				}
-				deindent();
-				tprint("};\n");
-				tprint("\n");
+		}
+		for (int P = pmin; P <= pmax; P++) {
+			tprint("\n");
+			tprint("template<>\n");
+			tprint("class multipole<%s,%i> {\n", type.c_str(), P);
+			indent();
+			tprint("typedef %s T;\n", type.c_str());
+			tprint("typedef typename type_traits<T>::type base_type;\n");
+			tprint("T o[%i];\n", mul_sz(P));
+			if (periodic && P > 2) {
+				tprint("T t;\n");
 			}
+			if (scaled) {
+				tprint("base_type r;\n");
+			}
+			deindent();
+			tprint("public:\n");
+			indent();
+			tprint("typedef T type;\n");
+			if (scaled) {
+				tprint("multipole& load( multipole<base_type,%i> other, int index ) {\n", P);
+				indent();
+				tprint("other.rescale(r);\n");
+			} else {
+				tprint("multipole& load( const multipole<base_type,%i>& other, int index ) {\n", P);
+				indent();
+			}
+			if (simd[typenum]) {
+				tprint("if( index == -1 ) {\n");
+				indent();
+				tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
+				indent();
+				tprint("o[i] = other[i];\n");
+				deindent();
+				tprint("}\n");
+				if (periodic && P > 2) {
+					tprint("t = other.trace2();\n");
+				}
+				deindent();
+				tprint("} else {\n");
+				indent();
+				tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
+				indent();
+				tprint("o[i][index] = other[i];\n");
+				if (periodic && P > 2) {
+					tprint("t[index] = other.trace2();\n");
+				}
+				deindent();
+				tprint("}\n");
+				deindent();
+				tprint("}\n");
+			} else {
+				tprint("for( int i = 0; i < %i; i++ ) {\n", mul_sz(P));
+				indent();
+				tprint("o[i] = other[i];\n");
+				deindent();
+				tprint("}\n");
+				if (periodic && P > 2) {
+					tprint("t = other.trace2();\n");
+				}
+			}
+			tprint("return *this;\n");
+			deindent();
+			tprint("}\n");
+
+			tprint("SFMM_EXPANSION_MEMBERS(multipole, %s, %i);\n", type.c_str(), P);
+			tprint("SFMM_PREFIX multipole& operator=(const multipole& other) {\n");
+			indent();
+			tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+			indent();
+			tprint("o[n] = other.o[n];\n");
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 2) {
+				tprint("t = other.t;\n");
+			}
+			if (scaled) {
+				tprint("r = other.r;\n");
+			}
+			tprint("return *this;\n");
+			deindent();
+			tprint("}\n");
+
+			tprint("SFMM_PREFIX multipole& operator+=(multipole other) {\n");
+			indent();
+			if (scaled) {
+				tprint("other.rescale(r);\n");
+			}
+			tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+			indent();
+			tprint("o[n] += other.o[n];\n");
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 2) {
+				tprint("t += other.t;\n");
+			}
+			if (scaled) {
+				tprint("r = other.r;\n");
+			}
+			tprint("return *this;\n");
+			deindent();
+			tprint("}\n");
+
+			tprint("SFMM_PREFIX multipole(base_type r0 = base_type(1)) {\n");
+			indent();
+			fprintf(fp, "#if !defined(NDEBUG) && !defined(__CUDA_ARCH__)\n");
+			tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+			indent();
+			tprint("o[n] = std::numeric_limits<T>::signaling_NaN();\n");
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 2) {
+				tprint("t = std::numeric_limits<T>::signaling_NaN();\n");
+			}
+			fprintf(fp, "#endif\n");
+			if (scaled) {
+				tprint("r = r0;\n");
+			}
+			deindent();
+			tprint("}\n");
+			tprint("SFMM_PREFIX void init(base_type r0 = base_type(1)) {\n");
+			indent();
+			tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+			indent();
+			tprint("o[n] = T(0);\n");
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 2) {
+				tprint("t = T(0);\n");
+			}
+			if (scaled) {
+				tprint("r = r0;\n");
+			}
+			deindent();
+			tprint("}\n");
+			tprint("SFMM_PREFIX void rescale(base_type r0) {\n");
+			indent();
+			if (scaled) {
+				tprint("const base_type a = r / r0;\n");
+				tprint("base_type b = a;\n");
+				tprint("r = r0;\n");
+				for (int n = 1; n < P; n++) {
+					if (!(nodip && n == 1)) {
+						for (int m = -n; m <= n; m++) {
+							tprint("o[%i] *= T(b);\n", mindex(n, m));
+						}
+						if (periodic && P > 2 && n == 2) {
+							tprint("t *= T(b);\n");
+						}
+					}
+					if (n != P - 1) {
+						tprint("b *= base_type(a);\n");
+					}
+				}
+			}
+			deindent();
+			tprint("}\n");
+			tprint("SFMM_PREFIX base_type scale() const {\n");
+			indent();
+			if (scaled) {
+				tprint("return r;\n");
+			} else {
+				tprint("return base_type(1);\n");
+			}
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 2 && P > 1) {
+				tprint("SFMM_PREFIX T& trace2() {\n");
+				indent();
+				tprint("return t;\n");
+				deindent();
+				tprint("}\n");
+				tprint("SFMM_PREFIX T trace2() const {\n");
+				indent();
+				tprint("return t;\n");
+				deindent();
+				tprint("}\n");
+			}
+			tprint("SFMM_PREFIX static constexpr size_t size() {\n");
+			indent();
+			tprint("return %i;\n", mul_sz(P));
+			deindent();
+			tprint("}\n");
+			tprint("SFMM_PREFIX const T& operator[](int i) const {\n");
+			indent();
+			tprint("return o[i];\n");
+			deindent();
+			tprint("}\n");
+			tprint("SFMM_PREFIX T& operator[](int i) {\n");
+			indent();
+			tprint("return o[i];\n");
+			deindent();
+			tprint("}\n");
+			if (!m2monly[typenum] && simd[typenum]) {
+				if (periodic) {
+					tprint("friend int M2L_ewald(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", P, P);
+				}
+				for (int rot = 0; rot <= 2; rot++) {
+					tprint("friend int M2Lr%i(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", rot, P, P);
+					//	if (rot < 2) {
+					tprint("friend int M2Pr%i(force_type<T>&, const multipole<T, %i>&, vec3<T>, int);\n", rot, P);
+					//		}
+				}
+			}
+			deindent();
+			tprint("};\n");
+			tprint("\n");
 			tprint("\n");
 			tprint("namespace detail {\n");
 			tprint("template<>\n");
