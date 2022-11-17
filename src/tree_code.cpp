@@ -10,13 +10,13 @@
 #define DEBUG
 
 #define NDIM 3
-#define BUCKET_SIZE 8
+#define BUCKET_SIZE 16
 #define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE 100000
+#define TEST_SIZE (1024*1024)
 //#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
@@ -35,10 +35,6 @@ class tree {
 	using expansion_type = sfmm::expansion<W,ORDER>;
 	template<class W>
 	using force_type = sfmm::force_type<W>;
-	struct particle {
-		sfmm::vec3<T> x;
-		force_type<T> f;
-	};
 
 	multipole_type<T> multipole;
 	std::vector<tree> children;
@@ -63,7 +59,8 @@ class tree {
 	static std::atomic<long long> m2l_ewald;
 	static std::atomic<long long> node_count;
 
-	static std::vector<particle> parts;
+	static std::vector<sfmm::vec3<T>> parts;
+	static std::vector<force_type<T>> forces;
 	static std::vector<tree> forest;
 
 	struct check_type {
@@ -159,10 +156,10 @@ public:
 		int lo = part_range.first;
 		int hi = part_range.second;
 		while (lo < hi) {
-			if (parts[lo].x[xdim] >= xmid) {
+			if (parts[lo][xdim] >= xmid) {
 				while (lo != hi) {
 					hi--;
-					if (parts[hi].x[xdim] < xmid) {
+					if (parts[hi][xdim] < xmid) {
 						std::swap(parts[lo], parts[hi]);
 						break;
 					}
@@ -181,7 +178,7 @@ public:
 			for (int dim = 0; dim < NDIM; dim++) {
 				T begin = (T) cell_begin[dim] / Ngrid;
 				T end = (T) cell_end[dim] / Ngrid;
-				if (parts[i].x[dim] < begin || parts[i].x[dim] > end) {
+				if (parts[i][dim] < begin || parts[i][dim] > end) {
 					flag = true;
 				}
 			}
@@ -191,7 +188,7 @@ public:
 				for (int dim = 0; dim < NDIM; dim++) {
 					T begin = (T) cell_begin[dim] / Ngrid;
 					T end = (T) cell_end[dim] / Ngrid;
-					printf("particle out of range! %e %e %e \n", begin, parts[i].x[dim], end);
+					printf("particle out of range! %e %e %e \n", begin, parts[i][dim], end);
 				}
 			}
 		}
@@ -262,13 +259,13 @@ public:
 #ifdef DEBUG
 		for (int i = part_range.first; i < part_range.second; i++) {
 			for (int dim = 0; dim < NDIM; dim++) {
-				if (parts[i].x[dim] < begin[dim] || parts[i].x[dim] > end[dim]) {
-					printf("particle out of range! %e %e %e %i\n", begin[dim], parts[i].x[dim], end[dim], depth);
+				if (parts[i][dim] < begin[dim] || parts[i][dim] > end[dim]) {
+					printf("particle out of range! %e %e %e %i\n", begin[dim], parts[i][dim], end[dim], depth);
 				}
 			}
 		}
 #endif
-		center = (begin + end) * 0.5;
+//		center = (begin + end) * 0.5;
 		if (nparts > BUCKET_SIZE) {
 			sfmm::vec3<MV> dx;
 			multipole_type<MV> M;
@@ -287,9 +284,9 @@ public:
 			}
 			const auto& cleft = children[LEFT];
 			const auto& cright = children[RIGHT];
-/*			center = left.center * cleft.multipole(0, 0).real() + right.center * cright.multipole(0, 0).real();
+			center = left.center * cleft.multipole(0, 0).real() + right.center * cright.multipole(0, 0).real();
 			const T total = cleft.multipole(0, 0).real() + cright.multipole(0, 0).real();
-			center /= total;*/
+			center /= total;
 			radius = 0.0;
 			for (int i = 0; i < NCHILD; i += sfmm::simd_size<MV>()) {
 				const int end = std::min((int) sfmm::simd_size<MV>(), NCHILD - i);
@@ -305,18 +302,18 @@ public:
 			}
 		} else {
 			if (nparts) {
-			/*	center = T(0);
+				center = T(0);
 				for (int i = part_range.first; i < part_range.second; i++) {
-					center += parts[i].x;
+					center += parts[i];
 				}
-				center /= nparts;*/
+				center /= nparts;
 				radius = 0.0;
 				for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 					sfmm::vec3<V> dx;
 					const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 					for (int j = 0; j < end; j++) {
 						const auto& part = parts[i + j];
-						load(dx, part.x - center, j);
+						load(dx, part - center, j);
 					}
 					multipole_type<V> M;
 					radius = std::max(radius, sfmm::reduce_max(abs(dx)));
@@ -398,7 +395,7 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					load(dx, sfmm::distance(center, parts[j + k].x), k);
+					load(dx, sfmm::distance(center, parts[j + k]), k);
 				}
 				p2l_ewald += end;
 				apply_padding(dx, end);
@@ -429,7 +426,7 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					load(dx, sfmm::distance(center, parts[j + k].x), k);
+					load(dx, sfmm::distance(center, parts[j + k]), k);
 				}
 				p2l += end;
 				apply_padding(dx, end);
@@ -449,11 +446,11 @@ public:
 				F.init();
 				const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 				for (int j = 0; j < end; j++) {
-					load(dx, center - parts[i + j].x, j);
+					load(dx, center - parts[i + j], j);
 				}
 				flops += sfmm::simd_size<V>() * sfmm::L2P(F, L, dx, FLAGS);
 				for (int j = 0; j < end; j++) {
-					store(parts[i + j].f, F, j);
+					store(forces[i + j], F, j);
 				}
 			}
 			Plist.resize(0);
@@ -468,7 +465,7 @@ public:
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
-						load(dx, sfmm::distance(part.x, src->center), j);
+						load(dx, sfmm::distance(part, src->center), j);
 						load(M, src->multipole, j);
 					}
 					m2p_ewald += end;
@@ -476,7 +473,7 @@ public:
 					apply_padding(M, end);
 					flops += sfmm::simd_size<V>() * sfmm::M2P_ewald(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
-						accumulate(part.f, F, j);
+						accumulate(forces[k], F, j);
 					}
 				}
 			}
@@ -486,13 +483,13 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for (int k = 0; k < end; k++) {
-							load(dx, sfmm::distance(part.x, parts[j + k].x), k);
+							load(dx, sfmm::distance(part, parts[j + k]), k);
 						}
 						p2p_ewald += end;
 						apply_padding(dx, end);
 						F.init();
 						flops += sfmm::simd_size<V>() * P2P_ewald(F, sfmm::create_mask<V>(end) * mass, dx);
-						part.f += sfmm::reduce_sum(F);
+						forces[l] += sfmm::reduce_sum(F);
 					}
 				}
 			}
@@ -508,7 +505,7 @@ public:
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
-						load(dx, sfmm::distance(part.x, src->center), j);
+						load(dx, sfmm::distance(part, src->center), j);
 						load(M, src->multipole, j);
 					}
 					m2p += end;
@@ -516,7 +513,7 @@ public:
 					apply_padding(M, end);
 					flops += sfmm::simd_size<V>() * sfmm::M2P(F, M, dx, FLAGS);
 					for (int j = 0; j < end; j++) {
-						accumulate(part.f, F, j);
+						accumulate(forces[k], F, j);
 					}
 				}
 			}
@@ -526,13 +523,13 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for (int k = 0; k < end; k++) {
-							load(dx, sfmm::distance(part.x, parts[j + k].x), k);
+							load(dx, sfmm::distance(part, parts[j + k]), k);
 						}
 						p2p += end;
 						apply_padding(dx, end);
 						F.init();
 						flops += sfmm::simd_size<V>() * P2P(F, sfmm::create_mask<V>(end) * mass, dx);
-						part.f += sfmm::reduce_sum(F);
+						forces[l] += sfmm::reduce_sum(F);
 					}
 				}
 			}
@@ -565,7 +562,7 @@ public:
 						const auto& src_part = parts[j];
 						sfmm::vec3<double> dx;
 						for (int dim = 0; dim < NDIM; dim++) {
-							dx[dim] = sfmm::distance(snk_part.x[dim], src_part.x[dim]);
+							dx[dim] = sfmm::distance(snk_part[dim], src_part[dim]);
 						}
 						fd.init();
 						fe2.init();
@@ -584,13 +581,13 @@ public:
 			double fnmag = 0.0;
 			for (int dim = 0; dim < NDIM; dim++) {
 				famag += sfmm::sqr(fa.force[0]) + sfmm::sqr(fa.force[1]) + sfmm::sqr(fa.force[2]);
-				fnmag += sfmm::sqr(snk_part.f.force[0]) + sfmm::sqr(snk_part.f.force[1]) + sfmm::sqr(snk_part.f.force[2]);
+				fnmag += sfmm::sqr(forces[i].force[0]) + sfmm::sqr(forces[i].force[1]) + sfmm::sqr(forces[i].force[2]);
 			}
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
 			//printf( "%e\n", (famag - fnmag) / famag);
 			std::lock_guard<std::mutex> lock(mutex);
-			perr += sfmm::sqr(snk_part.f.potential - fa.potential);
+			perr += sfmm::sqr(forces[i].potential - fa.potential);
 			pnorm += sfmm::sqr(fa.potential);
 			norm += sfmm::sqr(famag);
 			err += sfmm::sqr(famag - fnmag);
@@ -603,15 +600,15 @@ public:
 	static void initialize() {
 		forest.resize(0);
 		parts.resize(0);
+		forces.resize(0);
 		for (int i = 0; i < TEST_SIZE; i++) {
 			sfmm::vec3<T> x;
 			for (int dim = 0; dim < NDIM; dim++) {
 				x[dim] = rand1();
 			}
-			particle p;
-			p.x = x;
-			parts.push_back(p);
+			parts.push_back(x);
 		}
+		forces.resize(parts.size());
 	}
 
 	static void show_counters() {
@@ -633,7 +630,10 @@ public:
 };
 
 template<class T, class V, class M, int ORDER, int FLAGS>
-std::vector<typename tree<T, V, M, ORDER, FLAGS>::particle> tree<T, V, M, ORDER, FLAGS>::parts;
+std::vector<sfmm::vec3<T>> tree<T, V, M, ORDER, FLAGS>::parts;
+
+template<class T, class V, class M, int ORDER, int FLAGS>
+std::vector<sfmm::force_type<T>> tree<T, V, M, ORDER, FLAGS>::forces;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
 const T tree<T, V, M, ORDER, FLAGS>::theta_max = 0.55;
@@ -695,7 +695,7 @@ struct run_tests {
 		tm.stop();
 		ftm.stop();
 		force_time = tm.read();
-		const auto error = tree_type::compare_analytic(50.0 / TEST_SIZE);
+		const auto error = tree_type::compare_analytic(16.0 / TEST_SIZE);
 		printf("%i %e %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error.first, error.second,
 				flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
 	//	tree_type::show_counters();

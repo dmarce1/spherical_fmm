@@ -1,6 +1,6 @@
 
 template<class W>
-static size_t P2P(force_type<W>& f, W m, vec3<W> dx) {
+static int P2P(force_type<W>& f, W m, vec3<W> dx) {
 	const static double hsoft = 0.01;
 	static const W h2(hsoft * hsoft);
 	static const W hinv(W(1) / hsoft);
@@ -23,3 +23,5 @@ static size_t P2P(force_type<W>& f, W m, vec3<W> dx) {
 	f.force[2] = -fma(fn[2], wn, ff[2] * wf);
 	return 39;
 }
+
+

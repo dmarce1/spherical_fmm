@@ -150,6 +150,7 @@ std::vector<std::string> base_itype;
 std::vector<std::string> itype;
 std::vector<std::string> base_uitype;
 std::vector<std::string> uitype;
+std::vector<std::string> fixed_type;
 void regular_harmonic_full(int);
 
 static std::string root_dir = std::string(ROOT_DIR) + "/include/";
@@ -230,16 +231,16 @@ static std::string vec_header() {
 	str += print2str("#ifndef __CUDACC__\n");
 	str += "\n";
 #ifdef USE_FLOAT
-	str += print2str("SFMM_SIMD_FACTORY(simd_f32, float, simd_i32, int32_t, simd_ui32, uint32_t, %i);\n", FLOAT_SIMD_WIDTH);
-	if ( M2M_SIMD_WIDTH == FLOAT_SIMD_WIDTH) {
+	str += print2str("SFMM_SIMD_FACTORY(simd_f32, float, simd_i32, int32_t, simd_ui32, uint32_t, %i);\n", SIMD_FLOAT_WIDTH);
+	if ( M2M_SIMD_WIDTH == SIMD_FLOAT_WIDTH) {
 		str += print2str("using m2m_simd_f32 = simd_f32;\n");
 		str += print2str("using m2m_simd_i32 = simd_i32;\n");
 		str += print2str("using m2m_simd_ui32 = simd_ui32;\n");
 	} else {
 		str += print2str("SFMM_SIMD_FACTORY(m2m_simd_f32, float, m2m_simd_i32, int32_t, m2m_simd_ui32, uint32_t, %i);\n", M2M_SIMD_WIDTH);
 	}
-	for (int width = std::min(M2M_SIMD_WIDTH,FLOAT_SIMD_WIDTH); width <= std::max(M2M_SIMD_WIDTH, FLOAT_SIMD_WIDTH); width += std::abs(FLOAT_SIMD_WIDTH - M2M_SIMD_WIDTH)) {
-		str += print2str("\ninline float reduce_sum(const %s& v) {\n", width == FLOAT_SIMD_WIDTH ? "simd_f32" : "m2m_simd_f32" );
+	for (int width = std::min(M2M_SIMD_WIDTH,SIMD_FLOAT_WIDTH); width <= std::max(M2M_SIMD_WIDTH, SIMD_FLOAT_WIDTH); width += std::abs(SIMD_FLOAT_WIDTH - M2M_SIMD_WIDTH)) {
+		str += print2str("\ninline float reduce_sum(const %s& v) {\n", width == SIMD_FLOAT_WIDTH ? "simd_f32" : "m2m_simd_f32" );
 		for (int sz = width; sz > 1; sz /= 2) {
 			str += print2str("\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(float))));\n", sz, sz);
 		}
@@ -253,18 +254,19 @@ static std::string vec_header() {
 		str += "}\n";
 		str += "\n";
 	}
+
 #endif
 #ifdef USE_DOUBLE
-	str += print2str("SFMM_SIMD_FACTORY(simd_f64, double, simd_i64, int64_t, simd_ui64, uint64_t, %i);\n", DOUBLE_SIMD_WIDTH);
-	if ( M2M_SIMD_WIDTH == FLOAT_SIMD_WIDTH) {
+	str += print2str("SFMM_SIMD_FACTORY(simd_f64, double, simd_i64, int64_t, simd_ui64, uint64_t, %i);\n", SIMD_DOUBLE_WIDTH);
+	if ( M2M_SIMD_WIDTH == SIMD_DOUBLE_WIDTH) {
 		str += print2str("using m2m_simd_f64 = simd_f64;\n");
 		str += print2str("using m2m_simd_i64 = simd_i64;\n");
 		str += print2str("using m2m_simd_ui64 = simd_ui64;\n");
 	} else {
 		str += print2str("SFMM_SIMD_FACTORY(m2m_simd_f64, double, m2m_simd_i64, int64_t, m2m_simd_ui64, uint64_t, %i);\n", M2M_SIMD_WIDTH);
 	}
-	for (int width = std::min(M2M_SIMD_WIDTH,DOUBLE_SIMD_WIDTH); width <= std::max(M2M_SIMD_WIDTH, DOUBLE_SIMD_WIDTH); width += std::abs(DOUBLE_SIMD_WIDTH - M2M_SIMD_WIDTH)) {
-		str += print2str("\ninline double reduce_sum(const %s& v) {\n", width == DOUBLE_SIMD_WIDTH ? "simd_f64" : "m2m_simd_f64");
+	for (int width = std::min(M2M_SIMD_WIDTH,SIMD_DOUBLE_WIDTH); width <= std::max(M2M_SIMD_WIDTH, SIMD_DOUBLE_WIDTH); width += std::abs(SIMD_DOUBLE_WIDTH - M2M_SIMD_WIDTH)) {
+		str += print2str("\ninline double reduce_sum(const %s& v) {\n", width == SIMD_DOUBLE_WIDTH ? "simd_f64" : "m2m_simd_f64");
 		for (int sz = width; sz > 1; sz /= 2) {
 			str += print2str("\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(double))));\n", sz, sz);
 		}
@@ -1143,6 +1145,61 @@ std::string func_header(const char* func, int P, bool pub, bool calcpot, bool ti
 		}
 	}
 	return file_name;
+}
+
+void fixed_point_covers() {
+	constexpr int N = 8;
+	const char* protos[N] = {
+			"int M2L%s(expansion<%s,P>& L, const multipole<%s,P>& M, const vec3<%s>& x0, const vec3<%s>& x1 ) {\n",
+			"int M2P%s(force_type<%s>& f, const multipole<%s,P>& M, const vec3<%s>& x0, const vec3<%s>& x1 ) {\n",
+			"int P2L%s(expansion<%s,P>& L, %s m, const vec3<%s>& x0, const vec3<%s>& x1 ) {\n",
+			"int P2P%s(force_type<%s>& f, %s m, const vec3<%s>& x1, const vec3<%s>& x0 ) {\n",
+			"int L2L%s(expansion<%s,P>& L, const vec3<%s>& x1, const vec3<%s>& x0 ) {\n",
+			"int L2P%s(force_type<%s>& f, expansion<%s,P>& L, const vec3<%s>& x1, const vec3<%s>& x0 ) {\n",
+			"int P2M%s(multipole<%s,P>& M, %s m, const vec3<%s>& x1, const vec3<%s>& x0 ) {\n",
+			"int M2M%s(multipole<%s,P>& M, const vec3<%s>& x1, const vec3<%s>& x0 ) {\n"};
+	const char* calls[N] = {
+			"return M2L%s(L, M, dx) + %i;",
+			"return M2P%s(f, M, dx) + %i;",
+			"return P2L%s(L, m, dx) + %i;",
+			"return P2P%s(f, m, dx) + %i;",
+			"return L2L%s(L, dx) + %i;",
+			"return L2P%s(f, L, dx) + %i;",
+			"return P2M%s(M, m, dx) + %i;",
+			"return M2M%s(M, dx) + %i;"
+	};
+	const int nparams[N] = {2,2,2,2,1,2,2,1};
+	for( int i = 0; i < N; i++) {
+		for( int k = 0; k < 2; k++) {
+			if( i >= 4 && k == 1 ) {
+				continue;
+			}
+			const char* estr = k == 0 ? "" : "_ewald";
+			for( int j = 0; j < 2; j++) {
+				if( (i != 7 && m2monly[typenum]) || (i == 7 && j == 1)) {
+					continue;
+				}
+				reset_running_flops();
+				tprint("\n");
+				auto vtype = j == 0 ? type :fixed_type[typenum];
+				tprint( "template<int P>\n");
+				if( nparams[i] == 1 ) {
+					tprint( protos[i], estr, type.c_str(), vtype.c_str(), vtype.c_str());
+				} else {
+					tprint( protos[i], estr, type.c_str(), type.c_str(), vtype.c_str(), vtype.c_str());
+				}
+				indent();
+				tprint( "vec3<%s> dx;\n", type.c_str());
+				for( int dim = 0; dim < 3; dim++) {
+					tprint( "dx[%i] = x1[%i] - x0[%i];\n", dim, dim, dim );
+				}
+				tprint( calls[i], estr, get_running_flops().load());
+				deindent();
+				tprint("}\n");
+				reset_running_flops();
+			}
+		}
+	}
 }
 
 void create_func_data_ptr(std::string fname) {
@@ -3496,7 +3553,7 @@ int P2P_ewald() {
 	tprint("f.force[0] += flag * m * dx[0] * r3inv;\n");
 	tprint("f.force[1] += flag * m * dx[1] * r3inv;\n");
 	tprint("f.force[2] += flag * m * dx[2] * r3inv;\n");
-	tprint( "f.potential = fma(flag, f.potential, rzero * m * TCAST(2.8372975));\n");
+	tprint( "f.potential = fma(flag, f.potential, rzero * m * TCAST(2.83729747948179022998));\n");
 	tprint( "return %i;\n", get_running_flops().load() + 39);
 	deindent();
 	tprint("}\n");
@@ -4414,8 +4471,8 @@ int main() {
 #ifdef USE_SIMD
 	printf( "simd, ");
 #endif
-	printf("simd double width = %i, ", DOUBLE_SIMD_WIDTH);
-	printf("simd float width = %i, ", FLOAT_SIMD_WIDTH);
+	printf("simd double width = %i, ", SIMD_DOUBLE_WIDTH);
+	printf("simd float width = %i, ", SIMD_FLOAT_WIDTH);
 	printf("simd m2m width = %i\n", M2M_SIMD_WIDTH);
 
 #ifdef USE_FLOAT
@@ -4429,6 +4486,7 @@ int main() {
 	m2monly.push_back(0);
 	simd.push_back(0);
 	simd_size.push_back(1);
+	fixed_type.push_back("fixed32");
 #ifdef USE_SIMD
 	base_rtype.push_back("float");
 	rtype.push_back("simd_f32");
@@ -4439,8 +4497,9 @@ int main() {
 	precision.push_back(1);
 	m2monly.push_back(0);
 	simd.push_back(1);
-	simd_size.push_back(FLOAT_SIMD_WIDTH);
-	if( M2M_SIMD_WIDTH != FLOAT_SIMD_WIDTH) {
+	simd_size.push_back(SIMD_FLOAT_WIDTH);
+	fixed_type.push_back("simd_fixed32");
+	if( M2M_SIMD_WIDTH != SIMD_FLOAT_WIDTH) {
 		base_rtype.push_back("float");
 		rtype.push_back("m2m_simd_f32");
 		base_itype.push_back("int32_t");
@@ -4451,6 +4510,7 @@ int main() {
 		m2monly.push_back(1);
 		simd.push_back(1);
 		simd_size.push_back(M2M_SIMD_WIDTH);
+		fixed_type.push_back("");
 	}
 #endif
 #endif
@@ -4465,6 +4525,7 @@ int main() {
 	m2monly.push_back(0);
 	simd.push_back(0);
 	simd_size.push_back(1);
+	fixed_type.push_back("fixed64");
 #ifdef USE_SIMD
 	base_rtype.push_back("double");
 	rtype.push_back("simd_f64");
@@ -4475,8 +4536,9 @@ int main() {
 	precision.push_back(2);
 	m2monly.push_back(0);
 	simd.push_back(1);
-	simd_size.push_back(DOUBLE_SIMD_WIDTH);
-	if( M2M_SIMD_WIDTH != DOUBLE_SIMD_WIDTH) {
+	simd_size.push_back(SIMD_DOUBLE_WIDTH);
+	fixed_type.push_back("simd_fixed64");
+	if( M2M_SIMD_WIDTH != SIMD_DOUBLE_WIDTH) {
 		base_rtype.push_back("double");
 		rtype.push_back("m2m_simd_f64");
 		base_itype.push_back("int64_t");
@@ -4487,6 +4549,7 @@ int main() {
 		m2monly.push_back(1);
 		simd.push_back(1);
 		simd_size.push_back(M2M_SIMD_WIDTH);
+		fixed_type.push_back("");
 	}
 #endif
 #endif
@@ -4498,6 +4561,7 @@ int main() {
 	SYSTEM("mkdir -p ./generated_code/include/detail\n");
 	SYSTEM("mkdir -p ./generated_code/src\n");
 	SYSTEM("mkdir -p ./generated_code/src/math\n");
+	SYSTEM("mkdir -p ./generated_code/src/constants\n");
 	tprint("\n");
 	set_file(full_header.c_str());
 	tprint("#pragma once\n");
@@ -4529,6 +4593,7 @@ int main() {
 	tprint("namespace sfmm {\n");
 	tprint("\n");
 	include("complex.hpp");
+	tprint("\n");
 	int ntypenames = rtype.size();
 
 #ifdef USE_SIMD
@@ -4559,7 +4624,7 @@ int main() {
 	str += "\tstatic constexpr bool is_simd = true;\n";
 	str += "\tusing type = float;\n";
 	str += "};\n\n";
-	if(M2M_SIMD_WIDTH != FLOAT_SIMD_WIDTH) {
+	if(M2M_SIMD_WIDTH != SIMD_FLOAT_WIDTH) {
 		str += "template<>\n";
 		str += "struct type_traits<m2m_simd_f32> {\n";
 		str += "\tstatic constexpr int precision = 1;\n";
@@ -4583,7 +4648,7 @@ int main() {
 	str += "\tstatic constexpr bool is_simd = true;\n";
 	str += "\tusing type = double;\n";
 	str += "};\n\n";
-	if(M2M_SIMD_WIDTH != FLOAT_SIMD_WIDTH) {
+	if(M2M_SIMD_WIDTH != SIMD_DOUBLE_WIDTH) {
 		str += "template<>\n";
 		str += "struct type_traits<m2m_simd_f64> {\n";
 		str += "\tstatic constexpr int precision = 2;\n";
@@ -4821,7 +4886,20 @@ int main() {
 	tprint("}\n");
 
 	set_file(full_header.c_str());
+#ifdef USE_FLOAT
+	include("fixed32.hpp");
+#ifdef USE_SIMD
+	include("simd_fixed32.hpp");
+#endif
+#endif
+#ifdef USE_DOUBLE
+	include("fixed64.hpp");
+#ifdef USE_SIMD
+	include("simd_fixed64.hpp");
+#endif
+#endif
 
+	include( "p2p.hpp");
 	for (int ti = 0; ti < ntypenames; ti++) {
 		typenum = ti;
 		type = rtype[ti];
@@ -5348,6 +5426,7 @@ int main() {
 			tprint("};\n");
 			tprint("}\n");
 		}
+		fixed_point_covers();
 		if (simd[ti]) {
 			fprintf(fp, "#endif /* __CUDACC__ */\n");
 		}
@@ -5356,7 +5435,11 @@ int main() {
 	include("complex_impl.hpp");
 	include("expansion.hpp");
 	include("periodic.hpp");
-	include( "p2p.hpp");
+	tprint("\n");
+
+
+
+	tprint("\n");
 	str = "template<class V, typename std::enable_if<is_compound_type<V>::value>::type* = nullptr>\n"
 			"inline void apply_padding(V& A, int n) {\n"
 			"\tfor (int i = 0; i < V::size(); i++) {\n"
@@ -5429,52 +5512,15 @@ int main() {
 	include("timing.cpp");
 	set_file("./generated_code/src/atomic.c");
 	include("atomic.c");
-	/*set_file("./generated_code/src/flops.cpp");
-	 tprint("#include \"sfmm.hpp\"\n");
-	 tprint("#include <unordered_map>\n");
-	 tprint("#include <mutex>\n");
-	 tprint("\n");
-	 tprint("namespace sfmm {\n");
-	 tprint("namespace detail {\n");
-	 tprint("static void initialize() { \n");
-	 indent();
-	 tprint("std::array<std::array<std::array<std::unordered_map<std::string, std::unordered_map<std::string, int>>,3>,2>,%i> flops;\n", PMAX + 1);
-	 for (int ti = 0; ti < ntypenames; ti++) {
-	 typenum = ti;
-	 type = rtype[ti];
-	 int nops = 7;
-	 const char* opnames[nops] = { "M2L", "M2P", "P2L", "P2M", "M2M", "L2L", "L2P" };
-	 for (nopot = 0; nopot <= 1; nopot++) {
-	 for (int rot = 0; rot < 3; rot++) {
-	 for (int P = pmin; P <= pmax; P++) {
-	 for (int op = 0; op < nops; op++) {
-	 auto& map = allflops[P][nopot][rot][rtype[ti]];
-	 auto iter = map.find(opnames[op]);
-	 if (iter != map.end()) {
-	 tprint("flops[%i][%i][%i][\"%s\"][\"%s\"] = %i;\n", P, nopot, rot, rtype[ti].c_str(), opnames[op], iter->second);
-	 }
-	 }
-	 }
 
-	 }
-	 }
-	 }
-	 std::string str2 = "";
-	 str2 += "\tfor( int i = 0; i < operator_count(); i++) {\n";
-	 str2 += "\t\tauto& entry = *operator_data(i);\n";
-	 str2 += "\t\tentry.flops = flops[entry.P][entry.nopot][entry.nrot][entry.type][entry.name];\n";
-	 str2 += "\t}\n";
-	 fprintf(fp, "%s", str2.c_str());
-	 deindent();
-	 tprint("}\n\n");
-	 tprint("void operator_flops_initialize() {\n");
-	 indent();
-	 tprint("static std::once_flag flag;\n");
-	 tprint("std::call_once(flag, []() {detail::initialize();});\n");
-	 deindent();
-	 tprint("}\n\n");
-	 tprint("}\n\n");
-	 tprint("}\n");*/
+	set_file( "./generated_code/src/constants/constants.cpp");
+	tprint( "#include \"sfmm.hpp\"\n");
+	tprint("\n");
+	str = "const simd_f32 c0s = simd_fixed32(std::numeric_limits<unsigned>::max()) + simd_fixed32(1);\n"
+	"const simd_f32 c0si = simd_fixed32(1) / c0s;\n"
+	"const simd_f64 c0d = simd_fixed64::simd_f64(std::numeric_limits<unsigned>::max()) + simd_f64(1);\n"
+	"const simd_f64 c0di = simd_fixed64::simd_f64(1) / c0d;\n";
+	tprint( "%s\n", str.c_str());
 
 	return 0;
 }
