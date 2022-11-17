@@ -4668,9 +4668,6 @@ int main() {
 			"\t\t} \\\n"
 			"\t\treturn ref; \\\n"
 			"\t} \\\n"
-			"\tSFMM_PREFIX classname(const classname& other) { \\\n"
-			"\t\t*this = other; \\\n"
-			"\t} \\\n"
 			"\tSFMM_PREFIX T* data() { \\\n"
 			"\t\treturn o; \\\n"
 			"\t} \\\n"
@@ -4901,6 +4898,22 @@ int main() {
 			tprint("}\n");
 
 			tprint("SFMM_EXPANSION_MEMBERS(expansion, %s, %i);\n", type.c_str(), P);
+			tprint("template<class V>\n");
+			tprint("SFMM_PREFIX expansion(const expansion<V, %i>& other) {\n", P);
+			indent();
+			tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
+			indent();
+			tprint("o[n] = T(other.o[n]);\n");
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 1) {
+				tprint("t = T(other.t);\n");
+			}
+			if (scaled) {
+				tprint("r = T(other.r);\n");
+			}
+			deindent();
+			tprint("}\n");
 			tprint("SFMM_PREFIX expansion& operator=(const expansion& other) {\n");
 			indent();
 			tprint("for( int n = 0; n < %i; n++ ) {\n", exp_sz(P));
@@ -5027,6 +5040,8 @@ int main() {
 			tprint("return o[i];\n");
 			deindent();
 			tprint("}\n");
+			tprint("template<class V, int P>\n");
+			tprint("friend class expansion;\n");
 			if (!m2monly[typenum] && simd[typenum]) {
 				if (scaled && periodic && P >= pmin) {
 					tprint("friend int M2L_ewald(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", P, P);
@@ -5107,6 +5122,22 @@ int main() {
 			tprint("}\n");
 
 			tprint("SFMM_EXPANSION_MEMBERS(multipole, %s, %i);\n", type.c_str(), P);
+			tprint("template<class V>\n");
+			tprint("SFMM_PREFIX multipole(const multipole<V, %i>& other) {\n", P);
+			indent();
+			tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
+			indent();
+			tprint("o[n] = T(other.o[n]);\n");
+			deindent();
+			tprint("}\n");
+			if (periodic && P > 1) {
+				tprint("t = T(other.t);\n");
+			}
+			if (scaled) {
+				tprint("r = T(other.r);\n");
+			}
+			deindent();
+			tprint("}\n");
 			tprint("SFMM_PREFIX multipole& operator=(const multipole& other) {\n");
 			indent();
 			tprint("for( int n = 0; n < %i; n++ ) {\n", mul_sz(P));
@@ -5215,6 +5246,7 @@ int main() {
 				tprint("}\n");
 				tprint("SFMM_PREFIX T trace2() const {\n");
 				indent();
+
 				tprint("return t;\n");
 				deindent();
 				tprint("}\n");
@@ -5234,6 +5266,8 @@ int main() {
 			tprint("return o[i];\n");
 			deindent();
 			tprint("}\n");
+			tprint("template<class V, int P>\n");
+			tprint("friend class multipole;\n");
 			if (!m2monly[typenum] && simd[typenum]) {
 				if (periodic) {
 					tprint("friend int M2L_ewald(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", P, P);

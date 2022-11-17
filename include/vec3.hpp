@@ -32,15 +32,21 @@
 
 template<class T>
 struct vec3: public std::array<T, SFMM_NDIM> {
-	SFMM_VEC3_OP1( + );
-	SFMM_VEC3_OP1( - );
-	SFMM_VEC3_OP1( * );
-	SFMM_VEC3_OP1( / );
-	SFMM_VEC3_OP2( * );
-	SFMM_VEC3_OP2( / );
+	SFMM_VEC3_OP1( + )
+	SFMM_VEC3_OP1( - )
+	SFMM_VEC3_OP1( * )
+	SFMM_VEC3_OP1( / )
+	SFMM_VEC3_OP2( * )
+	SFMM_VEC3_OP2( / )
 	SFMM_PREFIX
 	static size_t constexpr size() {
 		return SFMM_NDIM;
+	}
+	template<class O>
+	inline vec3(const vec3<O>& other ) {
+		for( int dim = 0; dim < SFMM_NDIM; dim++) {
+			(*this)[dim] = T(other[dim]);
+		}
 	}
 	vec3 inline operator-() const {
 		vec3 result;

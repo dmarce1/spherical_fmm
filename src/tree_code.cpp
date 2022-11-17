@@ -358,7 +358,7 @@ public:
 		return flops;
 	}
 
-	size_t compute_cell_gravity(expansion_type<T> expansion, std::vector<check_type> checklist, std::vector<check_type> echecklist) {
+	size_t compute_cell_gravity(expansion_type<double> expansion, std::vector<check_type> checklist, std::vector<check_type> echecklist) {
 		size_t flops = 0;
 		static thread_local std::vector<tree*> Clist;
 		static thread_local std::vector<tree*> Plist;
@@ -374,20 +374,24 @@ public:
 			flops += sfmm::L2L(expansion, parent->center - center, FLAGS);
 		}
 		list_iterate(echecklist, Plist, Clist, false, true);
-		for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
+		for (int i = 0; i < Clist.size(); i += sfmm::simd_size<sfmm::simd_f64>()) {
+			sfmm::expansion<sfmm::simd_f64,ORDER> L;
+			sfmm::multipole<sfmm::simd_f64,ORDER> M;
+			sfmm::vec3<sfmm::simd_f64> dx;
 			L.init();
-			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
+			M.init();
+			const int end = std::min(sfmm::simd_size<sfmm::simd_f64>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
-				load(dx, sfmm::distance(center, src->center), j);
-				load(M, src->multipole, j);
+				load(dx, sfmm::vec3<double>(sfmm::distance(center, src->center)), j);
+				load(M, sfmm::multipole<double,ORDER>(src->multipole), j);
 			}
 			m2l_ewald += end;
 			apply_padding(dx, end);
 			apply_padding(M, end);
-			flops += sfmm::simd_size<V>() * sfmm::M2L_ewald(L, M, dx, FLAGS);
+			flops += sfmm::simd_size<sfmm::simd_f64>() * sfmm::M2L_ewald(L, M, dx, FLAGS);
 			apply_mask(L, end);
-			expansion += reduce_sum(L);
+			expansion += sfmm::expansion<double,ORDER>(reduce_sum(L));
 		}
 		for (int i = 0; i < Plist.size(); i++) {
 			for (int j = Plist[i]->part_range.first; j < Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
@@ -399,7 +403,7 @@ public:
 				p2l_ewald += end;
 				apply_padding(dx, end);
 				flops += sfmm::simd_size<V>() * sfmm::P2L_ewald(L, sfmm::create_mask<V>(end) * mass, dx);
-				expansion += reduce_sum(L);
+				expansion += sfmm::expansion<double,ORDER>(reduce_sum(L));
 			}
 		}
 		Clist.resize(0);
@@ -418,7 +422,7 @@ public:
 			apply_padding(M, end);
 			flops += sfmm::simd_size<V>() * sfmm::M2L(L, M, dx, FLAGS);
 			apply_mask(L, end);
-			expansion += reduce_sum(L);
+			expansion += sfmm::expansion<double,ORDER>(reduce_sum(L));
 		}
 		for (int i = 0; i < Plist.size(); i++) {
 			for (int j = Plist[i]->part_range.first; j < Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
@@ -430,7 +434,7 @@ public:
 				p2l += end;
 				apply_padding(dx, end);
 				flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(end) * mass, dx);
-				expansion += reduce_sum(L);
+				expansion += sfmm::expansion<double,ORDER>(reduce_sum(L));
 			}
 		}
 		if (children.size()) {
@@ -439,7 +443,7 @@ public:
 				flops += children[RIGHT].compute_cell_gravity(expansion, std::move(checklist), std::move(echecklist));
 			}
 		} else {
-			load(L, expansion);
+			load(L, sfmm::expansion<float,ORDER>(expansion));
 			for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 				force_type<V> F;
 				F.init();
@@ -546,7 +550,7 @@ public:
 				continue;
 			}
 			const auto& snk_part = parts[i];
-			force_type<T> fa;
+			force_type<double> fa;
 			fa.init();
 			const int nthreads = std::thread::hardware_concurrency();
 			std::vector<std::future<void>> futs;
@@ -556,26 +560,20 @@ public:
 				const int e = (size_t) (proc + 1) * parts.size() / nthreads;
 				futs.push_back(std::async([i,b,e,&fa,&mutex,snk_part]() {
 					for (int j = b; j < e; j++) {
-						force_type<T> fe2;
-						force_type<T> fd;
+						force_type<double> fe2;
+						force_type<double> fd;
 						const auto& src_part = parts[j];
-						sfmm::vec3<T> dx;
+						sfmm::vec3<double> dx;
 						for (int dim = 0; dim < NDIM; dim++) {
 							dx[dim] = sfmm::distance(snk_part.x[dim], src_part.x[dim]);
 						}
 						fd.init();
 						fe2.init();
 						P2P_ewald(fe2, mass, dx);
-				//		const auto err = fabs((fe1.potential-fe2.potential)/fe1.potential);
-					//	if( err > 1e-2) {
-						//	printf( "%e %e %i %i\n", fe1.potential, fe2.potential, i, j);
-					//	}
-						P2P(fd, mass, dx);
-						//printf( "%e\n", fc.force[0]*fd.force[0]+fc.force[1]*fd.force[1]+fc.force[2]*fd.force[2]);
+						P2P(fd, (double) mass, dx);
 						std::lock_guard<std::mutex> lock(mutex);
 						fa.force += fd.force + fe2.force;
 						fa.potential += fd.potential + fe2.potential;
-//				fa += P2P_ewald(mass, dx);
 					}
 				}));
 			}
@@ -590,6 +588,8 @@ public:
 			}
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
+			//printf( "%e\n", (famag - fnmag) / famag);
+			std::lock_guard<std::mutex> lock(mutex);
 			perr += sfmm::sqr(snk_part.f.potential - fa.potential);
 			pnorm += sfmm::sqr(fa.potential);
 			norm += sfmm::sqr(famag);
@@ -601,6 +601,7 @@ public:
 	}
 
 	static void initialize() {
+		forest.resize(0);
 		parts.resize(0);
 		for (int i = 0; i < TEST_SIZE; i++) {
 			sfmm::vec3<T> x;
@@ -697,10 +698,10 @@ struct run_tests {
 		const auto error = tree_type::compare_analytic(50.0 / TEST_SIZE);
 		printf("%i %e %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, tm.read(), error.first, error.second,
 				flops / ftm.read() / (1024.0 * 1024.0 * 1024.0));
-		tree_type::show_counters();
+	//	tree_type::show_counters();
 		tree_type::reset_counters();
 		run_tests<T, V, M, ORDER + 1, FLAGS> run;
-		run();
+	//	run();
 	}
 };
 
@@ -818,6 +819,8 @@ int main(int argc, char **argv) {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
+	sfmm::vec3<double> t;
+	sfmm::vec3<float> t1(t);
 //	ewald();
 //	return 0;
 	//return 0;
@@ -828,10 +831,23 @@ int main(int argc, char **argv) {
 //	 return 0;
 	//ewald();
 	//return 0;
-	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, PMIN, sfmmWithBestOptimization> run1;
+//	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 5, sfmmWithBestOptimization> run1;
+//	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 6, sfmmWithBestOptimization> run2;
+//	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 7, sfmmWithBestOptimization> run3;
+//	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 8, sfmmWithBestOptimization> run4;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 5, sfmmWithBestOptimization> run5;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 6, sfmmWithBestOptimization> run6;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 7, sfmmWithBestOptimization> run7;
+	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 8, sfmmWithBestOptimization> run8;
 	//run_tests<double, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
 //	run_tests<double, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
-	run1();
+	run5();
+	run6();
+	run7();
+	run8();
+//	run1();
+//	run2();
+//	run3();
 //	run2();
 //	run3();
 //	sfmm::detail::operator_write_new_bestops_source();
