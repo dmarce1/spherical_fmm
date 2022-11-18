@@ -41,7 +41,7 @@ class tree {
 	std::pair<int, int> part_range;
 	sfmm::vec3<T> begin;
 	sfmm::vec3<T> end;
-	sfmm::vec3<T> center;
+	sfmm::vec3<sfmm::fixed32> center;
 	tree* parent;
 	T radius;
 
@@ -266,6 +266,7 @@ public:
 		}
 #endif
 //		center = (begin + end) * 0.5;
+		sfmm::vec3<double> center0;
 		if (nparts > BUCKET_SIZE) {
 			sfmm::vec3<T> dx;
 			multipole_type<T> M;
@@ -283,26 +284,31 @@ public:
 			}
 			const auto& cleft = children[LEFT];
 			const auto& cright = children[RIGHT];
-			center = left.center * cleft.multipole(0, 0).real() + right.center * cright.multipole(0, 0).real();
+			for( int dim = 0; dim < NDIM; dim++) {
+				center0[dim] = left.center[dim].to_double() * cleft.multipole(0, 0).real() + right.center[dim].to_double() * cright.multipole(0, 0).real();
+			}
 			const T total = cleft.multipole(0, 0).real() + cright.multipole(0, 0).real();
-			center /= total;
+			center0 /= total;
 			radius = 0.0;
 			for (int ci = 0; ci < NCHILD; ci ++) {
-				dx = children[ci].center - center;
+				for( int dim = 0; dim < NDIM; dim++) {
+					dx[dim] = children[ci].center[dim].to_double() - center0[dim];
+				}
 				M = children[ci].multipole;
 				radius = std::max(radius, sfmm::reduce_max(abs(dx) + children[ci].radius));
 				flops += sfmm::M2M(M, dx, FLAGS);
 				multipole += sfmm::reduce_sum(M);
 			}
-		} else {
+			center = center0;
+	} else {
 			if (nparts) {
-				center = T(0);
+				center0 = T(0);
 				for (int i = part_range.first; i < part_range.second; i++) {
 					for( int dim = 0; dim < SFMM_NDIM; dim++) {
-						center[dim] += parts[i][dim].to_double();
+						center0[dim] += parts[i][dim].to_double();
 					}
 				}
-				center /= nparts;
+				center0 /= nparts;
 				radius = 0.0;
 				for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 					sfmm::vec3<V> dx;
@@ -310,7 +316,7 @@ public:
 					for (int j = 0; j < end; j++) {
 						const auto& part = parts[i + j];
 						for( int dim = 0; dim < SFMM_NDIM; dim++) {
-							load(dx[dim], float(part[dim].to_double() - center[dim]), j);
+							load(dx[dim], float(part[dim].to_double() - center0[dim]), j);
 						}
 					}
 					multipole_type<V> M;
@@ -318,9 +324,11 @@ public:
 					flops += sfmm::simd_size<V>() * sfmm::P2M(M, sfmm::create_mask<V>(end) * mass, dx);
 					multipole += sfmm::reduce_sum(M);
 				}
+				center = center0;
 				radius = std::max(hsoft, radius);
 			} else {
-				center = (begin + end) * 0.5;
+				center0 = (begin + end) * 0.5;
+				center = center0;
 				radius = hsoft;
 			}
 		}
@@ -364,26 +372,31 @@ public:
 		force_type<V> F;
 		sfmm::vec3<V> x0;
 		sfmm::vec3<V> x1;
+		sfmm::vec3<sfmm::simd_fixed32> xsnk;
+		sfmm::vec3<sfmm::simd_fixed32> xsrc;
 
 		if (parent) {
 			expansion.rescale(radius);
 			flops += sfmm::L2L(expansion, parent->center, center, FLAGS);
 		}
 		list_iterate(echecklist, Plist, Clist, false, true);
-		x1 = sfmm::vec3<V>(center);
+		for( int dim = 0; dim < NDIM; dim++) {
+			x1[dim] = float(center[dim].to_double());
+		}
+		xsnk = center;
 		for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
 			L.init();
 			M.init();
 			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
-				load(x0, src->center, j);
+				load(xsrc, src->center, j);
 				load(M, src->multipole, j);
 			}
 			m2l_ewald += end;
-			apply_padding(x0, end);
+			apply_padding(xsrc, end);
 			apply_padding(M, end);
-			flops += sfmm::simd_size<V>() * sfmm::M2L_ewald(L, M, x0, x1, FLAGS);
+			flops += sfmm::simd_size<V>() * sfmm::M2L_ewald(L, M, xsrc, xsnk, FLAGS);
 			apply_mask(L, end);
 			expansion += (reduce_sum(L));
 		}
@@ -392,13 +405,11 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					for( int dim = 0; dim < SFMM_NDIM; dim++) {
-						load(x0[dim], float(parts[j + k][dim].to_double()), k);
-					}
+					load(xsrc, parts[j + k], k);
 				}
 				p2l_ewald += end;
-				apply_padding(x0, end);
-				flops += sfmm::simd_size<V>() * sfmm::P2L_ewald(L, sfmm::create_mask<V>(end) * mass, x0, x1, FLAGS);
+				apply_padding(xsrc, end);
+				flops += sfmm::simd_size<V>() * sfmm::P2L_ewald(L, sfmm::create_mask<V>(end) * mass, xsrc, xsnk, FLAGS);
 				expansion += (reduce_sum(L));
 			}
 		}
@@ -410,13 +421,13 @@ public:
 			const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 			for (int j = 0; j < end; j++) {
 				const auto& src = Clist[i + j];
-				load(x0, src->center, j);
+				load(xsrc, src->center, j);
 				load(M, src->multipole, j);
 			}
 			m2l += end;
-			apply_padding(x0, end);
+			apply_padding(xsrc, end);
 			apply_padding(M, end);
-			flops += sfmm::simd_size<V>() * sfmm::M2L(L, M, x0, x1, FLAGS);
+			flops += sfmm::simd_size<V>() * sfmm::M2L(L, M, xsrc, xsnk, FLAGS);
 			apply_mask(L, end);
 			expansion += (reduce_sum(L));
 		}
@@ -425,13 +436,11 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					for( int dim = 0; dim < SFMM_NDIM; dim++) {
-						load(x0[dim], float(parts[j + k][dim].to_double()), k);
-					}
+					load(xsrc, parts[j + k], k);
 				}
 				p2l += end;
-				apply_padding(x0, end);
-				flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(end) * mass, x0, x1, FLAGS);
+				apply_padding(xsrc, end);
+				flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(end) * mass, xsrc, xsnk, FLAGS);
 				expansion += (reduce_sum(L));
 			}
 		}
@@ -447,11 +456,10 @@ public:
 				F.init();
 				const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 				for (int j = 0; j < end; j++) {
-					for( int dim = 0; dim < SFMM_NDIM; dim++) {
-						load(x0[dim], float(parts[j + i][dim].to_double()), j);
-					}
+					load(xsrc, parts[j + i], j);
 				}
-				flops += sfmm::simd_size<V>() * sfmm::L2P(F, L, x1, x0, FLAGS);
+				apply_padding(xsrc, end);
+				flops += sfmm::simd_size<V>() * sfmm::L2P(F, L, xsnk, xsrc, FLAGS);
 				for (int j = 0; j < end; j++) {
 					store(forces[i + j], F, j);
 				}
@@ -465,19 +473,19 @@ public:
 				for (int k = part_range.first; k < part_range.second; k++) {
 					auto& part = parts[k];
 					for( int dim = 0; dim < SFMM_NDIM; dim++) {
-						x1[dim] = sfmm::simd_f32(part[dim].to_double());
+						xsnk[dim] = sfmm::simd_fixed32(part[dim]);
 					}
 					F.init();
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
-						load(x0, src->center, j);
+						load(xsrc, src->center, j);
 						load(M, src->multipole, j);
 					}
 					m2p_ewald += end;
-					apply_padding(x0, end);
+					apply_padding(xsrc, end);
 					apply_padding(M, end);
-					flops += sfmm::simd_size<V>() * sfmm::M2P_ewald(F, M, x0, x1, FLAGS);
+					flops += sfmm::simd_size<V>() * sfmm::M2P_ewald(F, M, xsrc, xsnk, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(forces[k], F, j);
 					}
@@ -489,17 +497,17 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for( int dim = 0; dim < SFMM_NDIM; dim++) {
-							x1[dim] = sfmm::simd_f32(part[dim].to_double());
+							xsnk[dim] = sfmm::simd_fixed32(part[dim]);
 						}
 						for (int k = 0; k < end; k++) {
 							for( int dim = 0; dim < SFMM_NDIM; dim++) {
-								load(x0[dim], float(parts[j + k][dim].to_double()), k);
+								load(xsrc[dim], parts[j + k][dim], k);
 							}
 						}
 						p2p_ewald += end;
-						apply_padding(x0, end);
+						apply_padding(xsrc, end);
 						F.init();
-						flops += sfmm::simd_size<V>() * P2P_ewald(F, sfmm::create_mask<V>(end) * mass, x0, x1, FLAGS);
+						flops += sfmm::simd_size<V>() * P2P_ewald(F, sfmm::create_mask<V>(end) * mass, xsrc, xsnk, FLAGS);
 						forces[l] += sfmm::reduce_sum(F);
 					}
 				}
@@ -513,19 +521,19 @@ public:
 				for (int k = part_range.first; k < part_range.second; k++) {
 					auto& part = parts[k];
 					for( int dim = 0; dim < SFMM_NDIM; dim++) {
-						x1[dim] = sfmm::simd_f32(part[dim].to_double());
+						xsnk[dim] = sfmm::simd_fixed32(part[dim]);
 					}
 					F.init();
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
 						const auto& src = Clist[i + j];
-						load(x0, src->center, j);
+						load(xsrc, src->center, j);
 						load(M, src->multipole, j);
 					}
 					m2p += end;
-					apply_padding(x0, end);
+					apply_padding(xsrc, end);
 					apply_padding(M, end);
-					flops += sfmm::simd_size<V>() * sfmm::M2P(F, M, x0, x1, FLAGS);
+					flops += sfmm::simd_size<V>() * sfmm::M2P(F, M, xsrc, xsnk, FLAGS);
 					for (int j = 0; j < end; j++) {
 						accumulate(forces[k], F, j);
 					}
@@ -537,17 +545,17 @@ public:
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
 						for( int dim = 0; dim < SFMM_NDIM; dim++) {
-							x1[dim] = sfmm::simd_f32(part[dim].to_double());
+							xsnk[dim] = sfmm::simd_fixed32(part[dim]);
 						}
 						for (int k = 0; k < end; k++) {
 							for( int dim = 0; dim < SFMM_NDIM; dim++) {
-								load(x0[dim], float(parts[j + k][dim].to_double()), k);
+								load(xsrc[dim], parts[j + k][dim], k);
 							}
 						}
 						p2p += end;
-						apply_padding(x0, end);
+						sfmm::apply_padding(xsrc, end);
 						F.init();
-						flops += sfmm::simd_size<V>() * P2P(F, sfmm::create_mask<V>(end) * mass, x0, x1, FLAGS);
+						flops += sfmm::simd_size<V>() * P2P(F, sfmm::create_mask<V>(end) * mass, xsrc, xsnk, FLAGS);
 						forces[l] += sfmm::reduce_sum(F);
 					}
 				}
@@ -568,7 +576,7 @@ public:
 			const auto& snk_part = parts[i];
 			force_type<double> fa;
 			fa.init();
-			const int nthreads = std::thread::hardware_concurrency();
+			const int nthreads = 2 * std::thread::hardware_concurrency();
 			std::vector<std::future<void>> futs;
 			std::mutex mutex;
 			for (int proc = 0; proc < nthreads; proc++) {

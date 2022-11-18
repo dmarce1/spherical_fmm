@@ -3459,7 +3459,7 @@ int P2P_ewald() {
 	init_real("tmp");
 	init_real("c");
 	init_real("s");
-	constexpr double alpha = 2.4;
+	constexpr double alpha = 2.0;
 	tprint("force_type<%s> f0;\n", type.c_str());
 	tprint("f.potential = m * TCAST(%.20e);\n", M_PI / (alpha*alpha));
 	tprint("f.force[0] = TCAST(0);\n");
@@ -5475,6 +5475,49 @@ int main() {
 		}
 
 	}
+	str = "";
+#ifdef USE_FLOAT
+	str += "\tinline vec3<float> distance(const vec3<fixed32>& a, const vec3<fixed32>& b) {\n"
+			"\t\tvec3<float> d;\n"
+			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
+			"\t\t\td[dim] = distance(a[dim], b[dim]);\n"
+			"\t\t}\n"
+			"\t\treturn d;\n"
+			"\t}\n"
+			"\n";
+#ifdef USE_SIMD
+	str += "\tinline vec3<simd_f32> distance(const vec3<simd_fixed32>& a, const vec3<simd_fixed32>& b) {\n"
+			"\t\tvec3<simd_f32> d;\n"
+			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
+			"\t\t\td[dim] = distance(a[dim], b[dim]);\n"
+			"\t\t}\n"
+			"\t\treturn d;\n"
+			"\t}\n"
+			"\n";
+#endif
+#endif
+
+#ifdef USE_DOUBLE
+	str += "\tinline vec3<double> distance(const vec3<fixed64>& a, const vec3<fixed64>& b) {\n"
+			"\t\tvec3<double> d;\n"
+			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
+			"\t\t\td[dim] = distance(a[dim], b[dim]);\n"
+			"\t\t}\n"
+			"\t\treturn d;\n"
+			"\t}\n"
+			"\n";
+#ifdef USE_SIMD
+	str += "\tinline vec3<simd_f64> distance(const vec3<simd_fixed64>& a, const vec3<simd_fixed64>& b) {\n"
+			"\t\tvec3<simd_f64> d;\n"
+			"\t\tfor (int dim = 0; dim < SFMM_NDIM; dim++) {\n"
+			"\t\t\td[dim] = distance(a[dim], b[dim]);\n"
+			"\t\t}\n"
+			"\t\treturn d;\n"
+			"\t}\n"
+			"\n";
+#endif
+#endif
+	tprint( "%s\n", str.c_str());
 	include("complex_impl.hpp");
 	include("expansion.hpp");
 	tprint("\n");
