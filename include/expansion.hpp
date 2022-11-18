@@ -1,10 +1,3 @@
-inline double reduce_sum(double A) {
-	return A;
-}
-
-inline float reduce_sum(float A) {
-	return A;
-}
 
 template<class T, int P>
 struct is_compound_type<expansion<T, P>> {

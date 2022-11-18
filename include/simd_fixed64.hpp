@@ -4,6 +4,9 @@ class simd_fixed64 {
 	static const simd_f64 c0di;
 	simd_ui64 i;
 public:
+	SFMM_PREFIX static constexpr int size() {
+		return simd_ui64::size();
+	}
 	SFMM_PREFIX constexpr simd_fixed64() :
 			i() {
 	}

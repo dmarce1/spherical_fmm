@@ -5485,6 +5485,7 @@ int main() {
 			"\t\treturn d;\n"
 			"\t}\n"
 			"\n";
+
 #ifdef USE_SIMD
 	str += "\tinline vec3<simd_f32> distance(const vec3<simd_fixed32>& a, const vec3<simd_fixed32>& b) {\n"
 			"\t\tvec3<simd_f32> d;\n"
