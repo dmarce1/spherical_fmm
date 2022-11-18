@@ -59,7 +59,7 @@ class tree {
 	static std::atomic<long long> m2l_ewald;
 	static std::atomic<long long> node_count;
 
-	static std::vector<sfmm::vec3<T>> parts;
+	static std::vector<sfmm::vec3<sfmm::fixed32>> parts;
 	static std::vector<force_type<T>> forces;
 	static std::vector<tree> forest;
 
@@ -156,10 +156,10 @@ public:
 		int lo = part_range.first;
 		int hi = part_range.second;
 		while (lo < hi) {
-			if (parts[lo][xdim] >= xmid) {
+			if (parts[lo][xdim].to_double() >= xmid) {
 				while (lo != hi) {
 					hi--;
-					if (parts[hi][xdim] < xmid) {
+					if (parts[hi][xdim].to_double() < xmid) {
 						std::swap(parts[lo], parts[hi]);
 						break;
 					}
@@ -178,7 +178,7 @@ public:
 			for (int dim = 0; dim < NDIM; dim++) {
 				T begin = (T) cell_begin[dim] / Ngrid;
 				T end = (T) cell_end[dim] / Ngrid;
-				if (parts[i][dim] < begin || parts[i][dim] > end) {
+				if (parts[i][dim].to_double() < begin || parts[i][dim].to_double() > end) {
 					flag = true;
 				}
 			}
@@ -188,7 +188,7 @@ public:
 				for (int dim = 0; dim < NDIM; dim++) {
 					T begin = (T) cell_begin[dim] / Ngrid;
 					T end = (T) cell_end[dim] / Ngrid;
-					printf("particle out of range! %e %e %e \n", begin, parts[i][dim], end);
+					printf("particle out of range! %e %e %e \n", begin, parts[i][dim].to_double(), end);
 				}
 			}
 		}
@@ -259,8 +259,8 @@ public:
 #ifdef DEBUG
 		for (int i = part_range.first; i < part_range.second; i++) {
 			for (int dim = 0; dim < NDIM; dim++) {
-				if (parts[i][dim] < begin[dim] || parts[i][dim] > end[dim]) {
-					printf("particle out of range! %e %e %e %i\n", begin[dim], parts[i][dim], end[dim], depth);
+				if (parts[i][dim].to_double() < begin[dim] || parts[i][dim].to_double() > end[dim]) {
+					printf("particle out of range! %e %e %e %i\n", begin[dim], parts[i][dim].to_double(), end[dim], depth);
 				}
 			}
 		}
@@ -298,7 +298,9 @@ public:
 			if (nparts) {
 				center = T(0);
 				for (int i = part_range.first; i < part_range.second; i++) {
-					center += parts[i];
+					for( int dim = 0; dim < SFMM_NDIM; dim++) {
+						center[dim] += parts[i][dim].to_double();
+					}
 				}
 				center /= nparts;
 				radius = 0.0;
@@ -307,7 +309,9 @@ public:
 					const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 					for (int j = 0; j < end; j++) {
 						const auto& part = parts[i + j];
-						load(dx, part - center, j);
+						for( int dim = 0; dim < SFMM_NDIM; dim++) {
+							load(dx[dim], float(part[dim].to_double() - center[dim]), j);
+						}
 					}
 					multipole_type<V> M;
 					radius = std::max(radius, sfmm::reduce_max(abs(dx)));
@@ -388,7 +392,9 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					load(x0, parts[j + k], k);
+					for( int dim = 0; dim < SFMM_NDIM; dim++) {
+						load(x0[dim], float(parts[j + k][dim].to_double()), k);
+					}
 				}
 				p2l_ewald += end;
 				apply_padding(x0, end);
@@ -419,7 +425,9 @@ public:
 				const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 				L.init();
 				for (int k = 0; k < end; k++) {
-					load(x0, parts[j + k], k);
+					for( int dim = 0; dim < SFMM_NDIM; dim++) {
+						load(x0[dim], float(parts[j + k][dim].to_double()), k);
+					}
 				}
 				p2l += end;
 				apply_padding(x0, end);
@@ -439,7 +447,9 @@ public:
 				F.init();
 				const int end = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 				for (int j = 0; j < end; j++) {
-					load(x0, parts[i + j], j);
+					for( int dim = 0; dim < SFMM_NDIM; dim++) {
+						load(x0[dim], float(parts[j + i][dim].to_double()), j);
+					}
 				}
 				flops += sfmm::simd_size<V>() * sfmm::L2P(F, L, x1, x0, FLAGS);
 				for (int j = 0; j < end; j++) {
@@ -454,7 +464,9 @@ public:
 			for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
 				for (int k = part_range.first; k < part_range.second; k++) {
 					auto& part = parts[k];
-					x1 = sfmm::vec3<sfmm::simd_f32>(part);
+					for( int dim = 0; dim < SFMM_NDIM; dim++) {
+						x1[dim] = sfmm::simd_f32(part[dim].to_double());
+					}
 					F.init();
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
@@ -476,9 +488,13 @@ public:
 					const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
-						x1 = sfmm::vec3<sfmm::simd_f32>(part);
+						for( int dim = 0; dim < SFMM_NDIM; dim++) {
+							x1[dim] = sfmm::simd_f32(part[dim].to_double());
+						}
 						for (int k = 0; k < end; k++) {
-							load(x0, parts[j + k], k);
+							for( int dim = 0; dim < SFMM_NDIM; dim++) {
+								load(x0[dim], float(parts[j + k][dim].to_double()), k);
+							}
 						}
 						p2p_ewald += end;
 						apply_padding(x0, end);
@@ -496,7 +512,9 @@ public:
 			for (int i = 0; i < Clist.size(); i += sfmm::simd_size<V>()) {
 				for (int k = part_range.first; k < part_range.second; k++) {
 					auto& part = parts[k];
-					x1 = sfmm::vec3<sfmm::simd_f32>(part);
+					for( int dim = 0; dim < SFMM_NDIM; dim++) {
+						x1[dim] = sfmm::simd_f32(part[dim].to_double());
+					}
 					F.init();
 					const int end = std::min(sfmm::simd_size<V>(), Clist.size() - i);
 					for (int j = 0; j < end; j++) {
@@ -518,9 +536,13 @@ public:
 					const int end = std::min((int) sfmm::simd_size<V>(), Plist[i]->part_range.second - j);
 					for (int l = part_range.first; l < part_range.second; l++) {
 						auto& part = parts[l];
-						x1 = sfmm::vec3<sfmm::simd_f32>(part);
+						for( int dim = 0; dim < SFMM_NDIM; dim++) {
+							x1[dim] = sfmm::simd_f32(part[dim].to_double());
+						}
 						for (int k = 0; k < end; k++) {
-							load(x0, parts[j + k], k);
+							for( int dim = 0; dim < SFMM_NDIM; dim++) {
+								load(x0[dim], float(parts[j + k][dim].to_double()), k);
+							}
 						}
 						p2p += end;
 						apply_padding(x0, end);
@@ -627,7 +649,7 @@ public:
 };
 
 template<class T, class V, class M, int ORDER, int FLAGS>
-std::vector<sfmm::vec3<T>> tree<T, V, M, ORDER, FLAGS>::parts;
+std::vector<sfmm::vec3<sfmm::fixed32>> tree<T, V, M, ORDER, FLAGS>::parts;
 
 template<class T, class V, class M, int ORDER, int FLAGS>
 std::vector<sfmm::force_type<T>> tree<T, V, M, ORDER, FLAGS>::forces;

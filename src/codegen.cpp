@@ -1149,6 +1149,7 @@ void fixed_point_covers() {
 			"SFMM_PREFIX inline int L2P%s(force_type<%s>& f, expansion<%s,P>& L, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
 			"SFMM_PREFIX inline int P2M%s(multipole<%s,P>& M, %s m, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n",
 			"SFMM_PREFIX inline int M2M%s(multipole<%s,P>& M, vec3<%s> x0, vec3<%s> x1, int flags = sfmmDefaultFlags ) {\n"};
+
 	const char* calls[N] = {
 			"return M2L%s(L, M, dx, flags) + %i;",
 			"return M2P%s(f, M, dx, flags) + %i;",

@@ -23,7 +23,7 @@ public:
 	SFMM_PREFIX inline fixed32(double other) {
 		*this = other;
 	}
-	SFMM_PREFIX inline operator double() const {
+	SFMM_PREFIX inline double to_double() const {
 		return (i + double(0.5)) * c0di;
 	}
 	SFMM_PREFIX
