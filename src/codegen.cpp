@@ -3578,6 +3578,64 @@ int P2P_ewald() {
 	return get_running_flops().load();
 }
 
+
+int P2P() {
+	func_header("P2P", 0, true, false, false, false, false, "", "f", FORCE, "m", LIT, "dx", VEC3);
+	int R2, H2;
+	tprint("const static double hsoft = 0.01;\n");
+	tprint("static const T h2(hsoft * hsoft);\n");
+	tprint("static const T hinv(T(1) / hsoft);\n");
+	tprint("static const T hinv3(sqr(hinv) * hinv);\n");
+	reset_running_flops();
+	tprint("const T r2 = fma(dx[0], dx[0], fma(dx[1], dx[1], dx[2] * dx[2]));\n");
+	tprint("const T wn(r2 < h2);\n");
+	tprint("if( reduce_sum(wn) > 0 ) {\n");
+	indent();
+	auto flops0 = get_running_flops();
+	reset_running_flops();
+	tprint("const T wf(r2 >= h2);\n");
+	tprint("vec3<T> fn, ff;\n");
+	tprint("T rzero(r2 < T(%.20e));\n", tiny());
+	tprint("const T rinv = rsqrt(r2 + rzero);\n");
+	tprint("const T rinv3 = sqr(rinv) * rinv;\n");
+	tprint("const T pf = rinv;\n");
+	tprint("ff[0] = dx[0] * rinv3;\n");
+	tprint("ff[1] = dx[1] * rinv3;\n");
+	tprint("ff[2] = dx[2] * rinv3;\n");
+	tprint("const T pn = (T(1.5) * hinv - T(0.5) * r2 * hinv3);\n");
+	tprint("fn[0] = dx[0] * hinv3;\n");
+	tprint("fn[1] = dx[1] * hinv3;\n");
+	tprint("fn[2] = dx[2] * hinv3;\n");
+	tprint("m = -m;\n");
+	tprint("f.potential = m * fma(pn, wn, pf * wf);\n");
+	tprint("f.force[0] = m * fma(fn[0], wn, ff[0] * wf);\n");
+	tprint("f.force[1] = m * fma(fn[1], wn, ff[1] * wf);\n");
+	tprint("f.force[2] = m * fma(fn[2], wn, ff[2] * wf);\n");
+	flops_t flops = flops0;
+	flops += get_running_flops();
+	tprint("return %i;\n", flops.load());
+	reset_running_flops();
+	deindent();
+	tprint("} else {\n");
+	indent();
+	tprint("const T rinv = rsqrt(r2);\n");
+	tprint("m = -m;\n");
+	tprint("const T mrinv3 = m * sqr(rinv) * rinv;\n");
+	tprint("f.potential = m * rinv;\n");
+	tprint("f.force[0] = dx[0] * mrinv3;\n");
+	tprint("f.force[1] = dx[1] * mrinv3;\n");
+	tprint("f.force[2] = dx[2] * mrinv3;\n");
+	flops = flops0;
+	flops += get_running_flops();
+	tprint("return %i;\n", flops.load());
+	deindent();
+	tprint("}\n");
+	deindent();
+	tprint("}\n");
+	tprint("}\n");
+	return get_running_flops().load();
+}
+
 int L2L_allrot(int P, int Q, int rot) {
 	auto index = lindex;
 	int flops = 0;
@@ -4857,7 +4915,10 @@ int main() {
 			tprint("#ifndef __CUDACC__\n");
 		}
 		if( !m2monly[ti]) {
-			P2P_ewald();
+			P2P();
+			if( periodic ) {
+				P2P_ewald();
+			}
 		}
 		for (int P = pmin; P <= pmax; P++) {
 			if (!m2monly[typenum]) {
