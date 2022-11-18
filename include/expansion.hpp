@@ -231,6 +231,6 @@ inline void apply_padding(vec3<V>& A, int n) {
 
 std::string operator_show_flops();
 int operator_best_rotation(int, const char*, const char*);
-void operator_flops(int P, const char* type, const char* name );
+void operator_flops(int P, const char* type, const char* name);
 std::string operator_profiling_results();
 

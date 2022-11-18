@@ -3,6 +3,7 @@ class fixed64 {
 	static constexpr double c0d = double(std::numeric_limits<long long unsigned>::max()) + double(1);
 	static constexpr double c0di = double(1) / c0d;
 	long long unsigned i;
+public:
 	SFMM_PREFIX constexpr fixed64() :
 			i() {
 	}
@@ -25,6 +26,7 @@ class fixed64 {
 	}
 	SFMM_PREFIX
 	inline double operator-(const fixed64& other) const {
-		return double(i - other.i) * c0di;
+		return double((long long)(i - other.i)) * c0di;
 	}
+	friend class simd_fixed64;
 };

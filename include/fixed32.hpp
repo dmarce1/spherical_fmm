@@ -5,6 +5,7 @@ class fixed32 {
 	static constexpr double c0di = double(1) / c0d;
 	static constexpr float c0si = float(1) / c0s;
 	unsigned i;
+public:
 	SFMM_PREFIX constexpr fixed32() :
 			i() {
 	}
@@ -27,6 +28,7 @@ class fixed32 {
 	}
 	SFMM_PREFIX
 	inline float operator-(const fixed32& other) const {
-		return float(i - other.i) * c0si;
+		return float(signed(i - other.i)) * c0si;
 	}
+	friend class simd_fixed32;
 };

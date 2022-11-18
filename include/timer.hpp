@@ -24,3 +24,15 @@ public:
       return time;
    }
 };
+
+
+
+template<class T>
+inline vec3<T> distance(const vec3<T>& a, const vec3<T>& b) {
+	vec3<T> d;
+	for (int dim = 0; dim < SFMM_NDIM; dim++) {
+		d[dim] = distance(a[dim], b[dim]);
+	}
+	return d;
+}
+
