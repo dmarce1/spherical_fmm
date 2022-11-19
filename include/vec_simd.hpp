@@ -84,7 +84,7 @@ class vtype
       typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \
       simd_t v;  \
    public: \
-      inline constexpr vtype() : v() {} \
+      inline vtype() : v() {} \
       inline type operator[](int i) const {  \
          return v[i]; \
       }\
@@ -116,7 +116,7 @@ class vtype
       typedef type simd_t __attribute__ ((vector_size(size*sizeof(type))));  \
       simd_t v;  \
    public: \
-      inline constexpr vtype() : v() {} \
+      inline vtype() : v() {} \
       inline type operator[](int i) const {  \
          return v[i]; \
       }\

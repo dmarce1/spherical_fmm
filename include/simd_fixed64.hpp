@@ -7,7 +7,7 @@ public:
 	SFMM_PREFIX static constexpr int size() {
 		return simd_ui64::size();
 	}
-	SFMM_PREFIX constexpr simd_fixed64() :
+	SFMM_PREFIX simd_fixed64() :
 			i() {
 	}
 	SFMM_PREFIX simd_fixed64( fixed64 other ) : i(other.i) {

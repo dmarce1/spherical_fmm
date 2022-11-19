@@ -25,7 +25,7 @@ execute_process(
   	RESULT_VARIABLE RESULT
 )
 
-#add_compile_options(-g)
+#add_compile_options(-g -fsanitize=address)
 #add_link_options(-fsanitize=address)
 add_link_options( -pthread )
 

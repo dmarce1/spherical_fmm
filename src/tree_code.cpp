@@ -10,7 +10,7 @@
 #define DEBUG
 
 #define NDIM 3
-#define BUCKET_SIZE 48
+#define BUCKET_SIZE 40
 #define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
@@ -183,7 +183,7 @@ public:
 		const T xmid = T(0.5) * (begin[xdim] + end[xdim]);
 		const int nparts = part_range.second - part_range.first;
 		scale = end[0] - begin[0];
-		multipole.init(scale);
+		multipole.init(1);
 #ifdef DEBUG
 		for (int i = part_range.first; i < part_range.second; i++) {
 			for (int dim = 0; dim < NDIM; dim++) {
@@ -249,7 +249,7 @@ public:
 				center0 /= nparts;
 				radius = 0.0;
 				multipole_type<V> M;
-				M.init(scale);
+				M.init(1);
 				for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 					sfmm::vec3<V> dx;
 					const int cnt = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
@@ -302,13 +302,13 @@ public:
 
 	size_t compute_cell_gravity(expansion_type<T> expansion, std::vector<check_type> dchecklist, std::vector<check_type> echecklist) {
 		size_t flops = 0;
-		expansion_type<V> L(scale);
-		multipole_type<V> M(scale);
+		expansion_type<V> L(1);
+		multipole_type<V> M(1);
 		force_type<V> F;
 		sfmm::vec3<FV> xsnk;
 		sfmm::vec3<FV> xsrc;
 		if (parent) {
-			expansion.rescale(scale);
+			expansion.rescale(1);
 			flops += sfmm::L2L(expansion, parent->center, center, FLAGS);
 		}
 		if (!children.size()) {
@@ -408,7 +408,7 @@ public:
 			xsnk = center;
 			int inters;
 			inters = 0;
-			L.init(scale);
+			L.init(1);
 			for (int i = 0; i < M2Llist.size(); i += sfmm::simd_size<V>()) {
 				const int cnt = std::min(sfmm::simd_size<V>(), M2Llist.size() - i);
 				inters += cnt;
@@ -428,7 +428,7 @@ public:
 			expansion += reduce_sum(L);
 			(ewald ? m2l_ewald : m2l) += inters;
 			inters = 0;
-			L.init(scale);
+			L.init(1);
 			for (int i = 0; i < P2Llist.size(); i++) {
 				for (int j = P2Llist[i]->part_range.first; j < P2Llist[i]->part_range.second; j += sfmm::simd_size<V>()) {
 					const int cnt = std::min((int) sfmm::simd_size<V>(), P2Llist[i]->part_range.second - j);
@@ -446,58 +446,70 @@ public:
 			}
 			expansion += (reduce_sum(L));
 			(ewald ? p2l_ewald : p2l) += inters;
-			inters = 0;
-			for (int i = 0; i < M2Plist.size(); i += sfmm::simd_size<V>()) {
-				const int cnt = std::min(sfmm::simd_size<V>(), M2Plist.size() - i);
-				for (int j = 0; j < cnt; j++) {
-					const auto& src = M2Plist[i + j];
-					load(xsrc, src->center, j);
-					load(M, src->multipole, j);
-				}
-				apply_padding(xsrc, cnt);
-				apply_mask(M, cnt);
-				for (int k = part_range.first; k < part_range.second; k++) {
-					auto& part = parts[k];
-					for (int dim = 0; dim < SFMM_NDIM; dim++) {
-						xsnk[dim] = FV(part[dim]);
+			if (!children.size()) {
+				inters = 0;
+				for (int i = 0; i < M2Plist.size(); i += sfmm::simd_size<V>()) {
+					const int cnt = std::min(sfmm::simd_size<V>(), M2Plist.size() - i);
+					for (int j = 0; j < cnt; j++) {
+						const auto& src = M2Plist[i + j];
+						load(xsrc, src->center, j);
+						load(M, src->multipole, j);
 					}
-					inters += cnt;
-					F.init();
-					if (ewald) {
-						flops += cnt * sfmm::M2P_ewald(F, M, xsrc, xsnk, FLAGS);
-					} else {
-						flops += cnt * sfmm::M2P(F, M, xsrc, xsnk, FLAGS);
-					}
-					forces[k] += reduce_sum(F);
-				}
-			}
-			(ewald ? m2p_ewald : m2p) += inters;
-			inters = 0;
-			for (int i = 0; i < P2Plist.size(); i++) {
-				for (int j = P2Plist[i]->part_range.first; j < P2Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
-					const int cnt = std::min((int) sfmm::simd_size<V>(), P2Plist[i]->part_range.second - j);
-					inters += cnt;
-					for (int k = 0; k < cnt; k++) {
-						load(xsrc, parts[j + k], k);
-					}
-					sfmm::apply_padding(xsrc, cnt);
-					for (int l = part_range.first; l < part_range.second; l++) {
-						auto& part = parts[l];
+					apply_padding(xsrc, cnt);
+					apply_mask(M, cnt);
+					for (int k = part_range.first; k < part_range.second; k++) {
+						auto& part = parts[k];
 						for (int dim = 0; dim < SFMM_NDIM; dim++) {
 							xsnk[dim] = FV(part[dim]);
 						}
+						inters += cnt;
 						F.init();
 						if (ewald) {
-							flops += cnt * sfmm::P2P_ewald(F, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
+							flops += cnt * sfmm::M2P_ewald(F, M, xsrc, xsnk, FLAGS);
 						} else {
-							flops += cnt * sfmm::P2P(F, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
+							flops += cnt * sfmm::M2P(F, M, xsrc, xsnk, FLAGS);
 						}
-						forces[l] += sfmm::reduce_sum(F);
+						forces[k] += reduce_sum(F);
 					}
 				}
+				(ewald ? m2p_ewald : m2p) += inters;
+				inters = 0;
+				const auto nparts = part_range.second - part_range.first;
+				std::array<force_type<V>, BUCKET_SIZE> Forces;
+				std::array<sfmm::vec3<FV>, BUCKET_SIZE> xsnk;
+				for (int l = part_range.first; l < part_range.second; l++) {
+					for (int dim = 0; dim < SFMM_NDIM; dim++) {
+						xsnk[l - part_range.first][dim] = FV(parts[l][dim]);
+					}
+				}
+				for( int i = 0; i < nparts; i++) {
+					Forces[i].init();
+				}
+				for (int i = 0; i < P2Plist.size(); i++) {
+					for (int j = P2Plist[i]->part_range.first; j < P2Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
+						const int cnt = std::min((int) sfmm::simd_size<V>(), P2Plist[i]->part_range.second - j);
+						inters += cnt;
+						for (int k = 0; k < cnt; k++) {
+							load(xsrc, parts[j + k], k);
+						}
+						sfmm::apply_padding(xsrc, cnt);
+						if (ewald) {
+							for (int l = 0; l < nparts; l++) {
+								flops += cnt * sfmm::P2P_ewald(Forces[l], sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk[l], FLAGS);
+							}
+						} else {
+							for (int l = 0; l < nparts; l++) {
+								flops += cnt * sfmm::P2P(Forces[l], sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk[l], FLAGS);
+							}
+						}
+					}
+				}
+				for (int i = 0; i < nparts; i++) {
+					forces[part_range.first + i] += reduce_sum(Forces[i]);
+				}
+				(ewald ? p2p_ewald : p2p) += inters;
+				inters = 0;
 			}
-			(ewald ? p2p_ewald : p2p) += inters;
-			inters = 0;
 		}
 		if (children.size()) {
 			if (dchecklist.size() || echecklist.size()) {
@@ -588,7 +600,7 @@ public:
 			}
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
-			printf( "%e %e %e\n", (famag - fnmag) / famag, fa.potential, forces[i].potential);
+			//		printf( "%e %e %e\n", (famag - fnmag) / famag, fa.potential, forces[i].potential);
 			std::lock_guard<std::mutex> lock(mutex);
 			perr += sfmm::sqr(forces[i].potential - fa.potential);
 			pnorm += sfmm::sqr(fa.potential);
@@ -720,7 +732,7 @@ struct run_tests {
 		//	tree_type::show_counters();
 		tree_type::reset_counters();
 		run_tests<T, V, FT, FV, ORDER + 1, FLAGS> run;
-		//	run();
+		run();
 	}
 };
 
@@ -842,14 +854,14 @@ int main(int argc, char **argv) {
 	sfmm::vec3<float> t1(t);
 //	ewald();
 //	return 0;
-	//return 0;
-	//test2<5>();
-	//test2<6>();
-	//test2<7>();
-	//test2<8>();
+//return 0;
+//test2<5>();
+//test2<6>();
+//test2<7>();
+//test2<8>();
 //	 return 0;
-	//ewald();
-	//return 0;
+//ewald();
+//return 0;
 //	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 5, sfmmWithBestOptimization> run1;
 //	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 6, sfmmWithBestOptimization> run2;
 //	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 7, sfmmWithBestOptimization> run3;
@@ -862,14 +874,14 @@ int main(int argc, char **argv) {
 	 run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 8, sfmmWithDoubleRotationOptimization> run8;*/
 //	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 3, sfmmWithBestOptimization> run3;
 //	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 4, sfmmWithBestOptimization> run4;
-	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 5, sfmmWithBestOptimization> run5;
+	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithBestOptimization> run5;
 //	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 6, sfmmWithBestOptimization> run6;
 //	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 7, sfmmWithDoubleRotationOptimization> run7;
 //	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 8, sfmmWithDoubleRotationOptimization> run8;
-	//run_tests<double, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
+//run_tests<double, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
 //	run_tests<double, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
-//	run3();
-//	run4();
+//run3();
+//run4();
 	run5();
 //	run6();
 //	run7();

@@ -25,7 +25,7 @@
 #define USE_SIMD
 #endif
 
-//#define USE_SCALED
+#define USE_SCALED
 
 struct entry_t {
 	int l;
@@ -2621,7 +2621,7 @@ int M2L_allrot(int P, int Q, int rot) {
 		tprint( "multipole<%s, %i> %s_st(%s_st);\n", type.c_str(), P, name, mname.c_str());
 		tprint( "T* %s=%s_st.data();\n", name, name);
 		if( Q != 1 ) {
-			tprint("tmp1 = TCAST(1) / L_st.scale();\n");
+			tprint("tmp1 = TCAST(1) / Lout_st.scale();\n");
 			tprint("x *= tmp1;\n");
 			tprint("y *= tmp1;\n");
 			tprint("z *= tmp1;\n");
@@ -2796,7 +2796,7 @@ int M2L_allrot(int P, int Q, int rot) {
 			tprint("tmp0 = TCAST(1) / %s_st.scale();\n", mname.c_str());
 			tprint("tmp1 = -tmp0 * tmp0;\n");
 			tprint("f.potential = fma(tmp0, L[0], f.potential);\n");
-			tprint("f.force[0] = fma(tmp1, L[0], f.force[0]);\n");
+			tprint("f.force[0] = fma(tmp1, L[3], f.force[0]);\n");
 			tprint("f.force[1] = fma(tmp1, L[1], f.force[1]);\n");
 			tprint("f.force[2] = fma(tmp1, L[2], f.force[2]);\n");
 		} else {
@@ -3960,14 +3960,14 @@ int L2L_allrot(int P, int Q, int rot) {
 			tprint("tmp1 = TCAST(1) / L0_st.scale();\n");
 			tprint("f.potential = tmp1 * L2[0];\n");
 			tprint("tmp1 = -tmp1 * tmp1;\n");
-			tprint("f.force[0] = tmp1 * L2[3];\n");
-			tprint("f.force[1] = tmp1 * L2[1];\n");
-			tprint("f.force[2] = tmp1 * L2[2];\n");
+			tprint("f.force[0] = fma(tmp1, L2[3], f.force[0]);\n");
+			tprint("f.force[1] = fma(tmp1, L2[1], f.force[1]);\n");
+			tprint("f.force[2] = fma(tmp1, L2[2], f.force[2]);\n");
 		} else {
-			tprint("f.potential = L2[0];\n");
-			tprint("f.force[0] = -L2[3];\n");
-			tprint("f.force[1] = -L2[1];\n");
-			tprint("f.force[2] = -L2[2];\n");
+			tprint("f.potential += L2[0];\n");
+			tprint("f.force[0] -= L2[3];\n");
+			tprint("f.force[1] -= L2[1];\n");
+			tprint("f.force[2] -= L2[2];\n");
 		}
 	}
 	close_timer();
@@ -4046,13 +4046,13 @@ std::string P2M(int P) {
 //		tprint("M[3] = TCAST(0);\n");
 	}
 	reset_running_flops();
-	tprint("multipole<T, %i> M_st;\n", P);
+	tprint("multipole<T, %i> M_st(M0_st.scale());\n", P);
 	tprint("T* M=M_st.data();\n");
 	tprint("x = -x;\n");
 	tprint("y = -y;\n");
 	tprint("z = -z;\n");
 	if (scaled) {
-		tprint("tmp1 = TCAST(1) / M_st.scale();\n");
+		tprint("tmp1 = TCAST(1) / M0_st.scale();\n");
 		tprint("x *= tmp1;\n");
 		tprint("y *= tmp1;\n");
 		tprint("z *= tmp1;\n");
