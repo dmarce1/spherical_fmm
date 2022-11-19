@@ -568,13 +568,11 @@ public:
 						for( int k = j; k < j + cnt; k++) {
 							load(xsrc, parts[k], k - j);
 						}
-						fe.init();
 						f.init();
 						apply_padding(xsrc, cnt);
-						P2P_ewald(fe, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk);
 						P2P(f, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk);
+						P2P_ewald(f, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk);
 						std::lock_guard<std::mutex> lock(mutex);
-						fa += reduce_sum(fe);
 						fa += reduce_sum(f);
 					}
 				}));

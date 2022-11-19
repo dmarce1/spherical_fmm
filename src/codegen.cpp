@@ -3515,8 +3515,9 @@ int P2P_ewald() {
 	init_real("tmp");
 	init_real("c");
 	init_real("s");
+	init_real("mflag");
+	init_real("nmflag");
 	constexpr double alpha = 2.0;
-	tprint("f.potential = fma(m, TCAST(%.20e), f.potential);\n", M_PI / (alpha*alpha));
 	if (is_float(type)) {
 		ewald_limits<float>(R2, H2, alpha);
 	} else {
@@ -3527,6 +3528,8 @@ int P2P_ewald() {
 	const int H = sqrt(H2);
 	tprint( "rzero = fma(dx[0], dx[0], fma(dx[1], dx[1], dx[2] * dx[2])) < TCAST(%0.20e);\n", tiny());
 	tprint( "flag = TCAST(1) - rzero;\n");
+	tprint( "mflag = m * flag;\n");
+	tprint( "nmflag = -mflag;\n");
 	for( int xi = -R; xi <= R; xi++) {
 		for( int yi = -R; yi <= R; yi++) {
 			for( int zi = -R; zi <= R; zi++) {
@@ -3556,12 +3559,12 @@ int P2P_ewald() {
 				tprint("r3inv = r2inv * rinv;\n");
 				tprint("erfcexp(TCAST(%.20e) * r, &erfc0, &exp0);\n", alpha);
 				tprint("tmp = TCAST(%.20e) * r * exp0;\n", 2.0 * alpha  / sqrt(M_PI) );
-				tprint("d0 = -flag * m * erfc0 * rinv;\n");
-				tprint("d1 = flag * m * (tmp + erfc0) * r3inv;\n");
+				tprint("d0 = nmflag * erfc0 * rinv;\n");
+				tprint("d1 = nmflag * (tmp + erfc0) * r3inv;\n");
 				tprint("f.potential += d0;\n");
-				tprint("f.force[0] -= x * d1;\n");
-				tprint("f.force[1] -= y * d1;\n");
-				tprint("f.force[2] -= z * d1;\n");
+				tprint("f.force[0] = fma(x, d1, f.force[0]);\n");
+				tprint("f.force[1] = fma(y, d1, f.force[1]);\n");
+				tprint("f.force[2] = fma(z, d1, f.force[2]);\n");
 			}
 		}
 	}
@@ -3601,8 +3604,8 @@ int P2P_ewald() {
 				tprint( "sincos(phi, &s, &c);\n");
 				const double c0 = -1.0 / h2 * exp((double) (-(M_PI * M_PI) / alpha / alpha) * h2) * (double) (1. / (M_PI));
 				const float c1 = 2.0 * M_PI * c0;
-				tprint( "f.potential = flag * fma( m, c * TCAST(%.20e), f.potential);\n", c0);
-				tprint( "tmp = flag * m * s * TCAST(%.20e);\n", c1);
+				tprint( "f.potential = fma(mflag, c * TCAST(%.20e), f.potential);\n", c0);
+				tprint( "tmp = mflag * s * TCAST(%.20e);\n", c1);
 				if( xi ) {
 					tprint( "f.force[0] = fma( TCAST(%i), tmp, f.force[0]);\n", xi);
 				}
@@ -3618,11 +3621,12 @@ int P2P_ewald() {
 	tprint( "r2 = fma(dx[0], dx[0], fma(dx[1], dx[1], dx[2] * dx[2]));\n");
 	tprint( "rinv = rsqrt(r2 + rzero);\n");
 	tprint( "r3inv = rinv * rinv * rinv;\n");
-	tprint("f.potential += flag * m * rinv;\n");
-	tprint("f.force[0] += flag * m * dx[0] * r3inv;\n");
-	tprint("f.force[1] += flag * m * dx[1] * r3inv;\n");
-	tprint("f.force[2] += flag * m * dx[2] * r3inv;\n");
-	tprint( "f.potential = fma(flag, f.potential, rzero * m * TCAST(2.83729747948179022998));\n");
+	tprint("f.potential += mflag * rinv;\n");
+	tprint("f.force[0] += mflag * dx[0] * r3inv;\n");
+	tprint("f.force[1] += mflag * dx[1] * r3inv;\n");
+	tprint("f.force[2] += mflag * dx[2] * r3inv;\n");
+	tprint("f.potential = fma(mflag, TCAST(%.20e), f.potential);\n", M_PI / (alpha*alpha));
+	tprint( "f.potential = fma(rzero * m, TCAST(2.83729747948179022998), f.potential);\n");
 	tprint( "return %i;\n", get_running_flops().load() + 39);
 	deindent();
 	tprint("}\n");
