@@ -1,10 +1,10 @@
 
 class fixed32 {
-	static constexpr double c0d = double(std::numeric_limits<unsigned>::max()) + double(1);
-	static constexpr float c0s = float(std::numeric_limits<unsigned>::max()) + float(1);
+	static constexpr double c0d = double(std::numeric_limits<std::uint32_t>::max()) + double(1);
+	static constexpr float c0s = float(std::numeric_limits<std::uint32_t>::max()) + float(1);
 	static constexpr double c0di = double(1) / c0d;
 	static constexpr float c0si = float(1) / c0s;
-	unsigned i;
+	std::uint32_t i;
 public:
 	SFMM_PREFIX constexpr fixed32() :
 			i() {
@@ -28,7 +28,7 @@ public:
 	}
 	SFMM_PREFIX
 	inline float operator-(const fixed32& other) const {
-		return float(signed(i - other.i)) * c0si;
+		return float(std::int32_t(i - other.i)) * c0si;
 	}
 	friend class simd_fixed32;
 };

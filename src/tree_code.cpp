@@ -16,7 +16,7 @@
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE (1024*1024)
+#define TEST_SIZE (2*1024*1024)
 //#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
@@ -25,7 +25,13 @@ double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
 }
 
-template<class T, class V, class MV, int ORDER, int FLAGS>
+void prefetch(void* ptr, int cnt) {
+	for (int i = 0; i < cnt; i += 32) {
+		__builtin_prefetch((char*) ptr + i);
+	}
+}
+
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
 class tree {
 
 	template<class W>
@@ -40,9 +46,10 @@ class tree {
 	std::pair<int, int> part_range;
 	sfmm::vec3<T> begin;
 	sfmm::vec3<T> end;
-	sfmm::vec3<sfmm::fixed32> center;
+	sfmm::vec3<FT> center;
 	tree* parent;
 	T radius;
+	T scale;
 
 	static const T theta_max;
 	static const T hsoft;
@@ -59,7 +66,7 @@ class tree {
 	static std::atomic<long long> node_count;
 	static std::atomic<int> threads_avail;
 
-	static std::vector<sfmm::vec3<sfmm::fixed32>> parts;
+	static std::vector<sfmm::vec3<FT>> parts;
 	static std::vector<force_type<T>> forces;
 	static std::vector<tree> forest;
 
@@ -67,7 +74,6 @@ class tree {
 		tree* ptr;
 		bool opened;
 	};
-
 
 public:
 
@@ -176,7 +182,7 @@ public:
 		parent = par;
 		const T xmid = T(0.5) * (begin[xdim] + end[xdim]);
 		const int nparts = part_range.second - part_range.first;
-		T scale = end[0] - begin[0];
+		scale = end[0] - begin[0];
 		multipole.init(scale);
 #ifdef DEBUG
 		for (int i = part_range.first; i < part_range.second; i++) {
@@ -242,20 +248,22 @@ public:
 				}
 				center0 /= nparts;
 				radius = 0.0;
+				multipole_type<V> M;
+				M.init(scale);
 				for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 					sfmm::vec3<V> dx;
 					const int cnt = std::min((int) sfmm::simd_size<V>(), part_range.second - i);
 					for (int j = 0; j < cnt; j++) {
 						const auto& part = parts[i + j];
 						for (int dim = 0; dim < SFMM_NDIM; dim++) {
-							load(dx[dim], float(part[dim].to_double() - center0[dim]), j);
+							load(dx[dim], T(part[dim].to_double() - center0[dim]), j);
 						}
 					}
-					multipole_type<V> M;
+					apply_padding(dx, cnt);
 					radius = std::max(radius, sfmm::reduce_max(abs(dx)));
 					flops += sfmm::simd_size<V>() * sfmm::P2M(M, sfmm::create_mask<V>(cnt) * mass, dx);
-					multipole += sfmm::reduce_sum(M);
 				}
+				multipole = sfmm::reduce_sum(M);
 				center = center0;
 				radius = std::max(hsoft, radius);
 			} else {
@@ -264,7 +272,6 @@ public:
 				radius = hsoft;
 			}
 		}
-		multipole.rescale(radius);
 		return flops;
 	}
 
@@ -293,24 +300,24 @@ public:
 		return flops;
 	}
 
-	size_t compute_cell_gravity(expansion_type<float> expansion, std::vector<check_type> dchecklist, std::vector<check_type> echecklist) {
+	size_t compute_cell_gravity(expansion_type<T> expansion, std::vector<check_type> dchecklist, std::vector<check_type> echecklist) {
 		size_t flops = 0;
-		expansion_type<V> L;
-		multipole_type<V> M;
+		expansion_type<V> L(scale);
+		multipole_type<V> M(scale);
 		force_type<V> F;
-		sfmm::vec3<sfmm::simd_fixed32> xsnk;
-		sfmm::vec3<sfmm::simd_fixed32> xsrc;
-
+		sfmm::vec3<FV> xsnk;
+		sfmm::vec3<FV> xsrc;
 		if (parent) {
-			expansion.rescale(radius);
+			expansion.rescale(scale);
 			flops += sfmm::L2L(expansion, parent->center, center, FLAGS);
 		}
-		if( !children.size()) {
+		if (!children.size()) {
 			for (int i = part_range.first; i < part_range.second; i++) {
 				force_type<T> F;
-				flops += sfmm::P2P(F, mass, sfmm::vec3<T>({0,0,0}), FLAGS);
+				F.init();
+				flops += sfmm::P2P(F, mass, sfmm::vec3<T>( { 0, 0, 0 }), FLAGS);
 				forces[i].potential = -F.potential;
-				for( int dim = 0; dim < NDIM; dim++) {
+				for (int dim = 0; dim < NDIM; dim++) {
 					forces[i].force[dim] = T(0);
 				}
 			}
@@ -321,7 +328,7 @@ public:
 		static thread_local std::vector<tree*> P2Plist;
 		static thread_local std::vector<check_type> nextlist;
 		for (int ewald = 0; ewald <= 1; ewald++) {
-			const T c0(1.0/theta_max);
+			const T c0(1.0 / theta_max);
 			auto& checklist = ewald ? echecklist : dchecklist;
 			M2Llist.resize(0);
 			P2Llist.resize(0);
@@ -401,8 +408,8 @@ public:
 			xsnk = center;
 			int inters;
 			inters = 0;
+			L.init(scale);
 			for (int i = 0; i < M2Llist.size(); i += sfmm::simd_size<V>()) {
-				L.init();
 				const int cnt = std::min(sfmm::simd_size<V>(), M2Llist.size() - i);
 				inters += cnt;
 				for (int j = 0; j < cnt; j++) {
@@ -411,88 +418,83 @@ public:
 					load(M, src->multipole, j);
 				}
 				apply_padding(xsrc, cnt);
-				apply_padding(M, cnt);
-				if( ewald ) {
-					flops += sfmm::simd_size<V>() * sfmm::M2L_ewald(L, M, xsrc, xsnk, FLAGS);
+				apply_mask(M, cnt);
+				if (ewald) {
+					flops += cnt * sfmm::M2L_ewald(L, M, xsrc, xsnk, FLAGS);
 				} else {
-					flops += sfmm::simd_size<V>() * sfmm::M2L(L, M, xsrc, xsnk, FLAGS);
+					flops += cnt * sfmm::M2L(L, M, xsrc, xsnk, FLAGS);
 				}
-				apply_mask(L, cnt);
-				expansion += (reduce_sum(L));
 			}
+			expansion += reduce_sum(L);
 			(ewald ? m2l_ewald : m2l) += inters;
 			inters = 0;
+			L.init(scale);
 			for (int i = 0; i < P2Llist.size(); i++) {
 				for (int j = P2Llist[i]->part_range.first; j < P2Llist[i]->part_range.second; j += sfmm::simd_size<V>()) {
 					const int cnt = std::min((int) sfmm::simd_size<V>(), P2Llist[i]->part_range.second - j);
 					inters += cnt;
-					L.init();
 					for (int k = 0; k < cnt; k++) {
 						load(xsrc, parts[j + k], k);
 					}
 					apply_padding(xsrc, cnt);
-					if( ewald ) {
-						flops += sfmm::simd_size<V>() * sfmm::P2L_ewald(L, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
+					if (ewald) {
+						flops += cnt * sfmm::P2L_ewald(L, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
 					} else {
-						flops += sfmm::simd_size<V>() * sfmm::P2L(L, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
+						flops += cnt * sfmm::P2L(L, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
 					}
-					expansion += (reduce_sum(L));
 				}
 			}
+			expansion += (reduce_sum(L));
 			(ewald ? p2l_ewald : p2l) += inters;
 			inters = 0;
 			for (int i = 0; i < M2Plist.size(); i += sfmm::simd_size<V>()) {
+				const int cnt = std::min(sfmm::simd_size<V>(), M2Plist.size() - i);
+				for (int j = 0; j < cnt; j++) {
+					const auto& src = M2Plist[i + j];
+					load(xsrc, src->center, j);
+					load(M, src->multipole, j);
+				}
+				apply_padding(xsrc, cnt);
+				apply_mask(M, cnt);
 				for (int k = part_range.first; k < part_range.second; k++) {
 					auto& part = parts[k];
 					for (int dim = 0; dim < SFMM_NDIM; dim++) {
-						xsnk[dim] = sfmm::simd_fixed32(part[dim]);
+						xsnk[dim] = FV(part[dim]);
 					}
-					F.init();
-					const int cnt = std::min(sfmm::simd_size<V>(), M2Plist.size() - i);
 					inters += cnt;
-					for (int j = 0; j < cnt; j++) {
-						const auto& src = M2Plist[i + j];
-						load(xsrc, src->center, j);
-						load(M, src->multipole, j);
-					}
-					apply_padding(xsrc, cnt);
-					apply_padding(M, cnt);
-					if( ewald ) {
-						flops += sfmm::simd_size<V>() * sfmm::M2P_ewald(F, M, xsrc, xsnk, FLAGS);
+					F.init();
+					if (ewald) {
+						flops += cnt * sfmm::M2P_ewald(F, M, xsrc, xsnk, FLAGS);
 					} else {
-						flops += sfmm::simd_size<V>() * sfmm::M2P(F, M, xsrc, xsnk, FLAGS);
+						flops += cnt * sfmm::M2P(F, M, xsrc, xsnk, FLAGS);
 					}
-					for (int j = 0; j < cnt; j++) {
-						accumulate(forces[k], F, j);
-					}
+					forces[k] += reduce_sum(F);
 				}
 			}
 			(ewald ? m2p_ewald : m2p) += inters;
 			inters = 0;
-			for (int l = part_range.first; l < part_range.second; l++) {
-				auto& part = parts[l];
-				for (int dim = 0; dim < SFMM_NDIM; dim++) {
-					xsnk[dim] = sfmm::simd_fixed32(part[dim]);
-				}
-				sfmm::force_type<sfmm::simd_f32> F0;
-				F0.init();
-				for (int i = 0; i < P2Plist.size(); i++) {
-					for (int j = P2Plist[i]->part_range.first; j < P2Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
-						const int cnt = std::min((int) sfmm::simd_size<V>(), P2Plist[i]->part_range.second - j);
-						inters += cnt;
-						for (int k = 0; k < cnt; k++) {
-							load(xsrc, parts[j + k], k);
+			for (int i = 0; i < P2Plist.size(); i++) {
+				for (int j = P2Plist[i]->part_range.first; j < P2Plist[i]->part_range.second; j += sfmm::simd_size<V>()) {
+					const int cnt = std::min((int) sfmm::simd_size<V>(), P2Plist[i]->part_range.second - j);
+					inters += cnt;
+					for (int k = 0; k < cnt; k++) {
+						load(xsrc, parts[j + k], k);
+					}
+					sfmm::apply_padding(xsrc, cnt);
+					for (int l = part_range.first; l < part_range.second; l++) {
+						auto& part = parts[l];
+						for (int dim = 0; dim < SFMM_NDIM; dim++) {
+							xsnk[dim] = FV(part[dim]);
 						}
-						sfmm::apply_padding(xsrc, cnt);
-						if( ewald ) {
-							flops += sfmm::simd_size<V>() * sfmm::P2P_ewald(F, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
+						F.init();
+						if (ewald) {
+							flops += cnt * sfmm::P2P_ewald(F, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
 						} else {
-							flops += sfmm::simd_size<V>() * sfmm::P2P(F, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
+							flops += cnt * sfmm::P2P(F, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk, FLAGS);
 						}
-						F0 += F;
+						forces[l] += sfmm::reduce_sum(F);
 					}
 				}
-				forces[l] += sfmm::reduce_sum(F0);
 			}
 			(ewald ? p2p_ewald : p2p) += inters;
 			inters = 0;
@@ -514,7 +516,7 @@ public:
 				}
 			}
 		} else {
-			load(L, sfmm::expansion<float, ORDER>(expansion));
+			load(L, (expansion));
 			xsnk = center;
 			for (int i = part_range.first; i < part_range.second; i += sfmm::simd_size<V>()) {
 				force_type<V> F;
@@ -524,7 +526,7 @@ public:
 					load(xsrc, parts[j + i], j);
 				}
 				apply_padding(xsrc, cnt);
-				flops += sfmm::simd_size<V>() * sfmm::L2P(F, L, xsnk, xsrc, FLAGS);
+				flops += cnt * sfmm::L2P(F, L, xsnk, xsrc, FLAGS);
 				for (int j = 0; j < cnt; j++) {
 					accumulate(forces[i + j], F, j);
 				}
@@ -538,15 +540,16 @@ public:
 		double norm = 0.0;
 		double perr = 0.0;
 		double pnorm = 0.0;
-		force_type<float> f;
-		P2P(f, mass, {0,0,0});
+		force_type<T> f;
+		f.init();
+		P2P(f, mass, { 0, 0, 0 });
 		double pot0 = f.potential;
 		for (int i = 0; i < parts.size(); i++) {
 			if (rand1() > sample_odds) {
 				continue;
 			}
 			const auto& snk_part = parts[i];
-			force_type<float> fa;
+			force_type<T> fa;
 			fa.init();
 			fa.potential = -pot0;
 			const int nthreads = 2 * std::thread::hardware_concurrency();
@@ -556,15 +559,17 @@ public:
 				const int b = (size_t) proc * parts.size() / nthreads;
 				const int e = (size_t) (proc + 1) * parts.size() / nthreads;
 				futs.push_back(std::async([i,b,e,&fa,&mutex,snk_part]() {
-					sfmm::vec3<sfmm::simd_fixed32> xsrc, xsnk;
-					force_type<sfmm::simd_f32> fe;
-					force_type<sfmm::simd_f32> f;
-					xsnk = sfmm::vec3<sfmm::simd_fixed32>(parts[i]);
-					for (int j = b; j < e; j += sfmm::simd_size<sfmm::simd_fixed32>()) {
-						int cnt = std::min((int) sfmm::simd_size<sfmm::simd_fixed32>(), e - j);
+					sfmm::vec3<FV> xsrc, xsnk;
+					force_type<V> fe;
+					force_type<V> f;
+					xsnk = sfmm::vec3<FV>(parts[i]);
+					for (int j = b; j < e; j += sfmm::simd_size<FV>()) {
+						int cnt = std::min((int) sfmm::simd_size<FV>(), e - j);
 						for( int k = j; k < j + cnt; k++) {
 							load(xsrc, parts[k], k - j);
 						}
+						fe.init();
+						f.init();
 						apply_padding(xsrc, cnt);
 						P2P_ewald(fe, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk);
 						P2P(f, sfmm::create_mask<V>(cnt) * mass, xsrc, xsnk);
@@ -585,7 +590,7 @@ public:
 			}
 			famag = sqrt(famag);
 			fnmag = sqrt(fnmag);
-			//printf( "%e\n", (famag - fnmag) / famag);
+			printf( "%e %e %e\n", (famag - fnmag) / famag, fa.potential, forces[i].potential);
 			std::lock_guard<std::mutex> lock(mutex);
 			perr += sfmm::sqr(forces[i].potential - fa.potential);
 			pnorm += sfmm::sqr(fa.potential);
@@ -601,9 +606,18 @@ public:
 		forest.resize(0);
 		parts.resize(0);
 		forces.resize(0);
-		for (int i = 0; i < TEST_SIZE; i++) {
-			sfmm::vec3<T> x;
+		int N = 100;
+		sfmm::vec3<double> center[N];
+		for (int j = 0; j < N; j++) {
 			for (int dim = 0; dim < NDIM; dim++) {
+				center[j][dim] = rand1();
+			}
+		}
+		for (int i = 0; i < TEST_SIZE; i++) {
+			sfmm::vec3<FT> x;
+			int j = rand() % N;
+			for (int dim = 0; dim < NDIM; dim++) {
+				x[dim] = fmod((2.0 * rand1() - 1.0) * 0.01 + center[j][dim], 1.0);
 				x[dim] = rand1();
 			}
 			parts.push_back(x);
@@ -630,63 +644,64 @@ public:
 }
 ;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::vector<sfmm::vec3<sfmm::fixed32>> tree<T, V, M, ORDER, FLAGS>::parts;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::vector<sfmm::vec3<FT>> tree<T, V, FT, FV, ORDER, FLAGS>::parts;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::vector<sfmm::force_type<T>> tree<T, V, M, ORDER, FLAGS>::forces;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::vector<sfmm::force_type<T>> tree<T, V, FT, FV, ORDER, FLAGS>::forces;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-const T tree<T, V, M, ORDER, FLAGS>::theta_max = 0.55;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+const T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = 0.55;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<int> tree<T, V, M, ORDER, FLAGS>::threads_avail(2 * std::thread::hardware_concurrency() - 1);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<int> tree<T, V, FT, FV, ORDER, FLAGS>::threads_avail(2 * std::thread::hardware_concurrency() - 1);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-const T tree<T, V, M, ORDER, FLAGS>::mass = 1.0 / TEST_SIZE;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+const T tree<T, V, FT, FV, ORDER, FLAGS>::mass = 1.0 / TEST_SIZE;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-const T tree<T, V, M, ORDER, FLAGS>::hsoft = 0.01;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+const T tree<T, V, FT, FV, ORDER, FLAGS>::hsoft = 1e-6;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-const int tree<T, V, M, ORDER, FLAGS>::Ngrid = 1;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+const int tree<T, V, FT, FV, ORDER, FLAGS>::Ngrid = 1;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::vector<tree<T, V, M, ORDER, FLAGS>> tree<T, V, M, ORDER, FLAGS>::forest;
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::vector<tree<T, V, FT, FV, ORDER, FLAGS>> tree<T, V, FT, FV, ORDER, FLAGS>::forest;
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2p(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2p(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2p(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2p(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2l(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2l(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2l(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2l(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2p_ewald(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2p_ewald(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2p_ewald(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2p_ewald(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::p2l_ewald(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2l_ewald(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::m2l_ewald(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2l_ewald(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
-std::atomic<long long> tree<T, V, M, ORDER, FLAGS>::node_count(0);
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::node_count(0);
 
-template<class T, class V, class M, int ORDER, int FLAGS>
+template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
 struct run_tests {
 	void operator()() const {
 		sfmm::timer tm, ftm;
-		using tree_type = tree<T, V, M, ORDER, FLAGS>;
+		using tree_type = tree<T, V, FT, FV, ORDER, FLAGS>;
 		double tree_time, force_time;
+		srand(1);
 		tree_type::initialize();
 		tree_time = tm.read();
 		fflush(stdout);
@@ -698,20 +713,21 @@ struct run_tests {
 		tree_time = tm.read();
 		tm.reset();
 		tm.start();
+		tree_type::reset_counters();
 		flops += tree_type::compute_gravity();
 		tm.stop();
 		force_time = tm.read();
-		const auto error = tree_type::compare_analytic(32.0 / TEST_SIZE);
+		const auto error = tree_type::compare_analytic(16.0 / TEST_SIZE);
 		printf("%i %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, error.first, error.second, flops / force_time / (1024.0 * 1024.0 * 1024.0));
 		//	tree_type::show_counters();
 		tree_type::reset_counters();
-		run_tests<T, V, M, ORDER + 1, FLAGS> run;
+		run_tests<T, V, FT, FV, ORDER + 1, FLAGS> run;
 		//	run();
 	}
 };
 
-template<class T, class V, class M, int FLAGS>
-struct run_tests<T, V, M, PMAX + 1, FLAGS> {
+template<class T, class V, class FT, class FV, int FLAGS>
+struct run_tests<T, V, FT, FV, PMAX + 1, FLAGS> {
 	void operator()() const {
 	}
 };
@@ -840,20 +856,26 @@ int main(int argc, char **argv) {
 //	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 6, sfmmWithBestOptimization> run2;
 //	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 7, sfmmWithBestOptimization> run3;
 //	run_tests<double, sfmm::simd_f64, sfmm::m2m_simd_f64, 8, sfmmWithBestOptimization> run4;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 3, sfmmWithBestOptimization> run3;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 4, sfmmWithBestOptimization> run4;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 5, sfmmWithBestOptimization> run5;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 6, sfmmWithBestOptimization> run6;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 7, sfmmWithBestOptimization> run7;
-	run_tests<float, sfmm::simd_f32, sfmm::m2m_simd_f32, 8, sfmmWithBestOptimization> run8;
-	//run_tests<double, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
-//	run_tests<double, sfmm::simd_f32, sfmm::m2m_simd_f32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
-	run3();
-	run4();
+	/*	run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 3, sfmmWithDoubleRotationOptimization> run3;
+	 run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 4, sfmmWithDoubleRotationOptimization> run4;
+	 run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 5, sfmmWithDoubleRotationOptimization> run5;
+	 run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 6, sfmmWithDoubleRotationOptimization> run6;
+	 run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 7, sfmmWithDoubleRotationOptimization> run7;
+	 run_tests<double, sfmm::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, 8, sfmmWithDoubleRotationOptimization> run8;*/
+//	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 3, sfmmWithBestOptimization> run3;
+//	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 4, sfmmWithBestOptimization> run4;
+	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 5, sfmmWithBestOptimization> run5;
+//	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 6, sfmmWithBestOptimization> run6;
+//	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 7, sfmmWithDoubleRotationOptimization> run7;
+//	run_tests<float, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, 8, sfmmWithDoubleRotationOptimization> run8;
+	//run_tests<double, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithSingleRotationOptimization | sfmmProfilingOn> run2;
+//	run_tests<double, sfmm::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithDoubleRotationOptimization | sfmmProfilingOn> run3;
+//	run3();
+//	run4();
 	run5();
-	run6();
-	run7();
-	run8();
+//	run6();
+//	run7();
+//	run8();
 //	run1();
 //	run2();
 //	run3();

@@ -5,10 +5,10 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 set(SFMM_USE_DOUBLE "1" CACHE STRING "Enable Double Precision" )
 set(SFMM_USE_FLOAT "1" CACHE STRING "Enable Single Precision")
 set(SFMM_USE_SIMD "1" CACHE STRING "Enable SIMD")
-set(SFMM_PMIN "3" CACHE STRING "pmin")
-set(SFMM_PMAX "8" CACHE STRING "pmax")
-set(SFMM_DOUBLE_SIMD_WIDTH "4" CACHE STRING "width of float precision simd vectors (except for m2m)")
-set(SFMM_FLOAT_SIMD_WIDTH "8" CACHE STRING "width of double precision simd vectors (except for m2m)")
+set(SFMM_PMIN "5" CACHE STRING "pmin")
+set(SFMM_PMAX "5" CACHE STRING "pmax")
+set(SFMM_DOUBLE_SIMD_WIDTH "4" CACHE STRING "width of double precision simd vectors (except for m2m)")
+set(SFMM_FLOAT_SIMD_WIDTH "8" CACHE STRING "width of single precision simd vectors (except for m2m)")
 set(SFMM_M2M_SIMD_WIDTH "2" CACHE STRING "width of m2m simd vectors")
 message( STATUS "Pmin = ${SFMM_PMIN}" )
 message( STATUS "Pmax = ${SFMM_PMAX}" )
@@ -25,7 +25,7 @@ execute_process(
   	RESULT_VARIABLE RESULT
 )
 
-#add_compile_options(-fsanitize=address)
+#add_compile_options(-g)
 #add_link_options(-fsanitize=address)
 add_link_options( -pthread )
 
