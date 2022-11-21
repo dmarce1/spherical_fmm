@@ -80,21 +80,6 @@ struct vec3: public std::array<T, SFMM_NDIM> {
 };
 
 template<class T>
-SFMM_PREFIX T sqr(const T& a) {
-	return a * a;
-}
-
-template<class T>
-SFMM_PREFIX inline T sqr(vec3<T> vec) {
-	return (sqr(vec[0])+sqr(vec[1])+sqr(vec[2]));
-}
-
-template<class T>
-SFMM_PREFIX inline T abs(vec3<T> vec) {
-	return sqrt(sqr(vec));
-}
-
-template<class T>
 struct is_vec3 {
 	static constexpr bool value = false;
 };

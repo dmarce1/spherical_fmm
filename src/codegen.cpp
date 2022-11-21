@@ -13,6 +13,8 @@
 #include <array>
 #include <stack>
 
+//#define USE_INTEL
+
 #define CHECK_NAN
 
 #if USE_DOUBLE_FLAG == 1
@@ -143,7 +145,6 @@ std::array<std::unordered_map<std::string, flops_t>, PMAX + 1> flops_map;
 //#define VEC_DOUBLE_SIZE 2
 //#define VEC_FLOAT_SIZE 8
 std::vector<int> precision;
-std::vector<int> m2monly;
 std::vector<int> simd;
 std::vector<int> simd_size;
 std::vector<std::string> base_rtype;
@@ -226,68 +227,6 @@ std::string print2str(const char* fstr) {
 	return result;
 }
 
-static std::string vec_header() {
-	std::string str = "\n";
-	std::string macro;
-#ifdef USE_SIMD
-	str += print2str("#ifndef __CUDACC__\n");
-	str += "\n";
-#ifdef USE_FLOAT
-	str += print2str("SFMM_SIMD_FACTORY(simd_f32, float, simd_i32, int32_t, simd_ui32, uint32_t, %i);\n", SIMD_FLOAT_WIDTH);
-	if ( M2M_SIMD_WIDTH == SIMD_FLOAT_WIDTH) {
-		str += print2str("using m2m_simd_f32 = simd_f32;\n");
-		str += print2str("using m2m_simd_i32 = simd_i32;\n");
-		str += print2str("using m2m_simd_ui32 = simd_ui32;\n");
-	} else {
-		str += print2str("SFMM_SIMD_FACTORY(m2m_simd_f32, float, m2m_simd_i32, int32_t, m2m_simd_ui32, uint32_t, %i);\n", M2M_SIMD_WIDTH);
-	}
-	for (int width = std::min(M2M_SIMD_WIDTH,SIMD_FLOAT_WIDTH); width <= std::max(M2M_SIMD_WIDTH, SIMD_FLOAT_WIDTH); width += std::abs(SIMD_FLOAT_WIDTH - M2M_SIMD_WIDTH)) {
-		str += print2str("\ninline float reduce_sum(const %s& v) {\n", width == SIMD_FLOAT_WIDTH ? "simd_f32" : "m2m_simd_f32" );
-		for (int sz = width; sz > 1; sz /= 2) {
-			str += print2str("\ttypedef float type%i __attribute__ ((vector_size(%i*sizeof(float))));\n", sz, sz);
-		}
-		str += print2str("\ttype%i a%i = *((type%i*)(&v));\n", width, width, width);
-		for (int sz = width / 2; sz > 1; sz /= 2) {
-			str += print2str("\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
-			str += print2str("\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
-			str += print2str("\ta%i += b%i;\n", sz, sz);
-		}
-		str += print2str("\treturn a2[0] + a2[1];\n");
-		str += "}\n";
-		str += "\n";
-	}
-
-#endif
-#ifdef USE_DOUBLE
-	str += print2str("SFMM_SIMD_FACTORY(simd_f64, double, simd_i64, int64_t, simd_ui64, uint64_t, %i);\n", SIMD_DOUBLE_WIDTH);
-	if ( M2M_SIMD_WIDTH == SIMD_DOUBLE_WIDTH) {
-		str += print2str("using m2m_simd_f64 = simd_f64;\n");
-		str += print2str("using m2m_simd_i64 = simd_i64;\n");
-		str += print2str("using m2m_simd_ui64 = simd_ui64;\n");
-	} else {
-		str += print2str("SFMM_SIMD_FACTORY(m2m_simd_f64, double, m2m_simd_i64, int64_t, m2m_simd_ui64, uint64_t, %i);\n", M2M_SIMD_WIDTH);
-	}
-	for (int width = std::min(M2M_SIMD_WIDTH,SIMD_DOUBLE_WIDTH); width <= std::max(M2M_SIMD_WIDTH, SIMD_DOUBLE_WIDTH); width += std::abs(SIMD_DOUBLE_WIDTH - M2M_SIMD_WIDTH)) {
-		str += print2str("\ninline double reduce_sum(const %s& v) {\n", width == SIMD_DOUBLE_WIDTH ? "simd_f64" : "m2m_simd_f64");
-		for (int sz = width; sz > 1; sz /= 2) {
-			str += print2str("\ttypedef double type%i __attribute__ ((vector_size(%i*sizeof(double))));\n", sz, sz);
-		}
-		str += print2str("\ttype%i a%i = *((type%i*)(&v));\n", width, width, width);
-		for (int sz = width / 2; sz > 1; sz /= 2) {
-			str += print2str("\ttype%i a%i = *((type%i*)(&a%i));\n", sz, sz, sz, 2 * sz);
-			str += print2str("\tconst type%i& b%i = *(((type%i*)(&a%i))+1);\n", sz, sz, sz, 2 * sz);
-			str += print2str("\ta%i += b%i;\n", sz, sz);
-		}
-		str += print2str("\treturn a2[0] + a2[1];\n");
-		str += "}\n";
-		str += "\n";
-	}
-#endif
-
-	str += "#endif /* __CUDACC__ */\n";
-#endif
-	return str;
-}
 
 static int cuda = 0;
 
@@ -1163,22 +1102,20 @@ void fixed_point_covers() {
 			"return M2M%s(M, dx, flags) + %i;"
 	};
 
-	if( !m2monly[typenum]) {
-	//	tprint("\ntemplate<typename std::enable_if<!is_vec3<%s>::value>* = nullptr>\n", fixed_type[typenum].c_str());
-		tprint("SFMM_PREFIX inline %s distance(const %s& a, const %s& b) {\n", type.c_str(), fixed_type[typenum].c_str(), fixed_type[typenum].c_str());
-		indent();
-		tprint("return a - b;\n");
-		deindent();
-		tprint("}\n\n");
-	//	tprint("\ntemplate<typename std::enable_if<!is_vec3<%s>::value>* = nullptr>\n", type.c_str());
-		tprint("SFMM_PREFIX inline %s distance(const %s& a, const %s& b) {\n", type.c_str(), type.c_str(), type.c_str());
-		indent();
-		tprint("const %s c = a - b;\n", type.c_str());
-		tprint("const %s absc = abs(c);\n", type.c_str());
-		tprint("return copysign(min(absc, %s(1) - absc), c * (%s(0.5) - absc));\n", type.c_str(), type.c_str());
-		deindent();
-		tprint("}\n");
-	}
+//	tprint("\ntemplate<typename std::enable_if<!is_vec3<%s>::value>* = nullptr>\n", fixed_type[typenum].c_str());
+	tprint("SFMM_PREFIX inline %s distance(const %s& a, const %s& b) {\n", type.c_str(), fixed_type[typenum].c_str(), fixed_type[typenum].c_str());
+	indent();
+	tprint("return a - b;\n");
+	deindent();
+	tprint("}\n\n");
+//	tprint("\ntemplate<typename std::enable_if<!is_vec3<%s>::value>* = nullptr>\n", type.c_str());
+	tprint("SFMM_PREFIX inline %s distance(const %s& a, const %s& b) {\n", type.c_str(), type.c_str(), type.c_str());
+	indent();
+	tprint("const %s c = a - b;\n", type.c_str());
+	tprint("const %s absc = abs(c);\n", type.c_str());
+	tprint("return copysign(min(absc, %s(1) - absc), c * (%s(0.5) - absc));\n", type.c_str(), type.c_str());
+	deindent();
+	tprint("}\n");
 
 	const int nparams[N] = {2,2,2,2,1,2,2,1};
 	for( int i = 0; i < N; i++) {
@@ -1188,7 +1125,7 @@ void fixed_point_covers() {
 			}
 			const char* estr = k == 0 ? "" : "_ewald";
 			for( int j = 0; j < 2; j++) {
-				if( (i != 7 && m2monly[typenum]) || (i == 7 && j == 1)) {
+				if( (i == 7 && j == 1)) {
 					continue;
 				}
 				reset_running_flops();
@@ -1211,7 +1148,15 @@ void fixed_point_covers() {
 						tprint( "dx[%i] = x0[%i] - x1[%i];\n", dim, dim, dim);
 					}
 				}
-				tprint( calls[i], estr, get_running_flops().load());
+				auto flops = get_running_flops();
+				if( i < 4 ) {
+					if(j != 0 ) {
+						flops.r+=3;
+					} else {
+						flops.r+=21;
+					}
+				}
+				tprint( calls[i], estr, flops.load());
 				deindent();
 				tprint("\n}\n");
 				reset_running_flops();
@@ -1619,7 +1564,7 @@ void greens_body(int P, const char* M = nullptr) {
 }
 
 
-void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex) {
+void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oindex = lindex, bool acc = false) {
 	std::vector<entry_t> pos;
 	std::vector<entry_t> neg;
 	for (int n = 0; n <= Q; n++) {
@@ -1687,20 +1632,20 @@ void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 						if( ronly && gystr == gstr) {
 							if( gystr == 0 && mstr == 0 ) {
 								//			abort();
-						}
+							}
 						//		printf( " %i %i\n", mstr, gstr);
-						return;
-					}
-					entry_t entry;
-					entry.l = lindex(n, m);
-					entry.m = mstr;
-					entry.o = gstr;
-					if( sgn == 1) {
-						pos.push_back(entry);
-					} else {
-						neg.push_back(entry);
-					}
-				}	;
+							return;
+						}
+						entry_t entry;
+						entry.l = lindex(n, m);
+						entry.m = mstr;
+						entry.o = gstr;
+						if( sgn == 1) {
+							pos.push_back(entry);
+						} else {
+							neg.push_back(entry);
+						}
+					};
 					if (!mreal) {
 						if (!greal) {
 							add_work(mxsgn * gxsgn, m, mxstr, gxstr);
@@ -1735,6 +1680,14 @@ void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 	for (int n = 0; n < (P + 1) * (P + 1); n++) {
 		first[n] = true;
 	}
+	if( acc ) {
+		for (int i = 0; i < neg.size(); i++) {
+			if (!first[neg[i].l]) {
+				tprint("L[%i] = -L[%i];\n", neg[i].l, neg[i].l);
+				first[neg[i].l] = false;
+			}
+		}
+	}
 	for (int i = 0; i < neg.size(); i++) {
 		if (first[neg[i].l]) {
 			tprint("L[%i] = M[%i] * O[%i];\n", neg[i].l, neg[i].m, neg[i].o);
@@ -1749,7 +1702,7 @@ void mg2l_body(int P, int Q, bool ronly = false, std::function<int(int, int)> oi
 		}
 	}
 	for (int i = 0; i < pos.size(); i++) {
-		if (first[pos[i].l]) {
+		if (first[pos[i].l] && !acc) {
 			first[pos[i].l] = false;
 			tprint("L[%i] = M[%i] * O[%i];\n", pos[i].l, pos[i].m, pos[i].o);
 		} else {
@@ -1785,7 +1738,7 @@ bool close2zero(double a) {
 }
 
 std::string P2L(int P) {
-	auto fname = func_header("P2L", P, true, true, true, true, true, "", "L", EXP, "M", LIT, "dx", VEC3);
+	auto fname = func_header("P2L", P, true, true, true, true, true, "", "L", EXP, "m", LIT, "dx", VEC3);
 	init_real("tmp1");
 	init_real("r2");
 	init_real("r2inv");
@@ -1798,13 +1751,12 @@ std::string P2L(int P) {
 	tprint("expansion<T,%i> O_st(L_st.scale());\n", P);
 	tprint("T* O=O_st.data();\n");
 	if( scaled ) {
-		tprint( "scale = O_st.scale();\n");
-		tprint("O_st.rescale(%s(1));\n", base_rtype[typenum].c_str());
+		tprint("tmp1 = TCAST(1) / L_st.scale();\n");
+		tprint("x *= tmp1;\n");
+		tprint("y *= tmp1;\n");
+		tprint("z *= tmp1;\n");
 	}
-	greens_body(P, "M");
-	if( scaled ) {
-		tprint("O_st.rescale(scale);\n");
-	}
+	greens_body(P, "m");
 	for( int n = 0; n < exp_sz(P); n++) {
 		tprint( "L[%i] += O[%i];\n", n, n);
 	}
@@ -1849,7 +1801,7 @@ void MG2L(int P) {
 	reset_running_flops();
 	tprint("expansion<T,%i> L_st;\n", P);
 	tprint("T* L=L_st.data();\n");
-	mg2l_body(P, P);
+	mg2l_body(P, P,false,lindex, true);
 	if (P > 2 && periodic) {
 		tprint("L[%i] = fma(TCAST(-0.5) * O_st.trace2(), M_st.trace2(), L[%i]);\n", lindex(0, 0), lindex(0, 0));
 	}
@@ -2522,7 +2474,7 @@ void greens_xz_body(int P) {
 }
 
 int M2L_allrot(int P, int Q, int rot) {
-	std::string mname = std::string(rot == 0 ? "M" : "Min") + (scaled ? "s" : "");
+	std::string mname = std::string(rot == 0 ? "M" : "Min") + ((scaled) ? "s" : "");
 	std::string name = print2str("M2%cr%i", P == Q ? 'L' : 'P', rot);
 	if (Q > 1) {
 		func_header(name.c_str(), P, true, true, true, true, true, "", "Lout", EXP, mname.c_str(), CMUL, "dx", VEC3);
@@ -2815,13 +2767,15 @@ int M2L_allrot(int P, int Q, int rot) {
 	deindent();
 	tprint("}");
 
-	tprint("return %i;\n", get_running_flops().load());
+	auto flops = get_running_flops();
+	flops += rescale_flops(P-1);
+	tprint("return %i;\n", flops.load());
 	deindent();
 	tprint("}\n");
 	tprint("\n");
 	tprint("}\n");
 	tprint("\n");
-	timing_body += print2str("\"M2%c\", %i, %i, %i, 0.0, 0}", Q == P ? 'L' : 'P', P, rot, get_running_flops(false).load());
+	timing_body += print2str("\"M2%c\", %i, %i, %i, 0.0, 0}", Q == P ? 'L' : 'P', P, rot, flops.load());
 	TAB0();
 	return get_running_flops().load();
 }
@@ -2913,7 +2867,7 @@ void M2L(int P, int Q) {
 	TAB0();
 }
 std::string M2L_ewald(int P) {
-	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L", EXP, scaled ? "Min" : "M", CMUL, "dx", VEC3);
+	auto fname = func_header("M2L_ewald", P, true, false, false, true, true, "", "L", EXP, (scaled) ? "Min" : "M", CMUL, "dx", VEC3);
 	reset_running_flops();
 	tprint("expansion<%s, %i> G_st;\n", type.c_str(), P);
 	reset_running_flops();
@@ -2921,10 +2875,10 @@ std::string M2L_ewald(int P) {
 	tprint("T* L=L_st.data();\n");
 	if (scaled) {
 		tprint( "multipole<%s, %i> M_st(Min_st);\n", type.c_str(), P);
-		tprint("const T* M=M_st.data();\n");
-		tprint("const %s scale = L_st.scale();\n", base_rtype[typenum].c_str());
+		tprint( "const T* M=M_st.data();\n");
+		tprint( "const %s scale = L_st.scale();\n", base_rtype[typenum].c_str());
 		tprint( "M_st.rescale(%s(1));\n", base_rtype[typenum].c_str());
-		tprint( "L_st = expansion<%s,%i>(%s(1));\n", type.c_str(), P, base_rtype[typenum].c_str());
+		tprint( "L_st.rescale(%s(1));\n", base_rtype[typenum].c_str());
 	} else {
 		tprint("const T* M=M_st.data();\n");
 	}
@@ -2933,14 +2887,19 @@ std::string M2L_ewald(int P) {
 	if (scaled) {
 		tprint( "L_st.rescale(scale);\n");
 	}
-	tprint("return flops+%i;\n", get_running_flops().load());
+	auto flops = get_running_flops();
+	flops += rescale_flops(P-1);
+	flops += rescale_flops(P);
+	flops += rescale_flops(P);
+
+	tprint("return flops+%i;\n", flops.load());
 	deindent();
 	tprint("} else {\n");
 	indent();
 	tprint("expansion<%s, %i> L_st;\n", type.c_str(), P);
 	tprint("multipole<%s, %i> M_st;\n", type.c_str(), P);
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
-	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + MG2L(L_st, M_st, O_st) + %i;\n", get_running_flops(false).load());
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + MG2L(L_st, M_st, O_st) + %i;\n", flops.load());
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -2953,7 +2912,7 @@ std::string M2L_ewald(int P) {
 }
 
 std::string M2P_ewald(int P) {
-	auto fname = func_header("M2P_ewald", P, true, false, false, true, true, "", "f", FORCE, scaled ? "Min" : "M", CMUL, "dx", VEC3);
+	auto fname = func_header("M2P_ewald", P, true, false, false, true, true, "", "f", FORCE, (scaled) ? "Min" : "M", CMUL, "dx", VEC3);
 	reset_running_flops();
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
 	tprint("T* O=O_st.data();\n");
@@ -2982,12 +2941,14 @@ std::string M2P_ewald(int P) {
 	tprint("f.force[0] -= L[3];\n");
 	tprint("f.force[1] -= L[1];\n");
 	tprint("f.force[2] -= L[2];\n");
-	tprint("return flops+%i;\n", get_running_flops().load());
+	auto flops = get_running_flops();
+	flops += rescale_flops(P-1);
+	tprint("return flops+%i;\n", flops.load());
 	deindent();
 	tprint("} else {\n");
 	indent();
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
-	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + %i;\n", get_running_flops(false).load());
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + %i;\n", flops.load());
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -3003,14 +2964,17 @@ std::string P2L_ewald(int P) {
 	auto fname = func_header("P2L_ewald", P, true, false, false, true, true, "", "L0", EXP,  "m", LIT, "dx", VEC3);
 	reset_running_flops();
 	init_real("tmp1");
-	tprint("expansion<T,%i> L_st(L0_st.scale());\n", P);
-	tprint("T* L=L_st.data();\n");
-	tprint("T* L0=L0_st.data();\n");
 	reset_running_flops();
 	if( scaled ) {
+		tprint("expansion<T,%i> L_st(L0_st.scale());\n", P);
 		tprint( "L_st.rescale(%s(1));\n", base_rtype[typenum].c_str());
-		tprint("const %s scale = L_st.scale();\n", base_rtype[typenum].c_str() );
+		tprint("const %s scale = L0_st.scale();\n", base_rtype[typenum].c_str() );
+	} else {
+		tprint("expansion<T,%i> L_st(L0_st.scale());\n", P);
+
 	}
+	tprint("T* L=L_st.data();\n");
+	tprint("T* L0=L0_st.data();\n");
 	tprint("int flops = greens_ewald(L_st, dx);\n");
 	if( scaled ) {
 		tprint( "L_st.rescale(scale);\n");
@@ -3019,12 +2983,15 @@ std::string P2L_ewald(int P) {
 		tprint("L0[%i] = fma(m, L[%i], L0[%i]);\n", i, i, i);
 	}
 	tprint("L0_st.trace2() = fma(m, L_st.trace2(), L0_st.trace2());\n");
-	tprint("return flops+%i;\n", get_running_flops().load());
+	auto flops = get_running_flops();
+	flops += rescale_flops(P);
+	flops += rescale_flops(P);
+	tprint("return flops+%i;\n", flops.load());
 	deindent();
 	tprint("} else {\n");
 	indent();
 	tprint("expansion<%s, %i> O_st;\n", type.c_str(), P);
-	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + %i;\n", get_running_flops(false).load());
+	tprint("return greens_ewald(O_st, vec3<T>(T(0), T(0), T(0)), flags) + %i;\n", flops.load());
 	deindent();
 	tprint("}\n");
 	deindent();
@@ -3958,7 +3925,7 @@ int L2L_allrot(int P, int Q, int rot) {
 	if (Q == 1) {
 		if( scaled ) {
 			tprint("tmp1 = TCAST(1) / L0_st.scale();\n");
-			tprint("f.potential = tmp1 * L2[0];\n");
+			tprint("f.potential = fma(tmp1, L2[0], f.potential);\n");
 			tprint("tmp1 = -tmp1 * tmp1;\n");
 			tprint("f.force[0] = fma(tmp1, L2[3], f.force[0]);\n");
 			tprint("f.force[1] = fma(tmp1, L2[1], f.force[1]);\n");
@@ -4192,388 +4159,85 @@ int flops_t::load() const {
 }
 
 void math_float(std::string _type) {
+	if( is_vec(type) ) {
+		return;
+	}
+	const char* type = _type.c_str();
 	if (fp) {
 		fclose(fp);
 	}
-	const char* sout = "*s";
-	const char* cout = "*c";
-	const char* type = _type.c_str();
 	fp = fopen(full_header.c_str(), "at");
 	tprint("\n");
 	if (is_vec(_type)) {
 		fprintf(fp, "#ifndef __CUDACC__\n");
 	}
-	tprint("\ninline %s fma(%s a, %s b, %s c) {\n", type, type, type, type);
-	indent();
-	tprint("return a * b + c;\n");
-	deindent();
-	tprint("}\n\n");
-	tprint("\ninline %s abs(%s a) {\n", type, type);
-	indent();
-	tprint("%s i = *((%s*) &a);\n", itype[typenum].c_str(), itype[typenum].c_str());
-	tprint("i &= %s(0x7FFFFFFF);\n", itype[typenum].c_str());
-	tprint("return *((%s*) &i);\n", type);
-	deindent();
-	tprint("}\n\n");
-	tprint("\ninline %s copysign(%s x, %s y) {\n", type, type, type);
-	indent();
-	tprint("%s i = *((%s*) &x);\n", itype[typenum].c_str(), itype[typenum].c_str());
-	tprint("%s j = *((%s*) &y);\n", itype[typenum].c_str(), itype[typenum].c_str());
-	tprint("i &= %s(0x7FFFFFFF);\n", itype[typenum].c_str());
-	tprint("j &= %s(0x80000000);\n", itype[typenum].c_str());
-	tprint("i |= j;\n");
-	tprint("return *((%s*) &i);\n", type);
-	deindent();
-	tprint("}\n\n");
-	tprint("\ninline %s min(%s x, %s y) {\n", type, type, type);
-	indent();
-	tprint("%s flag = %s(x < y);\n", type, type);
-	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
-	deindent();
-	tprint("}\n\n");
-	tprint("\ninline %s max(%s x, %s y) {\n", type, type, type);
-	indent();
-	tprint("%s flag = %s(x > y);\n", type, type);
-	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
-	deindent();
-	tprint("}\n\n");
+	tprint("%s abs(%s);\n", type, type);
+	tprint("%s copysign(%s, %s);\n", type, type, type);
+	tprint("%s min(%s, %s);\n", type, type, type);
+	tprint("%s max(%s, %s);\n", type, type, type);
+	tprint("%s fma(%s, %s, %s);\n", type, type, type, type);
 	tprint("%s rsqrt(%s);\n", type, type);
 	tprint("%s sqrt(%s);\n", type, type);
 	tprint("void sincos(%s, %s*, %s*);\n", type, type, type, type);
-	tprint("void erfcexp(%s, %s*, %s*);\n", type, type, type, type);
-	if (is_vec(_type)) {
-		tprint("#endif /* __CUDACC__ */ \n");
-	}
-	tprint("\n");
-	fclose(fp);
-	fp = fopen(print2str("./generated_code/src/math/math_%s.cpp", type).c_str(), "wt");
-	tprint("\n");
-	tprint("#include \"%s\"\n", header.c_str());
-	tprint("#include \"typecast_%s.hpp\"\n", type);
-	tprint("\n");
-	tprint("namespace sfmm {\n");
-	tprint("\n");
-	tprint("T rsqrt(T x) {\n");
-	indent();
-	tprint("V i;\n");
-	tprint("T y;\n");
-	tprint("x += TCAST(%.20e);\n", std::numeric_limits<float>::min());
-	tprint("i = *((V*) &x);\n");
-	tprint("x *= TCAST(0.5);\n");
-	tprint("i >>= VCAST(1);\n");
-	tprint("i = VCAST(0x5F3759DF) - i;\n");
-	tprint("y = *((T*) &i);\n");
-	tprint("y *= fma(x, y * y, TCAST(-1.5));\n");
-	tprint("y *= fma(x, y * y, TCAST(-1.5));\n");
-	tprint("y *= TCAST(1.5) - x * y * y;\n");
-	tprint("return y;\n");
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("T sqrt(T x) {\n");
-	indent();
-	tprint("return TCAST(1) / rsqrt(x);\n");
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("void sincos(T x, T* s, T* c) {\n");
-	indent();
-	tprint("V ssgn, j, i, k;\n");
-	tprint("T x2;\n");
-	tprint("ssgn = V(((*((U*) &x) & UCAST(0x80000000)) >> UCAST(30)) - UCAST(1));\n");
-	tprint("j = V((*((U*) &x) & UCAST(0x7FFFFFFF)));\n");
-	tprint("x = *((T*) &j);\n");
-	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
-	tprint("x -= T(i) * TCAST(%.20e);\n", M_PI);
-	tprint("x -= TCAST(%.20e);\n", 0.5 * M_PI);
-	tprint("x2 = x * x;\n");
-	{
-		constexpr int N = 11;
-		tprint("%s = TCAST(%.20e);\n", cout, nonepow(N / 2) / factorial(N));
-		tprint("%s = TCAST(%.20e);\n", sout, cout, nonepow((N - 1) / 2) / factorial(N - 1));
-		for (int n = N - 2; n >= 0; n -= 2) {
-			tprint("%s = fma(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
-			tprint("%s = fma(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
-		}
-	}
-	tprint("%s *= x;\n", cout);
-	tprint("k = (((i & VCAST(1)) << VCAST(1)) - VCAST(1));\n");
-	tprint("%s *= T(ssgn * k);\n", sout);
-	tprint("%s *= T(k);\n", cout);
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-
-	tprint("T exp(T x) {\n");
-	{
-		indent();
-		constexpr int N = 7;
-		tprint("V k;\n");
-		tprint("T y, xxx;\n");
-		tprint("k =  x / TCAST(0.6931471805599453094172) + TCAST(0.5);\n"); // 1 + divops
-		tprint("k -= x < TCAST(0);\n");
-		tprint("xxx = x - T(k) * TCAST(0.6931471805599453094172);\n");
-		tprint("y = TCAST(%.20e);\n", 1.0 / factorial(N));
-		for (int i = N - 1; i >= 0; i--) {
-			tprint("y = fma(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
-		}
-		tprint("k = (k + VCAST(127)) << VCAST(23);\n");
-		tprint("y *= *((T*) (&k));\n"); //1
-		tprint("return y;\n");
-		deindent();
-		tprint("}\n");
-		tprint("\n");
-	}
-	{
-
-		tprint("void erfcexp(T x, T* erfc0, T* exp0) {\n");
-		indent();
-		tprint("T x2, nx2, q0, q1, sw0, sw1, tmp1, tmp0;\n");
-		tprint("x2 = x * x;\n");
-		tprint("nx2 = -x2;\n");
-		tprint("*exp0 = exp(nx2);\n");
-
-		constexpr double x0 = 2.75;
-		tprint("sw0 = (x < TCAST(%.20e));\n", x0);
-		tprint("sw1 = TCAST(1) - sw0;\n", x0);
-		constexpr int N0 = 25;
-		constexpr int N1 = x0 * x0 + 0.5;
-		tprint("q0 = TCAST(2) * x * x * sw0;\n");
-		tprint("q1 = sw1 / (TCAST(2) * x * x);\n");
-		tprint("tmp0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N0 + 1));
-		tprint("tmp1 = TCAST(%.20e);\n", dfactorial(2 * N1 - 1) * nonepow(N1));
-		int n1 = N1 - 1;
-		int n0 = N0 - 1;
-		while (n1 >= 1 || n0 >= 0) {
-			if (n0 >= 0) {
-				tprint("tmp0 = fma(tmp0, q0, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n0 + 1));
-			}
-			if (n1 >= 1) {
-				tprint("tmp1 = fma(tmp1, q1, TCAST(%.20e));\n", dfactorial(2 * n1 - 1) * nonepow(n1));
-			}
-			n1--;
-			n0--;
-		}
-		tprint("tmp0 *= TCAST(%.20e) * x * *exp0;\n", 2.0 / sqrt(M_PI));
-		tprint("tmp1 = fma(tmp1, q1, TCAST(1));\n");
-		tprint("tmp0 = TCAST(1) - tmp0;\n");
-		tprint("tmp1 *= *exp0 * TCAST(%.20e) / (x + sw1);\n", 1.0 / sqrt(M_PI));
-		tprint("*erfc0 = fma(sw0, tmp0, sw1 * tmp1);\n");
-		deindent();
-		tprint("}\n");
-		tprint("\n");
-	}
-	tprint("\n");
-	tprint("}\n");
-	tprint("\n");
-	fclose(fp);
-
-	fp = nullptr;
-}
-
-void math_double(std::string _str) {
-	const char* type = _str.c_str();
-	if (fp) {
-		fclose(fp);
-	}
-	const char* sout = "*s";
-	const char* cout = "*c";
-	constexpr double x0 = 1.0;
-	constexpr double x1 = 4.7;
-
-	fp = fopen(full_header.c_str(), "at");
-	tprint("\n");
-	if (is_vec(_str)) {
-		tprint("#ifndef __CUDACC__\n");
-	}
-	tprint("\n");
-	tprint("inline %s fma(%s a, %s b, %s c) {\n", type, type, type, type);
-	indent();
-	tprint("return a * b + c;\n");
-	deindent();
-	tprint("}\n\n");
+	tprint("void erfcexp(%s, %s*, %s*);\n\n", type, type, type, type);
 	tprint("\ninline %s abs(%s a) {\n", type, type);
 	indent();
-	tprint("%s i = *((%s*) &a);\n", itype[typenum].c_str(), itype[typenum].c_str());
-	tprint("i &= %s(0x7FFFFFFFFFFFFFFFL);\n", itype[typenum].c_str());
-	tprint("return *((%s*) &i);\n", type);
+	tprint("return %sabs(a);\n", is_vec(type) ? "simd::" : "std::");;
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s sqrt(%s a) {\n", type, type);
+	indent();
+	tprint("return %ssqrt(a);\n",  is_vec(type) ? "simd::" : "std::");;
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline %s rsqrt(%s a) {\n", type, type);
+	indent();
+	tprint("return %s(1) / %ssqrt(a);\n", type,  is_vec(type) ? "simd::" : "std::");;
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline void erfcexp(%s x, %s* er, %s* ex) {\n", type, type, type);
+	indent();
+	if( is_vec(type) ) {
+		tprint("%serfcexp(x, er, ex);\n", is_vec(type) ? "simd::" : "std::");;
+	} else {
+		tprint("*er = std::erfc(x);\n");
+		tprint("*ex = std::exp(x);\n");
+	}
+	deindent();
+	tprint("}\n\n");
+	tprint("\ninline void sincos(%s x, %s* s, %s* c) {\n", type, type, type);
+	indent();
+	if( is_vec(type) ) {
+		tprint("%ssincos(x, s, c);\n", is_vec(type) ? "simd::" : "std::");;
+	} else {
+		tprint("*s = std::sin(x);\n");
+		tprint("*c = std::cos(x);\n");
+	}
 	deindent();
 	tprint("}\n\n");
 	tprint("\ninline %s copysign(%s x, %s y) {\n", type, type, type);
 	indent();
-	tprint("%s i = *((%s*) &x);\n", itype[typenum].c_str(), itype[typenum].c_str());
-	tprint("%s j = *((%s*) &y);\n", itype[typenum].c_str(), itype[typenum].c_str());
-	tprint("i &= %s(0x7FFFFFFFFFFFFFFFL);\n", itype[typenum].c_str());
-	tprint("j &= %s(0x8000000000000000L);\n", itype[typenum].c_str());
-	tprint("i |= j;\n");
-	tprint("return *((%s*) &i);\n", type);
+	tprint("return %scopysign(x, y);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
 	tprint("\ninline %s min(%s x, %s y) {\n", type, type, type);
 	indent();
-	tprint("%s flag = %s(x < y);\n", type, type);
-	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
+	tprint("return %smin(x, y);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
 	tprint("\ninline %s max(%s x, %s y) {\n", type, type, type);
 	indent();
-	tprint("%s flag = %s(x > y);\n", type, type);
-	tprint("return flag * x + (%s(1) - flag) * y;\n", type);
+	tprint("return %smax(x, y);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
-	tprint("%s rsqrt(%s);\n", type, type);
-	tprint("%s sqrt(%s);\n", type, type);
-	tprint("void sincos(%s, %s*, %s*);\n", type, type, type);
-	tprint("void erfcexp(%s, %s*, %s*);\n", type, type, type);
-	if (is_vec(_str)) {
-		tprint("#endif /* __CUDACC__ */\n");
-	}
-	tprint("\n");
-	fclose(fp);
-	fp = fopen(print2str("./generated_code/src/math/math_%s.cpp", rtype[typenum].c_str()).c_str(), "wt");
-	tprint("\n");
-	tprint("#include \"%s\"\n", header.c_str());
-	tprint("#include \"typecast_%s.hpp\"\n", type);
-	tprint("\n");
-	tprint("namespace sfmm {\n");
-	tprint("\n");
-	tprint("T rsqrt(T x) {\n");
+	tprint("\ninline %s fma(%s a, %s b, %s c) {\n", type, type, type, type);
 	indent();
-	tprint("V i;\n");
-	tprint("T y;\n");
-	tprint("x += TCAST(%.20e);\n", std::numeric_limits<double>::min());
-	tprint("i = *((V*) &x);\n");
-	tprint("x *= TCAST(0.5);\n");
-	tprint("i >>= VCAST(1);\n");
-	tprint("i = VCAST(0x5FE6EB50C7B537A9) - i;\n");
-	tprint("y = *((T*) &i);\n");
-	tprint("y *= fma(x, y * y, TCAST(-1.5));\n");
-	tprint("y *= fma(x, y * y, TCAST(-1.5));\n");
-	tprint("y *= fma(x, y * y, TCAST(-1.5));\n");
-	tprint("y *= fma(x, y * y, TCAST(-1.5));\n");
-	tprint("return y;\n");
+	tprint("return %sfma(a, b, c);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("T sqrt(T x) {\n");
-	indent();
-	tprint("return TCAST(1) / rsqrt(x);\n");
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("void sincos(T x, T* s, T* c) {\n");
-	indent();
-	tprint("V ssgn, j, i, k;\n");
-	tprint("T x2;\n");
-	tprint("ssgn = V(((*((U*) &x) & UCAST(0x8000000000000000LL)) >> UCAST(62LL)) - UCAST(1LL));\n");
-	tprint("j = V((*((U*) &x) & UCAST(0x7FFFFFFFFFFFFFFFLL)));\n");
-	tprint("x = *((T*) &j);\n");
-	tprint("i = x * TCAST(%.20e);\n", 1.0 / M_PI);
-	tprint("x -= T(i) * TCAST(%.20e);\n", M_PI);
-	tprint("x -= TCAST(%.20e);\n", 0.5 * M_PI);
-	tprint("x2 = x * x;\n");
-	{
-		constexpr int N = 21;
-		tprint("%s = TCAST(%.20e);\n", cout, nonepow(N / 2) / factorial(N));
-		tprint("%s = TCAST(%.20e);\n", sout, cout, nonepow((N - 1) / 2) / factorial(N - 1));
-		for (int n = N - 2; n >= 0; n -= 2) {
-			tprint("%s = fma(%s, x2, TCAST(%.20e));\n", cout, cout, nonepow(n / 2) / factorial(n));
-			tprint("%s = fma(%s, x2, TCAST(%.20e));\n", sout, sout, nonepow((n - 1) / 2) / factorial(n - 1));
-		}
+	tprint("}\n\n");
+	if (is_vec(_type)) {
+		tprint("#endif /* __CUDACC__ */ \n");
 	}
-	tprint("%s *= x;\n", cout);
-	tprint("k = (((i & VCAST(1)) << VCAST(1)) - VCAST(1));\n");
-	tprint("%s *= T(ssgn * k);\n", sout);
-	tprint("%s *= T(k);\n", cout);
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("T exp(T x) {\n");
-	{
-		indent();
-		constexpr int N = 18;
-		tprint("V k;\n");
-		tprint("T xxx, y;\n");
-		tprint("k =  x / TCAST(0.6931471805599453094172) + TCAST(0.5);\n"); // 1 + divops
-		tprint("k -= x < TCAST(0);\n");
-		tprint("xxx = x - T(k) * TCAST(0.6931471805599453094172);\n");
-		tprint("y = TCAST(%.20e);\n", 1.0 / factorial(N));
-		for (int i = N - 1; i >= 0; i--) {
-			tprint("y = fma(y, xxx, TCAST(%.20e));\n", 1.0 / factorial(i)); //17*(2-fmaops);
-		}
-		tprint("k = (k + VCAST(1023)) << VCAST(52);\n");
-		tprint("y *= *((T*) (&k));\n"); //1
-		tprint("return y;\n");
-		deindent();
-		tprint("}\n");
-		tprint("\n");
-	}
-	tprint("void erfcexp(T x, T* erfc0, T* exp0) {\n");
-	indent();
-	tprint("T x2, nx2, q0, q2, x0, x1, sw0, sw1, sw2, res0, res1, res2;\n");
-	tprint("x2 = x * x;\n");
-	tprint("nx2 = -x2;\n");
-	tprint("*exp0 = exp(nx2);\n");
-
-	tprint("sw0 = T(x < TCAST(%.20e));\n", x0);
-	tprint("sw1 = T(x >= TCAST(%.20e)) * T(x <= TCAST(%.20e));\n", x0, x1);
-	tprint("sw2 = T(x > TCAST(%.20e));\n", x1);
-	{
-		constexpr int N0 = 17;
-		tprint("x0 = x;\n");
-		tprint("q0 = TCAST(2) * x0 * x0 * sw0;\n");
-		tprint("res0 = TCAST(%.20e);\n", 1.0 / dfactorial(2 * N0 + 1));
-		constexpr int N1 = 35;
-		constexpr double a = (x1 - x0) * 0.5 + x0;
-		static double c0[N1 + 1];
-		static bool init = false;
-		double q[N1 + 1];
-		init = true;
-		c0[0] = (a) * exp(a * a) * erfc(a);
-		q[0] = exp(a * a) * erfc(a);
-		q[1] = -2.0 / sqrt(M_PI) + 2 * a * exp(a * a) * erfc(a);
-		for (int n = 2; n <= N1; n++) {
-			q[n] = 2 * (a * q[n - 1] + q[n - 2]) / n;
-		}
-		for (int n = 1; n <= N1; n++) {
-			c0[n] = q[n - 1] + (a) * q[n];
-		}
-		tprint("x1 = (x0 - TCAST(%.20e)) * sw1;\n", a);
-		tprint("res1 = TCAST(%.20e);\n", c0[N1]);
-		constexpr int N2 = x1 * x1 + 0.5;
-		tprint("x2 = x0;\n");
-		tprint("q2 = sw2 / (TCAST(2) * x2 * x2);\n");
-		tprint("res2 = TCAST(%.20e);\n", dfactorial(2 * N2 - 1) * nonepow(N2));
-		int n0 = N0 - 1;
-		int n1 = N1 - 1;
-		int n2 = N2 - 1;
-		while (n0 >= 0 || n1 >= 0 || n2 >= 1) {
-			if (n0 >= 0) {
-				tprint("res0 = fma(res0, q0, TCAST(%.20e));\n", 1.0 / dfactorial(2 * n0 + 1));
-			}
-			if (n1 >= 0) {
-				tprint("res1 = fma(res1, x1, TCAST(%.20e));\n", c0[n1]);
-			}
-			if (n2 >= 1) {
-				tprint("res2 = fma(res2, q2, TCAST(%.20e));\n", dfactorial(2 * n2 - 1) * nonepow(n2));
-			}
-			n0--;
-			n1--;
-			n2--;
-		}
-		tprint("res0 *= TCAST(%.20e) * x0 * *exp0;\n", 2.0 / sqrt(M_PI));
-		tprint("res0 = TCAST(1) - res0;\n");
-		tprint("res1 *= *exp0 / x0;\n");
-		tprint("res2 = fma(res2, q2, TCAST(1));\n");
-		tprint("res2 *= *exp0 * TCAST(%.20e) / x2;\n", 1.0 / sqrt(M_PI));
-	}
-	tprint("*erfc0 = fma(sw0, res0, fma(sw1, res1, sw2 * res2));\n");
-
-	deindent();
-	tprint("}\n");
-	tprint("\n");
-	tprint("\n");
-	tprint("}\n");
 	tprint("\n");
 	fclose(fp);
 	fp = nullptr;
@@ -4592,16 +4256,13 @@ void typecast_functions() {
 		tprint("namespace sfmm {\n\n");
 		tprint("\n");
 		tprint("typedef %s T;\n", rtype[i].c_str());
-		tprint("typedef %s U;\n\n", uitype[i].c_str());
 		tprint("typedef %s V;\n", itype[i].c_str());
 		tprint("\n");
 		tprint("typedef T TCONVERT;\n");
-		tprint("typedef U UCONVERT;\n");
 		tprint("typedef V VCONVERT;\n");
 		tprint("\n");
 		tprint("#define TCAST(a) (%s(%s(a)))\n", rtype[i].c_str(), base_rtype[i].c_str());
 		tprint("#define VCAST(a) (%s(%s(a)))\n", itype[i].c_str(), base_itype[i].c_str());
-		tprint("#define UCAST(a) (%s(%s(a)))\n", uitype[i].c_str(), base_uitype[i].c_str());
 		tprint("\n");
 		tprint("}\n");
 		tprint("\n");
@@ -4623,7 +4284,6 @@ int main() {
 #endif
 	printf("simd double width = %i, ", SIMD_DOUBLE_WIDTH);
 	printf("simd float width = %i, ", SIMD_FLOAT_WIDTH);
-	printf("simd m2m width = %i\n", M2M_SIMD_WIDTH);
 
 #ifdef USE_FLOAT
 	base_rtype.push_back("float");
@@ -4633,7 +4293,6 @@ int main() {
 	base_uitype.push_back("uint32_t");
 	uitype.push_back("uint32_t");
 	precision.push_back(1);
-	m2monly.push_back(0);
 	simd.push_back(0);
 	simd_size.push_back(1);
 	fixed_type.push_back("fixed32");
@@ -4645,23 +4304,9 @@ int main() {
 	base_uitype.push_back("uint32_t");
 	uitype.push_back("simd_ui32");
 	precision.push_back(1);
-	m2monly.push_back(0);
 	simd.push_back(1);
 	simd_size.push_back(SIMD_FLOAT_WIDTH);
 	fixed_type.push_back("simd_fixed32");
-	if( M2M_SIMD_WIDTH != SIMD_FLOAT_WIDTH) {
-		base_rtype.push_back("float");
-		rtype.push_back("m2m_simd_f32");
-		base_itype.push_back("int32_t");
-		itype.push_back("m2m_simd_i32");
-		base_uitype.push_back("uint32_t");
-		uitype.push_back("m2m_simd_ui32");
-		precision.push_back(1);
-		m2monly.push_back(1);
-		simd.push_back(1);
-		simd_size.push_back(M2M_SIMD_WIDTH);
-		fixed_type.push_back("");
-	}
 #endif
 #endif
 #ifdef USE_DOUBLE
@@ -4672,7 +4317,6 @@ int main() {
 	base_uitype.push_back("uint64_t");
 	uitype.push_back("uint64_t");
 	precision.push_back(2);
-	m2monly.push_back(0);
 	simd.push_back(0);
 	simd_size.push_back(1);
 	fixed_type.push_back("fixed64");
@@ -4684,23 +4328,9 @@ int main() {
 	base_uitype.push_back("uint64_t");
 	uitype.push_back("simd_ui64");
 	precision.push_back(2);
-	m2monly.push_back(0);
 	simd.push_back(1);
 	simd_size.push_back(SIMD_DOUBLE_WIDTH);
 	fixed_type.push_back("simd_fixed64");
-	if( M2M_SIMD_WIDTH != SIMD_DOUBLE_WIDTH) {
-		base_rtype.push_back("double");
-		rtype.push_back("m2m_simd_f64");
-		base_itype.push_back("int64_t");
-		itype.push_back("m2m_simd_i64");
-		base_uitype.push_back("uint64_t");
-		uitype.push_back("m2m_simd_ui64");
-		precision.push_back(2);
-		m2monly.push_back(1);
-		simd.push_back(1);
-		simd_size.push_back(M2M_SIMD_WIDTH);
-		fixed_type.push_back("");
-	}
 #endif
 #endif
 	if (rtype.size() == 0) {
@@ -4726,8 +4356,9 @@ int main() {
 	tprint("#include <cmath>\n");
 	tprint("#include <cstdint>\n");
 	tprint("#include <limits>\n");
-	tprint("#include <time.h>\n");
 	tprint("#include <utility>\n");
+	tprint("#include <time.h>\n");
+	tprint("#include <simd.hpp>\n");
 	tprint("\n");
 	tprint("#define sfmmProfilingOff 0\n");
 	tprint("#define sfmmWithoutOptimization 1\n");
@@ -4740,18 +4371,11 @@ int main() {
 	tprint("#define sfmmDefaultFlags (sfmmWithBestOptimization)\n");
 	tprint("\n");
 	tprint("namespace sfmm {\n");
+	tprint("using namespace simd;\n");
 	tprint("\n");
 	include("complex.hpp");
 	tprint("\n");
 	int ntypenames = rtype.size();
-
-#ifdef USE_SIMD
-	tprint("#ifndef __CUDACC__\n");
-	include("vec_simd.hpp");
-	tprint("#endif /* __CUDACC__ */ \n");
-	tprint("\n");
-	tprint("%s", vec_header().c_str());
-#endif
 	std::string str;
 	str += "template<class T>\n";
 	str += "struct type_traits {\n";
@@ -4787,14 +4411,6 @@ int main() {
 	str += "\tstatic constexpr bool is_simd = true;\n";
 	str += "\tusing type = fixed32;\n";
 	str += "};\n\n";
-	if(M2M_SIMD_WIDTH != SIMD_FLOAT_WIDTH) {
-		str += "template<>\n";
-		str += "struct type_traits<m2m_simd_f32> {\n";
-		str += "\tstatic constexpr int precision = 1;\n";
-		str += "\tstatic constexpr bool is_simd = true;\n";
-		str += "\tusing type = float;\n";
-		str += "};\n\n";
-	}
 #endif
 #endif
 #ifdef USE_DOUBLE
@@ -4825,14 +4441,6 @@ int main() {
 	str += "\tstatic constexpr bool is_simd = true;\n";
 	str += "\tusing type = fixed64;\n";
 	str += "};\n\n";
-	if(M2M_SIMD_WIDTH != SIMD_DOUBLE_WIDTH) {
-		str += "template<>\n";
-		str += "struct type_traits<m2m_simd_f64> {\n";
-		str += "\tstatic constexpr int precision = 2;\n";
-		str += "\tstatic constexpr bool is_simd = true;\n";
-		str += "\tusing type = double;\n";
-		str += "};\n\n";
-	}
 #endif
 #endif
 	tprint(str.c_str());
@@ -4947,11 +4555,7 @@ int main() {
 	for (int ti = 0; ti < ntypenames; ti++) {
 		typenum = ti;
 		printf("%s\n", rtype[ti].c_str());
-		if (precision[ti] == 1) {
-			math_float(rtype[ti]);
-		} else {
-			math_double(rtype[ti]);
-		}
+		math_float(rtype[ti]);
 		prefix = "SFMM_PREFIX";
 		type = rtype[ti];
 		if (is_vec(type)) {
@@ -4960,17 +4564,15 @@ int main() {
 		}
 		for (int P = pmin; P <= pmax; P++) {
 			std::string fname;
-			if (!m2monly[typenum]) {
-				greens_flops = greens(P);
-			}
+			greens_flops = greens(P);
 		}
-		for (int P = pmin; P <= pmax && !m2monly[ti]; P++) {
+		for (int P = pmin; P <= pmax; P++) {
 			flops_t flops0, flops1, flops2;
 			std::string fname;
 			flops_t fps;
 			const double alpha = is_float(type) ? 2.4 : 2.25;
 			MG2L(P);
-			if (periodic && !m2monly[typenum]) {
+			if (periodic) {
 				greens_ewald(P, alpha);
 			}
 		}
@@ -4989,22 +4591,18 @@ int main() {
 			set_file(full_header.c_str());
 			tprint("#ifndef __CUDACC__\n");
 		}
-		if( !m2monly[ti]) {
-			P2P();
-			if( periodic ) {
-				P2P_ewald();
-			}
+		P2P();
+		if( periodic ) {
+			P2P_ewald();
 		}
 		for (int P = pmin; P <= pmax; P++) {
-			if (!m2monly[typenum]) {
-				L2L(P, P);
-				L2L(P, 1);
-				P2M(P);
-				M2L(P, P);
-				M2L(P, 1);
-				P2L(P);
-			}
-			if (periodic && !m2monly[typenum]) {
+			L2L(P, P);
+			L2L(P, 1);
+			P2M(P);
+			M2L(P, P);
+			M2L(P, 1);
+			P2L(P);
+			if (periodic ) {
 				M2L_ewald(P);
 				M2P_ewald(P);
 				P2L_ewald(P);
@@ -5238,8 +4836,9 @@ int main() {
 			deindent();
 			tprint("}\n");
 
-			tprint("SFMM_PREFIX void rescale(base_type r0) {\n");
+			tprint("SFMM_PREFIX int rescale(base_type r0) {\n");
 			indent();
+			reset_running_flops();
 			if (scaled) {
 				tprint("const base_type a = r0 / r;\n");
 				tprint("base_type b = a;\n");
@@ -5256,6 +4855,7 @@ int main() {
 					}
 				}
 			}
+			tprint( "return %i;\n", get_running_flops().load());
 			deindent();
 			tprint("}\n");
 			tprint("SFMM_PREFIX base_type scale() const {\n");
@@ -5296,7 +4896,7 @@ int main() {
 			tprint("}\n");
 			tprint("template<class V, int P>\n");
 			tprint("friend class expansion;\n");
-			if (!m2monly[typenum] && simd[typenum]) {
+			if (simd[typenum]) {
 				if (scaled && periodic && P >= pmin) {
 					tprint("friend int M2L_ewald(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", P, P);
 				}
@@ -5457,8 +5057,9 @@ int main() {
 			}
 			deindent();
 			tprint("}\n");
-			tprint("SFMM_PREFIX void rescale(base_type r0) {\n");
+			tprint("SFMM_PREFIX int rescale(base_type r0) {\n");
 			indent();
+			reset_running_flops();
 			if (scaled) {
 				tprint("const base_type a = r / r0;\n");
 				tprint("base_type b = a;\n");
@@ -5477,6 +5078,7 @@ int main() {
 					}
 				}
 			}
+			tprint( "return %i;\n", get_running_flops().load());
 			deindent();
 			tprint("}\n");
 			tprint("SFMM_PREFIX base_type scale() const {\n");
@@ -5518,7 +5120,7 @@ int main() {
 			tprint("}\n");
 			tprint("template<class V, int P>\n");
 			tprint("friend class multipole;\n");
-			if (!m2monly[typenum] && simd[typenum]) {
+			if (simd[typenum]) {
 				if (periodic) {
 					tprint("friend int M2L_ewald(expansion<T, %i>&, const multipole<T, %i>&, vec3<T>, int);\n", P, P);
 				}

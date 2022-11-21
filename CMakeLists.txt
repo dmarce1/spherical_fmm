@@ -9,7 +9,6 @@ set(SFMM_PMIN "5" CACHE STRING "pmin")
 set(SFMM_PMAX "5" CACHE STRING "pmax")
 set(SFMM_DOUBLE_SIMD_WIDTH "4" CACHE STRING "width of double precision simd vectors (except for m2m)")
 set(SFMM_FLOAT_SIMD_WIDTH "8" CACHE STRING "width of single precision simd vectors (except for m2m)")
-set(SFMM_M2M_SIMD_WIDTH "2" CACHE STRING "width of m2m simd vectors")
 message( STATUS "Pmin = ${SFMM_PMIN}" )
 message( STATUS "Pmax = ${SFMM_PMAX}" )
 
@@ -20,7 +19,7 @@ configure_file(
 )
 message(STATUS "Compiling code generator")
 execute_process(
-  	COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/src/codegen.cpp -g -DUSE_FLOAT_FLAG=${SFMM_USE_FLOAT} -DUSE_SIMD_FLAG=${SFMM_USE_SIMD} -DUSE_DOUBLE_FLAG=${SFMM_USE_DOUBLE} -DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\" -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} -DSIMD_FLOAT_WIDTH=${SFMM_FLOAT_SIMD_WIDTH} -DSIMD_DOUBLE_WIDTH=${SFMM_DOUBLE_SIMD_WIDTH} -DM2M_SIMD_WIDTH=${SFMM_M2M_SIMD_WIDTH} -o sfmm_codegen
+  	COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/src/codegen.cpp -g -DUSE_FLOAT_FLAG=${SFMM_USE_FLOAT} -DUSE_SIMD_FLAG=${SFMM_USE_SIMD} -DUSE_DOUBLE_FLAG=${SFMM_USE_DOUBLE} -DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\" -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} -DSIMD_FLOAT_WIDTH=${SFMM_FLOAT_SIMD_WIDTH} -DSIMD_DOUBLE_WIDTH=${SFMM_DOUBLE_SIMD_WIDTH} -o sfmm_codegen
   	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} 
   	RESULT_VARIABLE RESULT
 )
@@ -62,5 +61,5 @@ target_compile_options(sfmm PUBLIC -ffast-math -march=native -DPMIN=${SFMM_PMIN}
 
 add_executable(sfmm_treecode ${CMAKE_CURRENT_SOURCE_DIR}/src/tree_code.cpp )
 target_include_directories(sfmm_treecode PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
-target_link_libraries(sfmm_treecode PUBLIC sfmm pthread)
+target_link_libraries(sfmm_treecode PUBLIC sfmm pthread  simd )
 target_compile_options(sfmm_treecode PUBLIC -ffast-math -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX})
