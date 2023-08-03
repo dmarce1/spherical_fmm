@@ -1113,7 +1113,7 @@ void fixed_point_covers() {
 	indent();
 	tprint("const %s c = a - b;\n", type.c_str());
 	tprint("const %s absc = abs(c);\n", type.c_str());
-	tprint("return copysign(min(absc, %s(1) - absc), c * (%s(0.5) - absc));\n", type.c_str(), type.c_str());
+	tprint("return copysign(fmin(absc, %s(1) - absc), c * (%s(0.5) - absc));\n", type.c_str(), type.c_str());
 	deindent();
 	tprint("}\n");
 
@@ -2030,7 +2030,8 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("const T r = sqrt(r2);\n");
 	tprint("greens(Gr_st, vec3<T>( x, y, z));\n");
 	tprint("const T xxx = T(%.20e) * r;\n", alpha);
-	tprint("erfcexp(xxx, &gam1, &exp0);\n");
+	tprint("gam1 = erfc(xxx);\n");
+	tprint("exp0 = exp(-xxx * xxx);\n");
 	tprint("gam1 *= T(%.20e);\n", sqrt(M_PI));
 	tprint("const T xfac = T(%.20e) * r2;\n", alpha * alpha);
 	tprint("T xpow = T(%.20e) * r;\n", alpha);
@@ -2057,7 +2058,8 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("r = sqrt(r2) + rzero;\n");
 	tprint("greens(Gr_st, vec3<T>(x + rzero, y, z));\n");
 	tprint("xxx = TCAST(%.20e) * r;\n", alpha);
-	tprint("erfcexp(xxx, &gam1, &exp0);\n");
+	tprint("gam1 = erfc(xxx);\n");
+	tprint("exp0 = exp(-xxx * xxx);\n");
 	tprint("gam1 *= TCAST(%.20e);\n", sqrt(M_PI));
 	tprint("xfac = TCAST(%.20e) * r2;\n", alpha * alpha);
 	tprint("xpow = TCAST(%.20e) * r;\n", alpha);
@@ -2144,7 +2146,8 @@ std::string greens_ewald(int P, double alpha) {
 					tprint("hdotx = x2y2;\n", hz);
 				}
 				tprint("phi = TCAST(%.20e) * hdotx;\n", 2.0 * M_PI);
-				tprint("sincos(phi, &%s, &%s);\n", sinname(hx, hy, hz).c_str(), cosname(hx, hy, hz).c_str());
+				tprint("%s = sin(phi);\n", sinname(hx, hy, hz).c_str());
+				tprint("%s = cos(phi);\n",  cosname(hx, hy, hz).c_str());
 			}
 		}
 	}
@@ -3524,7 +3527,8 @@ int P2P_ewald() {
 				tprint("rinv = TCAST(1) / (r + rzero);\n");
 				tprint("r2inv = rinv * rinv;\n");
 				tprint("r3inv = r2inv * rinv;\n");
-				tprint("erfcexp(TCAST(%.20e) * r, &erfc0, &exp0);\n", alpha);
+				tprint("erfc0 = erfc(TCAST(%.20e) * r);\n", alpha);
+				tprint("exp0 = exp(-TCAST(%.20e) * r * r);\n", alpha * alpha);
 				tprint("tmp = TCAST(%.20e) * r * exp0;\n", 2.0 * alpha  / sqrt(M_PI) );
 				tprint("d0 = nmflag * erfc0 * rinv;\n");
 				tprint("d1 = nmflag * (tmp + erfc0) * r3inv;\n");
@@ -3568,7 +3572,8 @@ int P2P_ewald() {
 					}
 				}
 				tprint( "phi = TCAST(%.20e) * hdotx;\n", 2.0 * M_PI);
-				tprint( "sincos(phi, &s, &c);\n");
+				tprint("s = sin(phi);\n");
+				tprint("c = cos(phi);\n");
 				const double c0 = -1.0 / h2 * exp((double) (-(M_PI * M_PI) / alpha / alpha) * h2) * (double) (1. / (M_PI));
 				const float c1 = 2.0 * M_PI * c0;
 				tprint( "f.potential = fma(mflag, c * TCAST(%.20e), f.potential);\n", c0);
@@ -4173,13 +4178,11 @@ void math_float(std::string _type) {
 	}
 	tprint("%s abs(%s);\n", type, type);
 	tprint("%s copysign(%s, %s);\n", type, type, type);
-	tprint("%s min(%s, %s);\n", type, type, type);
-	tprint("%s max(%s, %s);\n", type, type, type);
+	tprint("%s fmin(%s, %s);\n", type, type, type);
+	tprint("%s fmax(%s, %s);\n", type, type, type);
 	tprint("%s fma(%s, %s, %s);\n", type, type, type, type);
 	tprint("%s rsqrt(%s);\n", type, type);
 	tprint("%s sqrt(%s);\n", type, type);
-	tprint("void sincos(%s, %s*, %s*);\n", type, type, type, type);
-	tprint("void erfcexp(%s, %s*, %s*);\n\n", type, type, type, type);
 	tprint("\ninline %s abs(%s a) {\n", type, type);
 	indent();
 	tprint("return %sabs(a);\n", is_vec(type) ? "simd::" : "std::");;
@@ -4195,39 +4198,19 @@ void math_float(std::string _type) {
 	tprint("return %s(1) / %ssqrt(a);\n", type,  is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
-	tprint("\ninline void erfcexp(%s x, %s* er, %s* ex) {\n", type, type, type);
-	indent();
-	if( is_vec(type) ) {
-		tprint("%serfcexp(x, er, ex);\n", is_vec(type) ? "simd::" : "std::");;
-	} else {
-		tprint("*er = std::erfc(x);\n");
-		tprint("*ex = std::exp(x);\n");
-	}
-	deindent();
-	tprint("}\n\n");
-	tprint("\ninline void sincos(%s x, %s* s, %s* c) {\n", type, type, type);
-	indent();
-	if( is_vec(type) ) {
-		tprint("%ssincos(x, s, c);\n", is_vec(type) ? "simd::" : "std::");;
-	} else {
-		tprint("*s = std::sin(x);\n");
-		tprint("*c = std::cos(x);\n");
-	}
-	deindent();
-	tprint("}\n\n");
 	tprint("\ninline %s copysign(%s x, %s y) {\n", type, type, type);
 	indent();
 	tprint("return %scopysign(x, y);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
-	tprint("\ninline %s min(%s x, %s y) {\n", type, type, type);
+	tprint("\ninline %s fmin(%s x, %s y) {\n", type, type, type);
 	indent();
-	tprint("return %smin(x, y);\n", is_vec(type) ? "simd::" : "std::");;
+	tprint("return %sfmin(x, y);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
-	tprint("\ninline %s max(%s x, %s y) {\n", type, type, type);
+	tprint("\ninline %s fmax(%s x, %s y) {\n", type, type, type);
 	indent();
-	tprint("return %smax(x, y);\n", is_vec(type) ? "simd::" : "std::");;
+	tprint("return %sfmax(x, y);\n", is_vec(type) ? "simd::" : "std::");;
 	deindent();
 	tprint("}\n\n");
 	tprint("\ninline %s fma(%s a, %s b, %s c) {\n", type, type, type, type);
@@ -4638,7 +4621,8 @@ int main() {
 	tprint("T* G (G_st.data());\n");
 	tprint("const T xxx = T(ALPHA) * r;\n");
 	tprint("T gam1, exp0;\n");
-	tprint("erfcexp(xxx, &gam1, &exp0);\n");
+	tprint("gam1 = erfc(xxx);\n");
+	tprint("exp0 = exp(-xxx * xxx);\n");
 	tprint("gam1 *= T(%.20e);\n", sqrt(M_PI));
 	tprint("const T xfac = T(ALPHA * ALPHA) * r2;\n");
 	tprint("T xpow = T(ALPHA) * r;\n");

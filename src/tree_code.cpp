@@ -358,7 +358,7 @@ public:
 					V Cm2l, Cl2p, Cm2p;
 					auto D = abs(dx);
 					if (ewald) {
-						D = max(D, V(0.5) - rsum);
+						D = fmax(D, V(0.5) - rsum);
 					}
 					Cm2l = D - rm2l;
 					Cl2p = D - rp2l;

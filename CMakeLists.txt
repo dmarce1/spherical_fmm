@@ -63,3 +63,9 @@ add_executable(sfmm_treecode ${CMAKE_CURRENT_SOURCE_DIR}/src/tree_code.cpp )
 target_include_directories(sfmm_treecode PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
 target_link_libraries(sfmm_treecode PUBLIC sfmm pthread  simd )
 target_compile_options(sfmm_treecode PUBLIC -ffast-math -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX})
+set_target_properties(sfmm PROPERTIES PUBLIC_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/sfmm.hpp ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/typecast_simd_f64.hpp ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/typecast_simd_f32.hpp ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/typecast_float.hpp ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/typecast_double.hpp)
+
+INSTALL(TARGETS sfmm
+        LIBRARY DESTINATION sfmm
+        PUBLIC_HEADER DESTINATION include
+)
