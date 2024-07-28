@@ -31,7 +31,16 @@
 		}
 
 template<class T>
-struct vec3: public std::array<T, SFMM_NDIM> {
+struct vec3 {
+private:
+	T data[SFMM_NDIM];
+public:
+	SFMM_PREFIX T& operator[](int i) {
+		return data[i];
+	}
+	SFMM_PREFIX T operator[](int i) const {
+		return data[i];
+	}
 	SFMM_VEC3_OP1( + )
 	SFMM_VEC3_OP1( - )
 	SFMM_VEC3_OP1( * )

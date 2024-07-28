@@ -7,11 +7,9 @@ public:
 	SFMM_PREFIX constexpr fixed64() :
 			i() {
 	}
-	SFMM_PREFIX fixed64(const fixed64&) = default;
-	SFMM_PREFIX fixed64(fixed64&&) = default;
-	SFMM_PREFIX
+	fixed64(const fixed64&) = default;
+	fixed64(fixed64&&) = default;
 	fixed64& operator=(const fixed64&) = default;
-	SFMM_PREFIX
 	fixed64& operator=(fixed64&&) = default;
 	SFMM_PREFIX
 	inline fixed64& operator=(double other) {
@@ -27,6 +25,34 @@ public:
 	SFMM_PREFIX
 	inline double operator-(const fixed64& other) const {
 		return double((std::int64_t)(i - other.i)) * c0di;
+	}
+	SFMM_PREFIX
+	inline double operator+(const fixed64& other) const {
+		return double(std::int64_t(i + other.i)) * c0di;
+	}
+	SFMM_PREFIX
+	inline double operator>(const fixed64& other) const {
+		return i > other.i;
+	}
+	SFMM_PREFIX
+	inline double operator<(const fixed64& other) const {
+		return i < other.i;
+	}
+	SFMM_PREFIX
+	inline double operator>=(const fixed64& other) const {
+		return i >= other.i;
+	}
+	SFMM_PREFIX
+	inline double operator<=(const fixed64& other) const {
+		return i <= other.i;
+	}
+	SFMM_PREFIX
+	inline double operator!=(const fixed64& other) const {
+		return i != other.i;
+	}
+	SFMM_PREFIX
+	inline double operator==(const fixed64& other) const {
+		return i == other.i;
 	}
 	friend class simd_fixed64;
 };

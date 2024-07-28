@@ -9,11 +9,9 @@ public:
 	SFMM_PREFIX constexpr fixed32() :
 			i() {
 	}
-	SFMM_PREFIX fixed32(const fixed32&) = default;
-	SFMM_PREFIX fixed32(fixed32&&) = default;
-	SFMM_PREFIX
+	fixed32(const fixed32&) = default;
+	fixed32(fixed32&&) = default;
 	fixed32& operator=(const fixed32&) = default;
-	SFMM_PREFIX
 	fixed32& operator=(fixed32&&) = default;
 	SFMM_PREFIX
 	inline fixed32& operator=(double other) {
@@ -29,6 +27,34 @@ public:
 	SFMM_PREFIX
 	inline float operator-(const fixed32& other) const {
 		return float(std::int32_t(i - other.i)) * c0si;
+	}
+	SFMM_PREFIX
+	inline float operator+(const fixed32& other) const {
+		return float(std::int32_t(i + other.i)) * c0si;
+	}
+	SFMM_PREFIX
+	inline float operator>(const fixed32& other) const {
+		return i > other.i;
+	}
+	SFMM_PREFIX
+	inline float operator<(const fixed32& other) const {
+		return i < other.i;
+	}
+	SFMM_PREFIX
+	inline float operator>=(const fixed32& other) const {
+		return i >= other.i;
+	}
+	SFMM_PREFIX
+	inline float operator<=(const fixed32& other) const {
+		return i <= other.i;
+	}
+	SFMM_PREFIX
+	inline float operator!=(const fixed32& other) const {
+		return i != other.i;
+	}
+	SFMM_PREFIX
+	inline float operator==(const fixed32& other) const {
+		return i == other.i;
 	}
 	friend class simd_fixed32;
 };

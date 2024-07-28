@@ -1,3 +1,4 @@
+#ifndef __CUDACC__
 
 class simd_fixed64 {
 	static const simd_f64 c0d;
@@ -29,3 +30,5 @@ public:
 		i.pad(n);
 	}
 };
+
+#endif

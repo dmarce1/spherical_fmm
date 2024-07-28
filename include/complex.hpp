@@ -2,7 +2,7 @@ template<class T>
 class complex {
 	T x, y;
 public:
-	SFMM_PREFIX complex() = default;
+	complex() = default;
 	SFMM_PREFIX complex(T a);
 	SFMM_PREFIX complex(T a, T b);
 	SFMM_PREFIX complex& operator+=(complex other);
