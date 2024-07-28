@@ -1013,7 +1013,7 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 		timing_body += print2str("\t{(void*)((%s) &%s), \"%s\", ", func_ptr.c_str(), func_name.c_str(), type.c_str());
 		timing_cnt++;
 	}
-	std::string file_name = func_name + (is_vec(type) ? ".cpp" : ".cu");
+	std::string file_name = "./include/detail/sfmm_detail.hpp";
 	func_name = "int " + func_name;
 	func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
 	auto func_name2 = func_name;
@@ -1055,10 +1055,10 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 	dir += "/P" + std::to_string(P);
 	cmd = "mkdir -p " + dir;
 	SYSTEM(cmd.c_str());
-	file_name = dir + "/" + file_name;
+//	file_name = dir + "/" + file_name;
 	set_file(file_name);
-	tprint("#include \"%s\"\n", header.c_str());
-	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
+//	tprint("#include \"%s\"\n", header.c_str());
+//	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
 	tprint("namespace sfmm {\n");
 	if (!pub) {
@@ -1069,7 +1069,7 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 		tprint("%s\n", head.c_str());
 	}
 	tprint("\n");
-	tprint("%s {\n", func_name2.c_str());
+	tprint("static inline %s {\n", func_name2.c_str());
 	indent();
 	if (flops) {
 		tprint("if( !(flags & sfmmFLOPsOnly) ) {\n");
