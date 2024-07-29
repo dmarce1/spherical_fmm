@@ -15,7 +15,7 @@
 
 //#define USE_INTEL
 
-#define CHECK_NAN
+//#define CHECK_NAN
 
 #if USE_DOUBLE_FLAG == 1
 #define USE_DOUBLE
@@ -1013,7 +1013,7 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 		timing_body += print2str("\t{(void*)((%s) &%s), \"%s\", ", func_ptr.c_str(), func_name.c_str(), type.c_str());
 		timing_cnt++;
 	}
-	std::string file_name = "./include/detail/sfmm_detail.hpp";
+	std::string file_name = "./generated_code/include/detail/sfmm_detail.hpp";
 	func_name = "int " + func_name;
 	func_name += "(" + func_args(P, std::forward<Args>(args)..., 0);
 	auto func_name2 = func_name;
@@ -1027,20 +1027,20 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 			func_name = std::string(prefix) + " " + func_name;
 			func_name2 = std::string(prefix) + " " + func_name2;
 		}
+		if (simd[typenum]) {
+			tprint("#ifndef __CUDACC__\n");
+		}
 		if (pub) {
-			if(is_vec(type)) {
-				tprint( "#ifndef __CUDACC__\n");
-			}
 			tprint("%s;\n", func_name.c_str());
-			if(is_vec(type)) {
-				tprint( "#endif\n");
-			}
 		} else {
 			if (is_vec(type)) {
 				detail_header_vec += func_name + ";\n";
 			} else {
 				detail_header += func_name + ";\n";
 			}
+		}
+		if (simd[typenum]) {
+			tprint("#endif\n");
 		}
 	} else {
 		if (prefix[0]) {
@@ -1049,18 +1049,15 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 		}
 	}
 	std::string func1 = std::string(func) + std::string("_") + type;
-	auto dir = std::string("./generated_code/src/") + type;
-	std::string cmd = "mkdir -p " + dir;
-	SYSTEM(cmd.c_str());
-	dir += "/P" + std::to_string(P);
-	cmd = "mkdir -p " + dir;
-	SYSTEM(cmd.c_str());
-//	file_name = dir + "/" + file_name;
+	//file_name = dir + "/" + file_name;
 	set_file(file_name);
 //	tprint("#include \"%s\"\n", header.c_str());
 //	tprint("#include \"typecast_%s.hpp\"\n", type.c_str());
 	tprint("\n");
 	tprint("namespace sfmm {\n");
+	tprint("#ifndef __CUDACC__\n");
+	tprint("using namespace simd;\n");
+	tprint("#endif\n");
 	if (!pub) {
 		tprint("namespace detail {\n");
 	}
@@ -1069,8 +1066,16 @@ std::string func_header(const char *func, int P, bool pub, bool calcpot, bool ti
 		tprint("%s\n", head.c_str());
 	}
 	tprint("\n");
-	tprint("static inline %s {\n", func_name2.c_str());
+	tprint("inline %s {\n", func_name2.c_str());
 	indent();
+	tprint("using T = %s;\n", rtype[typenum].c_str());
+	tprint("using V = %s;\n", itype[typenum].c_str());
+	tprint("using TCONVERT = T;\n");
+	tprint("using VCONVERT = V;\n");
+	tprint("const auto TCAST = [](%s a) { return %s(%s(a));};\n", base_rtype[typenum].c_str(), rtype[typenum].c_str(),
+			base_rtype[typenum].c_str());
+	tprint("const auto VCAST = [](%s a) { return %s(%s(a));};\n", base_itype[typenum].c_str(), itype[typenum].c_str(),
+			base_itype[typenum].c_str());
 	if (flops) {
 		tprint("if( !(flags & sfmmFLOPsOnly) ) {\n");
 		indent();
@@ -3996,7 +4001,6 @@ int L2L_allrot(int P, int Q, int rot) {
 	return flops;
 }
 
-
 void M2M(int P) {
 	std::string str;
 	int flops[3];
@@ -4204,7 +4208,7 @@ void math_float(std::string _type) {
 	tprint("\n");
 	std::string pre;
 	fprintf(fp, "#ifdef __CUDA_ARCH__\n");
-	pre = "__device__";
+	pre = "__device__ __host__";
 	tprint("inline %s %s abs(%s);\n", pre.c_str(), type, type);
 	tprint("inline %s %s copysign(%s, %s);\n", pre.c_str(), type, type, type);
 	tprint("inline %s %s fmin(%s, %s);\n", pre.c_str(), type, type, type);
@@ -4225,7 +4229,7 @@ void math_float(std::string _type) {
 
 	tprint("\n%s inline %s rsqrt(%s a) {\n", pre.c_str(), type, type);
 	indent();
-	tprint("return rsqrtf(a);\n", is_vec(type) ? "simd::" : "std::");
+	tprint("return rsqrtf(a);\n");
 	deindent();
 	tprint("}\n\n");
 
@@ -4250,6 +4254,58 @@ void math_float(std::string _type) {
 	tprint("\n%s inline %s fma(%s a, %s b, %s c) {\n", pre.c_str(), type, type, type, type);
 	indent();
 	tprint("return fmaf(a, b, c);\n");
+	deindent();
+	tprint("}\n\n");
+	tprint("#endif\n");
+	tprint("\n");
+
+	fprintf(fp, "#ifndef __CUDA_ARCH__\n");
+	pre = "";
+	tprint("inline %s%s abs(%s);\n", pre.c_str(), type, type);
+	tprint("inline %s%s copysign(%s, %s);\n", pre.c_str(), type, type, type);
+	tprint("inline %s%s fmin(%s, %s);\n", pre.c_str(), type, type, type);
+	tprint("inline %s%s fmax(%s, %s);\n", pre.c_str(), type, type, type);
+	tprint("inline %s%s fma(%s, %s, %s);\n", pre.c_str(), type, type, type, type);
+	tprint("inline %s%s rsqrt(%s);\n", pre.c_str(), type, type);
+	tprint("inline %s %s sqrt(%s);\n", pre.c_str(), type, type);
+	tprint("\n%s inline %s abs(%s a) {\n", pre.c_str(), type, type);
+	indent();
+	tprint("return %sabs(a);\n", is_vec(type) ? "simd::" : "std::");
+	deindent();
+	tprint("}\n\n");
+	tprint("\n%sinline %s sqrt(%s a) {\n", pre.c_str(), type, type);
+	indent();
+	tprint("return %ssqrt(a);\n", is_vec(type) ? "simd::" : "std::");
+	deindent();
+	tprint("}\n\n");
+
+	tprint("\n%sinline %s rsqrt(%s a) {\n", pre.c_str(), type, type);
+	indent();
+	tprint("return %s(1) / %ssqrt(a);\n", type, is_vec(type) ? "simd::" : "std::");
+	deindent();
+	tprint("}\n\n");
+
+	tprint("\n%sinline %s copysign(%s x, %s y) {\n", pre.c_str(), type, type, type);
+	indent();
+	tprint("return %scopysign(x, y);\n", is_vec(type) ? "simd::" : "std::");
+	deindent();
+	tprint("}\n\n");
+
+	tprint("\n%sinline %s fmin(%s x, %s y) {\n", pre.c_str(), type, type, type);
+	indent();
+	tprint("return %sfminf(x, y);\n", is_vec(type) ? "simd::" : "std::");
+	deindent();
+	tprint("}\n\n");
+
+	tprint("\n%sinline %s fmax(%s x, %s y) {\n", pre.c_str(), type, type, type);
+	indent();
+	tprint("return %sfmaxf(x, y);\n", is_vec(type) ? "simd::" : "std::");
+	deindent();
+	tprint("}\n\n");
+
+	tprint("\n%sinline %s fma(%s a, %s b, %s c) {\n", pre.c_str(), type, type, type, type);
+	indent();
+	tprint("return %sfmaf(a, b, c);\n", is_vec(type) ? "simd::" : "std::");
 	deindent();
 	tprint("}\n\n");
 	tprint("#endif\n");
@@ -4576,6 +4632,9 @@ int main() {
 	set_file(full_header.c_str());
 
 	for (int ti = 0; ti < ntypenames; ti++) {
+		if (simd[ti]) {
+			tprint("#ifndef __CUDACC__\n");
+		}
 		typenum = ti;
 		printf("%s\n", rtype[ti].c_str());
 		math_float(rtype[ti]);
@@ -4599,11 +4658,17 @@ int main() {
 			}
 		}
 		fflush(stdout);
+		if (simd[ti]) {
+			tprint("#endif\n");
+		}
 		if (is_vec(type)) {
 			set_file(full_header.c_str());
 		}
 	}
 	for (int ti = 0; ti < ntypenames; ti++) {
+		if (simd[ti]) {
+			tprint("#ifndef __CUDACC__\n");
+		}
 		typenum = ti;
 		printf("%s\n", rtype[ti].c_str());
 		prefix = "SFMM_PREFIX";
@@ -4630,6 +4695,9 @@ int main() {
 			M2M(P);
 		}
 		fflush(stdout);
+		if (simd[ti]) {
+			tprint("#endif\n");
+		}
 		if (is_vec(type)) {
 			set_file(full_header.c_str());
 		}
@@ -4703,7 +4771,7 @@ int main() {
 		typenum = ti;
 		type = rtype[ti];
 		if (simd[ti]) {
-			tprint( "#ifndef __CUDACC__\n");
+			tprint("#ifndef __CUDACC__\n");
 		}
 		for (int P = pmin - 1; P <= pmax; P++) {
 			tprint("\n");
@@ -5219,10 +5287,10 @@ int main() {
 			tprint("};\n");
 			tprint("}\n");
 //			if (!simd[ti]) {
-				fixed_point_covers();
+			fixed_point_covers();
 //			}
 			if (simd[ti]) {
-				tprint( "#endif\n");
+				tprint("#endif\n");
 			}
 		}
 
@@ -5334,39 +5402,46 @@ int main() {
 			"}\n"
 			"";
 	fprintf(fp, "%s", str.c_str());
-	include("timer.hpp");
-	tprint("}\n");
-	tprint("extern \"C\" {\n");
-	tprint("void sfmm_detail_atomic_inc_dbl(double* num, double val);\n");
-	tprint("void sfmm_detail_atomic_inc_int(unsigned long long* num, unsigned long long val);\n");
-	tprint("}\n\n");
-	set_file("./generated_code/src/database.cpp");
-	timing_body = std::string(
-			"#include \"sfmm.hpp\"\n\nnamespace sfmm {\nnamespace detail {\nstatic func_data_t function_data[] = {")
-			+ timing_body;
-	timing_body += "\n};\n";
-	timing_body += "\nint operator_count() {\n";
-	timing_body += print2str("\treturn %i;\n", timing_cnt);
-	timing_body += print2str("}\n\n", timing_cnt);
-	timing_body += "\nfunc_data_t* operator_data(int index) {\n";
-	timing_body += print2str("\treturn function_data + index;\n");
-	timing_body += print2str("}\n\n", timing_cnt);
-	timing_body += "\n}\n}\n";
-	tprint("%s\n", timing_body.c_str());
-	set_file("./generated_code/src/timing.cpp");
-	include("timing.cpp");
-	set_file("./generated_code/src/atomic.c");
-	include("atomic.c");
+	fprintf(fp, "}\n");
+	fprintf(fp, "#ifndef SFMM_INCLUDE_DONE\n");
+	fprintf(fp, "#define SFMM_INCLUDE_DONE\n");
+	fprintf(fp, "#include \"./detail/sfmm_detail.hpp\"\n");
+	fprintf(fp, "#endif\n");
+	/*	include("timer.hpp");
+	 tprint("}\n");
+	 tprint("extern \"C\" {\n");
+	 tprint("void sfmm_detail_atomic_inc_dbl(double* num, double val);\n");
+	 tprint("void sfmm_detail_atomic_inc_int(unsigned long long* num, unsigned long long val);\n");
+	 tprint("}\n\n");
+	 set_file("./generated_code/src/database.cpp");
+	 timing_body = std::string(
+	 "#include \"sfmm.hpp\"\n\nnamespace sfmm {\nnamespace detail {\nstatic func_data_t function_data[] = {")
+	 + timing_body;
+	 timing_body += "\n};\n";
+	 timing_body += "\nint operator_count() {\n";
+	 timing_body += print2str("\treturn %i;\n", timing_cnt);
+	 timing_body += print2str("}\n\n", timing_cnt);
+	 timing_body += "\nfunc_data_t* operator_data(int index) {\n";
+	 timing_body += print2str("\treturn function_data + index;\n");
+	 timing_body += print2str("}\n\n", timing_cnt);
+	 timing_body += "\n}\n}\n";
+	 tprint("%s\n", timing_body.c_str());
+	 set_file("./generated_code/src/timing.cpp");
+	 include("timing.cpp");
+	 set_file("./generated_code/src/atomic.c");
+	 include("atomic.c");
 
-	set_file("./generated_code/src/constants.cpp");
-	tprint("#include \"sfmm.hpp\"\n");
-	tprint("\n");
-
-	str = "namespace sfmm {\nconst simd_f32 simd_fixed32::c0s = simd_f32(std::numeric_limits<std::uint32_t>::max()) + simd_f32(1);\n"
-					"const simd_f32 simd_fixed32::c0si = simd_f32(1) / c0s;\n"
-					"const simd_f64 simd_fixed64::c0d = simd_f64(std::numeric_limits<std::uint64_t>::max()) + simd_f64(1);\n"
-					"const simd_f64 simd_fixed64::c0di = simd_f64(1) / c0d;\n}\n";
-	tprint("%s\n", str.c_str());
+	 set_file("./generated_code/src/constants.cpp");
+	 tprint("#include \"sfmm.hpp\"\n");
+	 tprint("\n");
+ */
+	  str = "#ifndef __CUDACC__\n"
+	 "namespace sfmm {\ninline const simd_f32 simd_fixed32::c0s = simd_f32(std::numeric_limits<std::uint32_t>::max()) + simd_f32(1);\n"
+	 "inline const simd_f32 simd_fixed32::c0si = simd_f32(1) / c0s;\n"
+	 "inline const simd_f64 simd_fixed64::c0d = simd_f64(std::numeric_limits<std::uint64_t>::max()) + simd_f64(1);\n"
+	 "inline const simd_f64 simd_fixed64::c0di = simd_f64(1) / c0d;\n}\n"
+	 "#endif\n";
+	 tprint("%s\n", str.c_str());
 
 	return 0;
 }
