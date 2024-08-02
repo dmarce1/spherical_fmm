@@ -130,3 +130,17 @@ struct force_type {
 	}
 };
 
+
+template<class T>
+SFMM_PREFIX inline auto distance(const vec3<T>& a, const vec3<T>& b) {
+	vec3<typename sfmm::type_traits<T>::base_type> rc;
+	for( int dim = 0; dim < SFMM_NDIM; dim++) {
+		rc[dim] = distance(a[dim], b[dim]);
+	}
+	return rc;
+}
+	
+	
+	
+	
+	

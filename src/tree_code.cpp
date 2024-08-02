@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <sfmm.hpp>
+#include "sfmm.hpp"
 
 #include <array>
 #include <vector>
@@ -708,26 +708,26 @@ std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::node_count(0);
 template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
 struct run_tests {
 	void operator()() const {
-		sfmm::timer tm, ftm;
+	//	sfmm::timer tm, ftm;
 		using tree_type = tree<T, V, FT, FV, ORDER, FLAGS>;
 		double tree_time, force_time;
 		srand(1);
 		tree_type::initialize();
-		tree_time = tm.read();
+	//	tree_time = tm.read();
 		fflush(stdout);
 		tree_type::sort_grid();
-		tm.reset();
-		tm.start();
+	//	tm.reset();
+	//	tm.start();
 		size_t flops = tree_type::form_trees();
-		tm.stop();
-		tree_time = tm.read();
-		tm.reset();
-		tm.start();
+	//	tm.stop();
+		//tree_time = tm.read();
+	//	tm.reset();
+	//	tm.start();
 		flops += tree_type::compute_gravity();
-		tm.stop();
-		force_time = tm.read();
+	//	tm.stop();
+//		force_time = tm.read();
 		const auto error = tree_type::compare_analytic(25.0 / TEST_SIZE);
-		printf("%i %e %e %e %e %e Gflops\n", ORDER, tree_time, force_time, error.first, error.second, flops / force_time / (1024.0 * 1024.0 * 1024.0));
+		printf("%i %e %e\n", ORDER, error.first, error.second);
 		tree_type::show_counters();
 		tree_type::reset_counters();
 		run_tests<T, V, FT, FV, ORDER + 1, FLAGS> run;
@@ -872,8 +872,8 @@ int main(int argc, char **argv) {
 //	 return 0;
 //ewald();
 //return 0;
-	run_tests<double, simd::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, PMIN, sfmmWithDoubleRotationOptimization> run4;
 	run_tests<float, simd::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithBestOptimization> run5;
+	run_tests<double, simd::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, PMIN, sfmmWithDoubleRotationOptimization> run4;
 	run5();
 	run4();
 	return 0;

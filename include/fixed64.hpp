@@ -27,6 +27,10 @@ public:
 		return double((std::int64_t)(i - other.i)) * c0di;
 	}
 	SFMM_PREFIX
+	inline double distance(const fixed64& other) const {
+		return *this - other;
+	}
+	SFMM_PREFIX
 	inline double operator+(const fixed64& other) const {
 		return double(std::int64_t(i + other.i)) * c0di;
 	}
@@ -56,3 +60,13 @@ public:
 	}
 	friend class simd_fixed64;
 };
+
+
+
+SFMM_PREFIX
+inline double distance(const fixed64& a, const fixed64& b) {
+	return a - b;
+}
+
+
+

@@ -58,3 +58,11 @@ public:
 	}
 	friend class simd_fixed32;
 };
+
+SFMM_PREFIX
+inline float distance(const fixed32& a, const fixed32& b) {
+	return a - b;
+}
+
+
+

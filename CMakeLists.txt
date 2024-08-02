@@ -49,6 +49,10 @@ endif()
 
 message(STATUS "Code generation complete")
 
+add_executable( test ./src/tree_code.cpp )
+target_compile_options( test PUBLIC -I${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/ -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} )
+target_link_libraries( test PUBLIC simd )
+
 INSTALL(
 	FILES 
 		${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/sfmm.hpp 

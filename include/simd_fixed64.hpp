@@ -1,6 +1,6 @@
 #ifndef __CUDACC__
 
-class simd_fixed64 {
+class alignas(64) simd_fixed64 {
 	static const simd_f64 c0d;
 	static const simd_f64 c0di;
 	simd_i64 i;
@@ -30,5 +30,12 @@ public:
 		i.pad(n);
 	}
 };
+
+
+SFMM_PREFIX
+inline simd_f64 distance(const simd_fixed64& a, const simd_fixed64& b) {
+	return a - b;
+}
+
 
 #endif

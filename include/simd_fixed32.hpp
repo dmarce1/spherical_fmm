@@ -1,12 +1,12 @@
 #ifndef __CUDACC__
 
-class simd_fixed32 {
+class alignas(32) simd_fixed32 {
 	static const simd_f32 c0s;
 	static const simd_f32 c0si;
 	simd_i32 i;
 public:
 	SFMM_PREFIX static constexpr int size() {
-		return simd_i64::size();
+		return simd_i32::size();
 	}
 	SFMM_PREFIX simd_fixed32() :
 			i() {
@@ -24,11 +24,18 @@ public:
 		return *((fixed32*) &(i[j]));
 	}
 	simd_f32 inline operator-(const simd_fixed32& other) const {
-		return simd_f32(simd_i32(i - other.i)) * c0si;
+		return simd_f32(simd_i32(i) - simd_i32(other.i)) * c0si;
 	}
 	SFMM_PREFIX void pad(int n) {
 		i.pad(n);
 	}
 };
+
+
+SFMM_PREFIX
+inline simd_f32 distance(const simd_fixed32& a, const simd_fixed32& b) {
+	return a - b;
+}
+
 
 #endif
