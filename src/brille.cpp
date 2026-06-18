@@ -717,9 +717,17 @@ public:
 		}
 	}
 
-	static void iterate_brill(int iterations = 20, T target_mass = T(0.01)) {
+	static void iterate_brill(int iterations = 20, T target_mass = T(0.01), T omega = T(0.25)) {
+		std::vector<T> chi_old;
+		std::vector<T> chi_next;
+		chi_old.resize(parts.size());
+		chi_next.resize(parts.size());
+
 		for (int iter = 0; iter < iterations; iter++) {
+			// Normalize the current iterate before using it as the physical chi.
 			normalize_chi(target_mass);
+			chi_old = chi;
+
 			update_masses();
 			reset_counters();
 			for (auto& f : forces) {
@@ -727,13 +735,23 @@ public:
 			}
 			form_trees();
 			compute_gravity();
+
+			// The FMM potential is the unnormalized next tilde_chi.
+			for (int i = 0; i < parts.size(); i++) {
+				chi[i] = forces[i].potential;
+			}
+
+			// Normalize the next iterate before measuring convergence.
+			normalize_chi(target_mass);
+			chi_next = chi;
+
 			T l2 = 0;
 			T norm = 0;
 			for (int i = 0; i < parts.size(); i++) {
-				const T next = forces[i].potential;
-				l2 += sfmm::sqr(next - chi[i]);
-				norm += sfmm::sqr(chi[i]);
-				chi[i] = next;
+				const T damped = (T(1) - omega) * chi_old[i] + omega * chi_next[i];
+				l2 += sfmm::sqr(damped - chi_old[i]);
+				norm += sfmm::sqr(damped);
+				chi[i] = damped;
 			}
 			printf("brill iter %02i rel_update = %.12e\n", iter, std::sqrt(l2 / norm));
 		}
@@ -757,7 +775,7 @@ public:
 	}
 
 	static void reset_counters() {
-		node_count = p2p = m2p = p2l = m2l = p2p_ewald = m2p_ewald = p2l_ewald = p2p_ewald = 0;
+		node_count = p2p = m2p = p2l = m2l = p2p_ewald = m2p_ewald = p2l_ewald = m2l_ewald = 0;
 	}
 
 }
