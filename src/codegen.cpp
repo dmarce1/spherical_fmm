@@ -1984,7 +1984,6 @@ std::string greens_ewald(int P, double alpha) {
 	tprint("expansion<%s, %i> Gr_st;\n", type.c_str(), P);
 	tprint("T* Gr(Gr_st.data());\n", type.c_str(), P);
 	int cnt = 0;
-	auto fps0 = fps;
 	for (int ix = -R; ix <= R; ix++) {
 		for (int iy = -R; iy <= R; iy++) {
 			for (int iz = -R; iz <= R; iz++) {
@@ -1992,7 +1991,6 @@ std::string greens_ewald(int P, double alpha) {
 				if (i2 > R2 && i2 != 0) {
 					continue;
 				}
-				fps += fps0;
 				cnt++;
 			}
 		}
