@@ -10,7 +10,7 @@
 #define DEBUG
 
 #define NDIM 3
-#define BUCKET_SIZE 40
+#define BUCKET_SIZE (1<<30)
 #define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
@@ -489,8 +489,8 @@ public:
 				(ewald ? m2p_ewald : m2p) += inters;
 				inters = 0;
 				const auto nparts = part_range.second - part_range.first;
-				std::array<force_type<V>, BUCKET_SIZE> Forces;
-				std::array<sfmm::vec3<FV>, BUCKET_SIZE> xsnk;
+				static thread_local std::array<force_type<V>, BUCKET_SIZE> Forces;
+				static thread_local std::array<sfmm::vec3<FV>, BUCKET_SIZE> xsnk;
 				for (int l = part_range.first; l < part_range.second; l++) {
 					for (int dim = 0; dim < SFMM_NDIM; dim++) {
 						xsnk[l - part_range.first][dim] = FV(parts[l][dim]);
@@ -717,7 +717,7 @@ public:
 		}
 	}
 
-	static void iterate_brill(int iterations = 20, T target_mass = T(0.01), T omega = T(0.25)) {
+	static void iterate_brill(int iterations = 40, T target_mass = T(0.01), T omega = T(0.25)) {
 		std::vector<T> chi_old;
 		std::vector<T> chi_next;
 		chi_old.resize(parts.size());
