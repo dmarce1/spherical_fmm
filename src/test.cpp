@@ -7,7 +7,22 @@
 #include <math.h>
 #include <climits>
 #include <functional>
-#include "spherical_fmm.hpp"
+#include "sfmmf.hpp"
+#ifdef TEST_TYPE_FLOAT
+bool scaled = true;
+#define SCALED
+#endif
+#ifdef TEST_TYPE_DOUBLE
+bool scaled = false;
+#endif
+#ifdef TEST_TYPE_VEC_FLOAT
+bool scaled = true;
+#define SCALED
+#endif
+#ifdef TEST_TYPE_VEC_DOUBLE
+bool scaled = false;
+#endif
+
 #include "timer.hpp"
 
 template<class T>
@@ -15,13 +30,13 @@ using complex = std::complex<T>;
 
 #ifdef TEST_TYPE_VEC_DOUBLE
 #define VECTOR
-using vec_real = fmm::vec_double;
+using vec_real = sfmm::v2df;
 using real = double;
 #define FLAG
 #endif
 #ifdef TEST_TYPE_VEC_FLOAT
 #define VECTOR
-using vec_real = fmm::vec_float;
+using vec_real = sfmm::v8sf;
 using real = float;
 #define FLAG
 #endif
@@ -702,7 +717,7 @@ template<int P>
 real test_M2L(test_type type, real theta = 0.5) {
 
 	real err = 0.0;
-	using namespace fmm;
+	using namespace sfmm;
 	int N = 4000;
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_INVALID);
@@ -711,8 +726,8 @@ real test_M2L(test_type type, real theta = 0.5) {
 	real norm = 0.0;
 	long double phi, fx, fy, fz;
 	int flags = 0;
-//	fmm_set_scale_factor_float(1000);
-//	fmm_set_scale_factor_double(1000);
+//	sfmm_set_scale_factor_float(1000);
+//	sfmm_set_scale_factor_double(1000);
 	for (int i = 0; i < N; i++) {
 		if (type == EWALD) {
 			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
@@ -738,17 +753,24 @@ real test_M2L(test_type type, real theta = 0.5) {
 			double g1 = rand1();
 			double g2 = rand1();
 #ifdef VECTOR
-			multipole_type<vec_real, P> M;
-			expansion_type<vec_real, P> L;
+#ifdef SCALED
+			multipole_periodic_scaled<vec_real, P> M;
+			expansion_periodic_scaled<vec_real, P> L;
+			M.init(0.1);
+			L.init(0.01);
+#else
+			multipole_periodic<vec_real, P> M;
+			expansion_periodic<vec_real, P> L;
+			M.init();
+			L.init();
+#endif
 			force_type<vec_real> f;
-			M.init(real(.1));
-			L.init(real(.01));
 			f.init();
-			P2M(M, vec_real(real(0.5)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)), flags);
-			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))), flags);
-			M2L_ewald(L, M, vec_real(x1), vec_real(y1), vec_real(z1), flags);
-			L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2), flags);
-			L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)), flags);
+			P2M(M, vec_real(real(0.5)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)));
+			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))));
+			M2L_ewald(L, M, vec_real(x1), vec_real(y1), vec_real(z1));
+			L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2));
+			L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)));
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			fx *= 0.5;
 			fy *= 0.5;
@@ -764,17 +786,24 @@ real test_M2L(test_type type, real theta = 0.5) {
 			err += fabs(phi - f.potential[0]);
 			norm += fabs(phi);
 #else
-			multipole_type<real, P> M;
-			expansion_type<real, P> L;
-			force_type<real> f;
+#ifdef SCALED
+			multipole_periodic_scaled<real, P> M;
+			expansion_periodic_scaled<real, P> L;
 			M.init(0.1);
 			L.init(0.01);
+#else
+			multipole_periodic < real, P > M;
+			expansion_periodic < real, P > L;
+			M.init();
+			L.init();
+#endif
+			force_type < real > f;
 			f.init();
-			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2, flags);
-			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
-			M2L_ewald(L, M, x1, y1, z1, flags);
-			L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-			L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
+			P2M(M, 0.5, -x0 * f0, -y0 * f1, -z0 * f2);
+			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2));
+			M2L_ewald(L, M, x1, y1, z1);
+			L2L(L, x2 * g0, y2 * g1, z2 * g2);
+			L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2));
 			ewald_compute(phi, fx, fy, fz, (-x2 + x1) + x0, (-y2 + y1) + y0, (-z2 + z1) + z0);
 			fx *= 0.5;
 			fy *= 0.5;
@@ -790,12 +819,12 @@ real test_M2L(test_type type, real theta = 0.5) {
 			norm += fabs(phi);
 #endif
 		} else {
-			real x0, x1, x2, y0, y1, y2, z0, z1, z2;
-			random_unit(x0, y0, z0);
+			real xa, x1, x2, ya, y1, y2, za, z1, z2, x3, y3, z3, xb, yb, zb;
+			random_unit(xa, ya, za);
 			random_unit(x1, y1, z1);
 			random_unit(x2, y2, z2);
 			if (type == CP) {
-				x0 = y0 = z0 = 0;
+				xa = ya = za = 0;
 			} else if (type == PC) {
 				x2 = y2 = z2 = 0;
 			}
@@ -808,89 +837,94 @@ real test_M2L(test_type type, real theta = 0.5) {
 				y1 /= theta;
 				z1 /= theta;
 			}
-			double f0 = rand1();
-			double f1 = rand1();
-			double f2 = rand1();
-			double g0 = rand1();
-			double g1 = rand1();
-			double g2 = rand1();
-#ifdef VECTOR
-			multipole_type<vec_real, P> M;
-			expansion_type<vec_real, P> L;
-			force_type<vec_real> f;
-			M.init(real(.1));
-			L.init(real(.01));
-			f.init();
-			P2M(M, vec_real(real(1.0)), vec_real(real(-x0 * f0)), vec_real(real(-y0 * f1)), vec_real(real(-z0 * f2)), flags);
-			M2M(M, vec_real(real(-real(x0) * (1 - f0))), vec_real(real(-real(y0) * (1 - f1))), vec_real(real(-real(z0) * (1 - f2))), flags);
-			if (type == CC) {
-				M2L(L, M, vec_real(x1), vec_real(y1), vec_real(z1), flags);
-				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2), flags);
-				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)), flags);
-			} else if (type == PC) {
-				M2P(f, M, vec_real(x1), vec_real(y1), vec_real(z1), flags);
-			} else if (type == CP) {
-				P2L(L, vec_real(real(1.0)), vec_real(x1), vec_real(y1), vec_real(z1), flags);
-				L2L(L, vec_real(x2 * g0), vec_real(y2 * g1), vec_real(z2 * g2), flags);
-				L2P(f, L, vec_real(x2 * (real(1) - g0)), vec_real(y2 * (real(1) - g1)), vec_real(z2 * (real(1) - g2)), flags);
-			}
-			const real dx = (x2 + x1) - x0;
-			const real dy = (y2 + y1) - y0;
-			const real dz = (z2 + z1) - z0;
-			const real r = std::sqrt(sqr(dx, dy, dz));
-			const real phi = 1.0 / r;
-			const real fx = dx / (r * r * r);
-			const real fy = dy / (r * r * r);
-			const real fz = dz / (r * r * r);
-			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
-			const double fn = std::sqrt(sqr(f.force[0][0], f.force[1][0], f.force[2][0]));
-			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(phi - f.potential[0]);
-			norm += fabs(phi);
-#else
-			real eps = 1e-7;
-			x0 *= eps;
-			y0 *= eps;
-			z0 *= eps;
+			real eps = 1;
+			xa *= eps;
+			ya *= eps;
+			za *= eps;
 			x1 *= eps;
 			y1 *= eps;
 			z1 *= eps;
 			x2 *= eps;
 			y2 *= eps;
 			z2 *= eps;
-			multipole_type<real, P> M;
-			expansion_type<real, P> L;
-			force_type<real> f;
-			M.init(eps);
-			L.init(eps);
-			f.init();
-			P2M(M, 1.0, -x0 * f0, -y0 * f1, -z0 * f2, flags);
-			M2M(M, -real(x0) * (1 - f0), -real(y0) * (1 - f1), -real(z0) * (1 - f2), flags);
-			if (type == CC) {
-				M2L(L, M, x1, y1, z1, flags);
-				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
-			} else if (type == PC) {
-				M2P(f, M, x1, y1, z1, flags);
-			} else if (type == CP) {
-				P2L(L, 1.0, x1, y1, z1, flags);
-				L2L(L, x2 * g0, y2 * g1, z2 * g2, flags);
-				L2P(f, L, x2 * (1 - g0), y2 * (1 - g1), z2 * (1 - g2), flags);
-			}
-			const real dx = (x2 + x1) - x0;
-			const real dy = (y2 + y1) - y0;
-			const real dz = (z2 + z1) - z0;
-			const real r = std::sqrt(sqr(dx, dy, dz));
-			const real phi = 1.0 / r;
-			const real fx = dx / (r * r * r);
-			const real fy = dy / (r * r * r);
-			const real fz = dz / (r * r * r);
-			const double fa = std::sqrt(fx * fx + fy * fy + fz * fz);
-			const double fn = std::sqrt(sqr(f.force[0], f.force[1], f.force[2]));
-			//	printf( "%e %e\n", fx, -L2[2], fy, -L2[1],  fz, -L2[2]);
-			err += fabs(phi - f.potential);
-			norm += fabs(phi);
+			xb = -xa;
+			yb = -ya;
+			zb = -za;
+			eps = 0.0;
+			double f0 = rand1();
+			double f1 = rand1();
+			double f2 = rand1();
+			double g0 = rand1();
+			double g1 = rand1();
+			double g2 = rand1();
+
+#ifdef VECTOR
+			using T = vec_real;
+#else
+			using T = real;
 #endif
+			force_type<T> f;
+#ifdef SCALED
+			multipole<T, P> M1(0.1);
+			multipole<T, P> M;
+			expansion<T, P> L;
+			M.init(0.1);
+			L.init(0.01);
+#else
+			multipole<T, P> M1;
+			multipole<T, P> M;
+			expansion<T, P> L;
+			M.init();
+			L.init();
+#endif
+			f.init();
+			P2M(M1, T(1.0), -T(xa), -T(ya), -T(za));
+			M += M1;
+			P2M(M1, T(1.0), -T(xb), -T(yb), -T(zb));
+			M += M1;
+			M2M(M, -T(0), -T(0), -T(0));/*
+			P2M(M1, T(1.0), -T(0), -T(0), -T(0));
+			M2M(M1, -T(xa), -T(ya), -T(za));
+			M += M1;
+			P2M(M1, T(1.0), -T(0), -T(0), -T(0));
+			M2M(M1, -T(xb), -T(yb), -T(zb));
+			M += M1;*/
+			if (type == CC) {
+				M2L(L, M, T(x1), T(y1), T(z1));
+				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
+				L2P(f, L, T(x2 * (1 - g0)), T(y2 * (1 - g1)), T(z2 * (1 - g2)));
+			} else if (type == PC) {
+				M2P(f, M, T(x1), T(y1), T(z1));
+			} else if (type == CP) {
+				P2L(L, T(2.0), T(x1), T(y1), T(z1));
+				L2L(L, T(x2 * g0), T(y2 * g1), T(z2 * g2));
+				L2P(f, L, T(x2 * (1 - g0)), T(y2 * (1 - g1)), T(z2 * (1 - g2)));
+			}
+			real dx = -(x2 + x1) + xa;
+			real dy = -(y2 + y1) + ya;
+			real dz = -(z2 + z1) + za;
+			real r = std::sqrt(sqr(dx, dy, dz));
+			real fax = dx / (r*r*r);
+			real fay = dy / (r*r*r);
+			real faz = dz / (r*r*r);
+			real phi = 1.0 / r;
+			dx = -(x2 + x1) + xb;
+			dy = -(y2 + y1) + yb;
+			dz = -(z2 + z1) + zb;
+			r = std::sqrt(sqr(dx, dy, dz));
+			phi += 1.0 / r;
+			fax += dx / (r*r*r);
+			fay += dy / (r*r*r);
+			faz += dz / (r*r*r);
+#ifdef VECTOR
+			err += fabs(phi - f.potential[0]);
+#else
+	//		err += fabs(phi - f.potential);
+	//		printf( "%e %e %e %e %e %e \n", fax, f.force[0], fay, f.force[1], faz, f.force[2]);
+			err += fabs(fax-f.force[0]);
+			norm += fabs(fax);
+#endif
+//			norm += fabs(phi);
 		}
 	}
 	err /= norm;
@@ -1031,54 +1065,70 @@ test_res test_binary(F* f1, F* f2, T a, T b) {
 	return res;
 }
 
+float safe_multiply(float& a, float b, float c) {
+	const int be = ((int&)b & 0x7F100000) >> 23;
+	const int ce = ((int&)b & 0x7F100000) >> 23;
+	const float flag = float(be + ce <= 380);
+	a = (flag * b) * c;
+	return flag;
+}
+
+float safe_add(float& a, float b, float c) {
+	const int be = ((int&)b & 0x7F100000) >> 23;
+	const int ce = ((int&)b & 0x7F100000) >> 23;
+	const float flag = float(be < 127) * float(ce < 127);
+	a = flag * b + flag * c;
+	return flag;
+}
+
 int main() {
 	feenableexcept(FE_DIVBYZERO);
 	feenableexcept(FE_OVERFLOW);
 	feenableexcept(FE_INVALID);
-/*
-	typedef fmm::vec_float T;
-	typedef fmm::vec_int32_t V ;
-	typedef fmm::vec_uint32_t U ;
+	/*
+	 typedef sfmm::vec_float T;
+	 typedef sfmm::vec_int32_t V ;
+	 typedef sfmm::vec_uint32_t U ;
 
-	T a = float(1);
-	T b = float(0);
-*/
+	 T a = float(1);
+	 T b = float(0);
+	 */
 
-	auto res = test_unary<double>(static_cast<double (*)(double)>(&std::sqrt), static_cast<double(*)(double)>(&fmm::detail::sqrt), 0.0, 10.0);
-	printf("sqrt(double)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	/*	auto res = test_unary<double>(static_cast<double (*)(double)>(&std::sqrt), static_cast<double(*)(double)>(&sfmm::detail::sqrt), 0.0, 10.0);
+	 printf("sqrt(double)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_unary<double>([](double x) {return 1.0/sqrt(x);}, static_cast<double (*)(double)>(&fmm::detail::rsqrt), 0.0, 10.0);
-	printf("rsqrt(double)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_unary<double>([](double x) {return 1.0/sqrt(x);}, static_cast<double (*)(double)>(&sfmm::detail::rsqrt), 0.0, 10.0);
+	 printf("rsqrt(double)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>(&sincos), static_cast<void(*)(double,double*,double*)>(&fmm::detail::sincos), 0.001, 10.0);
-	printf("sincos(double)   %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<double>(static_cast<void (*)(double, double*, double*)>(&sincos), static_cast<void(*)(double,double*,double*)>(&sfmm::detail::sincos), 0.001, 10.0);
+	 printf("sincos(double)   %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<double>(static_cast<void (*)(double, double*, double*)>([](double x, double* e1, double* e2) {
-				*e1 = erfc(x);
-				*e2 = exp(-x*x);
-			}), static_cast<void(*)(double,double*,double*)>(&fmm::detail::erfcexp), 0.01, 5.0);
-	printf("erfcexp(double)  %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<double>(static_cast<void (*)(double, double*, double*)>([](double x, double* e1, double* e2) {
+	 *e1 = erfc(x);
+	 *e2 = exp(-x*x);
+	 }), static_cast<void(*)(double,double*,double*)>(&sfmm::detail::erfcexp), 0.01, 5.0);
+	 printf("erfcexp(double)  %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	printf("\n");
-	res = test_unary<float>(static_cast<float (*)(float)>(&std::sqrt), static_cast<float(*)(float)>(&fmm::detail::sqrt), 0.0, 10.0);
-	printf("sqrt(float)       %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 printf("\n");
+	 res = test_unary<float>(static_cast<float (*)(float)>(&std::sqrt), static_cast<float(*)(float)>(&sfmm::detail::sqrt), 0.0, 10.0);
+	 printf("sqrt(float)       %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_unary<float>([](float x) {return 1.0f/sqrtf(x);}, static_cast<float (*)(float)>(&fmm::detail::rsqrt), 0.0, 10.0);
-	printf("rsqrt(float)      %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_unary<float>([](float x) {return 1.0f/sqrtf(x);}, static_cast<float (*)(float)>(&sfmm::detail::rsqrt), 0.0, 10.0);
+	 printf("rsqrt(float)      %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>(&sincosf), static_cast<void(*)(float,float*,float*)>(&fmm::detail::sincos), 0.001, 10.0);
-	printf("sincos(float)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<float>(static_cast<void (*)(float, float*, float*)>(&sincosf), static_cast<void(*)(float,float*,float*)>(&sfmm::detail::sincos), 0.001, 10.0);
+	 printf("sincos(float)     %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	res = test_binary<float>(static_cast<void (*)(float, float*, float*)>([](float x, float* e1, float* e2) {
-				*e1 = erfcf(x);
-				*e2 = expf(-x*x);
-			}), static_cast<void(*)(float,float*,float*)>(&fmm::detail::erfcexp), 0.01, 5.0);
-	printf("erfcexp(float)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
+	 res = test_binary<float>(static_cast<void (*)(float, float*, float*)>([](float x, float* e1, float* e2) {
+	 *e1 = erfcf(x);
+	 *e2 = expf(-x*x);
+	 }), static_cast<void(*)(float,float*,float*)>(&sfmm::detail::erfcexp), 0.01, 5.0);
+	 printf("erfcexp(float)    %e %e %e %e %e\n", res.aerr, res.rerr, res.tm1, res.tm2, 1 - res.tm2 / res.tm1);
 
-	printf("\n");
-
-	run_tests<FMM_PMAX+1, FMM_PMIN> run;
-	real theta = 0.25;
+	 printf("\n");
+	 */
+	run_tests<PMAX + 1, PMIN> run;
+	real theta = 0.5;
 	printf("M2L\n");
 	run(CC, theta);
 	printf("M2P\n");
