@@ -1,71 +1,79 @@
 cmake_minimum_required(VERSION 3.12.4)
 cmake_policy(VERSION 3.12.4)
-project(sfmm CXX C CUDA )
-enable_language(CUDA)
-find_package(CUDAToolkit REQUIRED)
-find_package(CUDA REQUIRED)
+project(spherical_fmm CXX C Fortran)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-set(SFMM_USE_DOUBLE "1" CACHE STRING "Enable Double Precision" )
-set(SFMM_USE_FLOAT "1" CACHE STRING "Enable Single Precision")
-set(SFMM_USE_SIMD "1" CACHE STRING "Enable SIMD")
-set(SFMM_USE_CUDA "1" CACHE STRING "Enable CUDA")
-set(SFMM_PMIN "3" CACHE STRING "pmin")
-set(SFMM_PMAX "3" CACHE STRING "pmax")
-set(SFMM_DOUBLE_SIMD_WIDTH "4" CACHE STRING "width of double precision simd vectors (except for m2m)")
-set(SFMM_FLOAT_SIMD_WIDTH "8" CACHE STRING "width of single precision simd vectors (except for m2m)")
-message( STATUS "Pmin = ${SFMM_PMIN}" )
-message( STATUS "Pmax = ${SFMM_PMAX}" )
+option(FMM_WITH_CUDA "Enable CUDA" ON)
+set(FMM_PMIN "3" CACHE STRING "pmin")
+set(FMM_PMAX "10" CACHE STRING "pmax")
+if( FMM_WITH_CUDA ) 
+	enable_language(CUDA)
+	set(CUDA_PROPAGATE_HOST_FLAGS FALSE)
+	execute_process(COMMAND nvcc -lcuda ${PROJECT_SOURCE_DIR}/src/cuda_detect.cu -o cuda_detect)
+	execute_process(COMMAND ./cuda_detect OUTPUT_VARIABLE CUDA_ARCH)
+	message(STATUS "CUDA Architecture: ${CUDA_ARCH}")
+endif()
+message( STATUS "pmin = ${FMM_PMIN}" )
+message( STATUS "pmax = ${FMM_PMAX}" )
+
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/src/codegen.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/src/codegen.cpp
 )
-message(STATUS "Compiling code generator")
-execute_process(
-  	COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/src/codegen.cpp -march=native -DUSE_CUDA_FLAG=${SFMM_USE_CUDA} -DUSE_FLOAT_FLAG=${SFMM_USE_FLOAT} -DUSE_SIMD_FLAG=${SFMM_USE_SIMD} -DUSE_DOUBLE_FLAG=${SFMM_USE_DOUBLE} -DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\" -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} -DSIMD_FLOAT_WIDTH=${SFMM_FLOAT_SIMD_WIDTH} -DSIMD_DOUBLE_WIDTH=${SFMM_DOUBLE_SIMD_WIDTH} -o sfmm_codegen
-  	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} 
-  	RESULT_VARIABLE RESULT
-)
 
-if(NOT RESULT EQUAL 0)
-	message(STATUS "error in compilng code generator")
+execute_process(
+  COMMAND ${CMAKE_CXX_COMPILER} -O3  -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX}  ${CMAKE_CURRENT_SOURCE_DIR}/src/codegen.cpp
+  RESULT_VARIABLE RETURN_VALUE
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+if (NOT RETURN_VALUE EQUAL 0)
+    message(FATAL_ERROR "Failed to get the dependencies")
 endif()
-
-message(STATUS "Cleaning old files")
 execute_process(
-	COMMAND rm -rf  ./generated_code
+  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/a.out
 )
+set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH})
+FILE(GLOB GENERATED_SRC_FILES1 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*.cpp)
+FILE(GLOB GENERATED_SRC_FILES2 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*/*.cpp)
+FILE(GLOB GENERATED_CUDA_SRC_FILES1 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*.cu)
+FILE(GLOB GENERATED_CUDA_SRC_FILES2 ${CMAKE_CURRENT_BINARY_DIR}/generated_code/src/*/*/*.cu)
+FILE(GLOB GENERATED_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/*)
+FILE(GLOB GENERATED_DETAIL_HEADER_FILES ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/detail/*)
 
-message(STATUS "Running code generator")
-execute_process(
-	COMMAND ./sfmm_codegen
-	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  	RESULT_VARIABLE RESULT
-)
+add_library(spherical_fmm ${GENERATED_SRC_FILES1} ${GENERATED_SRC_FILES2} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
+target_include_directories(spherical_fmm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_compile_options(spherical_fmm PUBLIC -march=native -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} )
 
-if(NOT RESULT EQUAL 0)
-	message(STATUS "error in code generation")
-endif()
+add_library(cuda_spherical_fmm ${GENERATED_CUDA_SRC_FILES1} ${GENERATED_CUDA_SRC_FILES2} ${GENERATED_DETAIL_HEADER_FILES} ${GENERATED_HEADER_FILES})
+target_include_directories(cuda_spherical_fmm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_compile_options(cuda_spherical_fmm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
+                       -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} --use_fast_math --gpu-architecture=sm_${CUDA_ARCH};
+                        >)
+set_property(TARGET cuda_spherical_fmm PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+ 
+add_executable(test_cuda_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cu )
+target_include_directories(test_cuda_float PUBLIC ${CMAKE_CURRENT_CUDA_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_cuda_float PUBLIC cuda_spherical_fmm)
+target_compile_options(test_cuda_float PUBLIC  -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} -DTEST_TYPE_FLOAT)
 
-message(STATUS "Code generation complete")
+add_executable(test_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_float PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_float PUBLIC spherical_fmm)
+target_compile_options(test_float PUBLIC -march=native  -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} -DTEST_TYPE_FLOAT)
 
-add_executable( test ./src/tree_code.cpp )
-target_compile_options( test PUBLIC -I${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/ -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} )
-target_link_libraries( test PUBLIC simd )
-add_executable( brille ./src/brille.cpp )
-target_compile_options( brille PUBLIC -I${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/ -march=native -DPMIN=${SFMM_PMIN} -DPMAX=${SFMM_PMAX} )
-target_link_libraries( brille PUBLIC simd )
+add_executable(test_double ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_double PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_double PUBLIC spherical_fmm)
+target_compile_options(test_double PUBLIC -march=native  -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} -DTEST_TYPE_DOUBLE)
 
-INSTALL(
-	FILES 
-		${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/sfmm.hpp 
-    DESTINATION 
-    	include
-)
+add_executable(test_vec_float ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_vec_float PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_vec_float PUBLIC spherical_fmm)
+target_compile_options(test_vec_float PUBLIC -march=native  -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX} -DTEST_TYPE_VEC_FLOAT)
 
-INSTALL(
-	FILES 
-		${CMAKE_CURRENT_BINARY_DIR}/generated_code/include/detail/sfmm_detail.hpp
-    DESTINATION 
-    	include/detail/
-)
+add_executable(test_vec_double ${CMAKE_CURRENT_SOURCE_DIR}/src/test.cpp )
+target_include_directories(test_vec_double PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/generated_code/include)
+target_link_libraries(test_vec_double PUBLIC spherical_fmm)
+target_compile_options(test_vec_double PUBLIC -march=native -DFMM_PMIN=${FMM_PMIN} -DFMM_PMAX=${FMM_PMAX}  -DTEST_TYPE_VEC_DOUBLE)
+
+
