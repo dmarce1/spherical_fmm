@@ -1,23 +1,29 @@
-#include <stdio.h>
 #include "sfmm.hpp"
+#include <stdio.h>
 
+#include <algorithm>
 #include <array>
-#include <vector>
+#include <atomic>
+#include <chrono>
+#include <cmath>
 #include <fenv.h>
 #include <future>
-#include <atomic>
+#include <limits>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 #define DEBUG
 
 #define NDIM 3
-#define BUCKET_SIZE (1<<30)
+#define BUCKET_SIZE (64)
 #define MIN_CLOUD 4
 #define LEFT 0
 #define RIGHT 1
 #define NCHILD 2
 #define MIN_THREAD 1024
-#define TEST_SIZE (128*128)
-//#define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
+#define TEST_SIZE 32
+// #define FLAGS (sfmmWithRandomOptimization | sfmmProfilingOn)
 
 using rtype = double;
 
@@ -25,20 +31,20 @@ double rand1() {
 	return (rand() + 0.5) / RAND_MAX;
 }
 
-void prefetch(void* ptr, int cnt) {
+void prefetch(void *ptr, int cnt) {
 	for (int i = 0; i < cnt; i += 32) {
-		__builtin_prefetch((char*) ptr + i);
+		__builtin_prefetch((char *)ptr + i);
 	}
 }
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 class tree {
 
-	template<class W>
-	using multipole_type = sfmm::multipole<W,ORDER>;
-	template<class W>
-	using expansion_type = sfmm::expansion<W,ORDER>;
-	template<class W>
+	template <class W>
+	using multipole_type = sfmm::multipole<W, ORDER>;
+	template <class W>
+	using expansion_type = sfmm::expansion<W, ORDER>;
+	template <class W>
 	using force_type = sfmm::force_type<W>;
 
 	multipole_type<T> multipole;
@@ -47,7 +53,7 @@ class tree {
 	sfmm::vec3<T> begin;
 	sfmm::vec3<T> end;
 	sfmm::vec3<FT> center;
-	tree* parent;
+	tree *parent;
 	T radius;
 	T scale;
 
@@ -74,12 +80,11 @@ class tree {
 	static std::vector<tree> forest;
 
 	struct check_type {
-		tree* ptr;
+		tree *ptr;
 		bool opened;
 	};
 
 public:
-
 	tree() {
 	}
 
@@ -92,6 +97,11 @@ public:
 					hi--;
 					if (parts[hi][xdim].to_double() < xmid) {
 						std::swap(parts[lo], parts[hi]);
+						std::swap(forces[lo], forces[hi]);
+						std::swap(masses[lo], masses[hi]);
+						std::swap(chi[lo], chi[hi]);
+						std::swap(sourceV[lo], sourceV[hi]);
+						std::swap(volume[lo], volume[hi]);
 						break;
 					}
 				}
@@ -101,14 +111,14 @@ public:
 		return hi;
 	}
 
-	static void sort_grid(sfmm::vec3<int> cell_begin = { 0, 0, 0 }, sfmm::vec3<int> cell_end = { Ngrid, Ngrid, Ngrid }, std::pair<int, int> part_range =
-			std::make_pair(0, parts.size())) {
+	static void sort_grid(sfmm::vec3<int> cell_begin = {0, 0, 0}, sfmm::vec3<int> cell_end = {Ngrid, Ngrid, Ngrid},
+						  std::pair<int, int> part_range = std::make_pair(0, parts.size())) {
 #ifdef DEBUG
 		bool flag = false;
 		for (int i = part_range.first; i < part_range.second; i++) {
 			for (int dim = 0; dim < NDIM; dim++) {
-				T begin = (T) cell_begin[dim] / Ngrid;
-				T end = (T) cell_end[dim] / Ngrid;
+				T begin = (T)cell_begin[dim] / Ngrid;
+				T end = (T)cell_end[dim] / Ngrid;
 				if (parts[i][dim].to_double() < begin || parts[i][dim].to_double() > end) {
 					flag = true;
 				}
@@ -117,8 +127,8 @@ public:
 		for (int i = part_range.first; i < part_range.second; i++) {
 			if (flag) {
 				for (int dim = 0; dim < NDIM; dim++) {
-					T begin = (T) cell_begin[dim] / Ngrid;
-					T end = (T) cell_end[dim] / Ngrid;
+					T begin = (T)cell_begin[dim] / Ngrid;
+					T end = (T)cell_end[dim] / Ngrid;
 					printf("particle out of range! %e %e %e \n", begin, parts[i][dim].to_double(), end);
 				}
 			}
@@ -143,17 +153,17 @@ public:
 			}
 		}
 		if (largest == 1) {
-			//printf( "%i %i %i : %i %i\n", cell_begin[0], cell_begin[1], cell_begin[2], part_range.first, part_range.second);
+			// printf( "%i %i %i : %i %i\n", cell_begin[0], cell_begin[1], cell_begin[2], part_range.first, part_range.second);
 			tree root;
 			root.part_range = part_range;
 			for (int dim = 0; dim < SFMM_NDIM; dim++) {
-				root.begin[dim] = (T) cell_begin[dim] / Ngrid;
-				root.end[dim] = (T) cell_end[dim] / Ngrid;
+				root.begin[dim] = (T)cell_begin[dim] / Ngrid;
+				root.end[dim] = (T)cell_end[dim] / Ngrid;
 			}
 			forest.push_back(root);
 		} else {
 			cmid = (cell_end[xdim] + cell_begin[xdim]) / 2;
-			xmid = (T) cmid / Ngrid;
+			xmid = (T)cmid / Ngrid;
 			int pmid = partition_parts(part_range, xdim, xmid);
 			range_left = range_right = part_range;
 			range_left.second = range_right.first = pmid;
@@ -168,17 +178,19 @@ public:
 	static size_t form_trees() {
 		size_t flops = 0;
 		std::vector<std::future<size_t>> futs;
-		for (auto& tr : forest) {
-			auto* ptr = &tr;
-			futs.push_back(std::async([ptr]() {return ptr->form_tree();}));
+		for (auto &tr : forest) {
+			auto *ptr = &tr;
+			futs.push_back(std::async([ptr]() {
+				return ptr->form_tree();
+			}));
 		}
-		for (auto& f : futs) {
+		for (auto &f : futs) {
 			flops += f.get();
 		}
 		return flops;
 	}
 
-	size_t form_tree(tree* par = nullptr, int depth = 0) {
+	size_t form_tree(tree *par = nullptr, int depth = 0) {
 		size_t flops = 0;
 		const int xdim = depth % SFMM_NDIM;
 		parent = par;
@@ -195,15 +207,15 @@ public:
 			}
 		}
 #endif
-//		center = (begin + end) * 0.5;
+		//		center = (begin + end) * 0.5;
 		sfmm::vec3<double> center0;
 		if (nparts > BUCKET_SIZE) {
 			sfmm::vec3<T> dx;
 			multipole_type<T> M;
 			children.resize(NCHILD);
 			int imid = partition_parts(part_range, xdim, xmid);
-			auto& left = children[LEFT];
-			auto& right = children[RIGHT];
+			auto &left = children[LEFT];
+			auto &right = children[RIGHT];
 			left.part_range = right.part_range = part_range;
 			left.part_range.second = right.part_range.first = imid;
 			right.begin = left.begin = begin;
@@ -222,8 +234,8 @@ public:
 				flops += children[LEFT].form_tree(this, depth + 1);
 				flops += children[RIGHT].form_tree(this, depth + 1);
 			}
-			const auto& cleft = children[LEFT];
-			const auto& cright = children[RIGHT];
+			const auto &cleft = children[LEFT];
+			const auto &cright = children[RIGHT];
 			center0 = (begin + end) * T(0.5);
 			radius = 0.0;
 			for (int ci = 0; ci < NCHILD; ci++) {
@@ -251,9 +263,9 @@ public:
 				M.init(scale);
 				for (int i = part_range.first; i < part_range.second; i += V::size()) {
 					sfmm::vec3<V> dx;
-					const int cnt = std::min((int) V::size(), part_range.second - i);
+					const int cnt = std::min((int)V::size(), part_range.second - i);
 					for (int j = 0; j < cnt; j++) {
-						const auto& part = parts[i + j];
+						const auto &part = parts[i + j];
 						for (int dim = 0; dim < SFMM_NDIM; dim++) {
 							sfmm::load(dx[dim], T(part[dim].to_double() - center0[dim]), j);
 						}
@@ -282,23 +294,71 @@ public:
 	static size_t compute_gravity() {
 		std::vector<check_type> checklist;
 		size_t flops = 0;
-		for (auto& root : forest) {
+		for (auto &root : forest) {
 			check_type entry;
 			entry.ptr = &root;
 			entry.opened = false;
 			checklist.push_back(entry);
 		}
 		std::vector<std::future<size_t>> futs;
-		for (auto& tr : forest) {
-			auto* ptr = &tr;
-			futs.push_back(std::async([ptr,checklist]() {
+		for (auto &tr : forest) {
+			auto *ptr = &tr;
+			futs.push_back(std::async([ptr, checklist]() {
 				size_t flops = 0;
 				expansion_type<T> expansion;
 				expansion.init();
 				return flops + ptr->compute_cell_gravity(expansion, checklist, checklist);
 			}));
 		}
-		for (auto& f : futs) {
+		for (auto &f : futs) {
+			flops += f.get();
+		}
+		return flops;
+	}
+
+	static size_t compute_gravity_bruteforce() {
+		const size_t nparts = parts.size();
+		if (nparts == 0) {
+			return 0;
+		}
+		const size_t nthreads = std::min<size_t>(std::max(1u, 2u * std::thread::hardware_concurrency()), nparts);
+		std::vector<std::future<size_t>> futs;
+		futs.reserve(nthreads);
+		for (size_t thread = 0; thread < nthreads; thread++) {
+			const size_t sink_begin = thread * nparts / nthreads;
+			const size_t sink_end = (thread + 1) * nparts / nthreads;
+			futs.push_back(std::async(std::launch::async, [sink_begin, sink_end, nparts]() {
+				size_t flops = 0;
+				for (size_t i = sink_begin; i < sink_end; i++) {
+					force_type<V> F;
+					F.init();
+					sfmm::vec3<FV> xsnk;
+					for (int dim = 0; dim < SFMM_NDIM; dim++) {
+						xsnk[dim] = FV(parts[i][dim]);
+					}
+					for (size_t j = 0; j < nparts; j += V::size()) {
+						const int cnt = std::min<size_t>(V::size(), nparts - j);
+						sfmm::vec3<FV> xsrc;
+						V pmass;
+						for (int lane = 0; lane < cnt; lane++) {
+							sfmm::load(xsrc, parts[j + lane], lane);
+							sfmm::load(pmass, masses[j + lane], lane);
+						}
+						sfmm::apply_padding(xsrc, cnt);
+						sfmm::apply_padding(pmass, cnt);
+						flops += cnt * sfmm::P2P(F, sfmm::create_mask<V>(cnt) * pmass, xsrc, xsnk, FLAGS);
+					}
+					forces[i] = sfmm::reduce_sum(F);
+					force_type<T> self;
+					self.init();
+					flops += sfmm::P2P(self, masses[i], sfmm::vec3<T>({T(0), T(0), T(0)}), FLAGS);
+					forces[i].potential -= self.potential;
+				}
+				return flops;
+			}));
+		}
+		size_t flops = 0;
+		for (auto &f : futs) {
 			flops += f.get();
 		}
 		return flops;
@@ -319,21 +379,21 @@ public:
 			for (int i = part_range.first; i < part_range.second; i++) {
 				force_type<T> F;
 				F.init();
-				flops += sfmm::P2P(F, masses[i], sfmm::vec3<T>( { 0, 0, 0 }), FLAGS);
+				flops += sfmm::P2P(F, masses[i], sfmm::vec3<T>({0, 0, 0}), FLAGS);
 				forces[i].potential = -F.potential;
 				for (int dim = 0; dim < NDIM; dim++) {
 					forces[i].force[dim] = T(0);
 				}
 			}
 		}
-		static thread_local std::vector<tree*> M2Llist;
-		static thread_local std::vector<tree*> P2Llist;
-		static thread_local std::vector<tree*> M2Plist;
-		static thread_local std::vector<tree*> P2Plist;
+		static thread_local std::vector<tree *> M2Llist;
+		static thread_local std::vector<tree *> P2Llist;
+		static thread_local std::vector<tree *> M2Plist;
+		static thread_local std::vector<tree *> P2Plist;
 		static thread_local std::vector<check_type> nextlist;
 		for (int ewald = 0; ewald <= 0; ewald++) {
 			const T c0(1.0 / theta_max);
-			auto& checklist = ewald ? echecklist : dchecklist;
+			auto &checklist = ewald ? echecklist : dchecklist;
 			M2Llist.resize(0);
 			P2Llist.resize(0);
 			M2Plist.resize(0);
@@ -347,7 +407,7 @@ public:
 					V rm2p;
 					const int end = std::min(V::size(), checklist.size() - i);
 					for (int j = 0; j < end; j++) {
-						const auto& check = checklist[i + j];
+						const auto &check = checklist[i + j];
 						sfmm::load(dx, sfmm::distance(center, check.ptr->center), j);
 						sfmm::load(rsum, radius + check.ptr->radius, j);
 						sfmm::load(rm2l, c0 * radius + c0 * check.ptr->radius, j);
@@ -417,7 +477,7 @@ public:
 				const int cnt = std::min(V::size(), M2Llist.size() - i);
 				inters += cnt;
 				for (int j = 0; j < cnt; j++) {
-					const auto& src = M2Llist[i + j];
+					const auto &src = M2Llist[i + j];
 					sfmm::load(xsrc, src->center, j);
 					sfmm::load(M, src->multipole, j);
 				}
@@ -435,7 +495,7 @@ public:
 			L.init(scale);
 			for (int i = 0; i < P2Llist.size(); i++) {
 				for (int j = P2Llist[i]->part_range.first; j < P2Llist[i]->part_range.second; j += V::size()) {
-					const int cnt = std::min((int) V::size(), P2Llist[i]->part_range.second - j);
+					const int cnt = std::min((int)V::size(), P2Llist[i]->part_range.second - j);
 					inters += cnt;
 					for (int k = 0; k < cnt; k++) {
 						sfmm::load(xsrc, parts[j + k], k);
@@ -465,14 +525,14 @@ public:
 				for (int i = 0; i < M2Plist.size(); i += V::size()) {
 					const int cnt = std::min(V::size(), M2Plist.size() - i);
 					for (int j = 0; j < cnt; j++) {
-						const auto& src = M2Plist[i + j];
+						const auto &src = M2Plist[i + j];
 						sfmm::load(xsrc, src->center, j);
 						sfmm::load(M, src->multipole, j);
 					}
 					sfmm::apply_padding(xsrc, cnt);
 					apply_mask(M, cnt);
 					for (int k = part_range.first; k < part_range.second; k++) {
-						auto& part = parts[k];
+						auto &part = parts[k];
 						for (int dim = 0; dim < SFMM_NDIM; dim++) {
 							xsnk[dim] = FV(part[dim]);
 						}
@@ -501,7 +561,7 @@ public:
 				}
 				for (int i = 0; i < P2Plist.size(); i++) {
 					for (int j = P2Plist[i]->part_range.first; j < P2Plist[i]->part_range.second; j += V::size()) {
-						const int cnt = std::min((int) V::size(), P2Plist[i]->part_range.second - j);
+						const int cnt = std::min((int)V::size(), P2Plist[i]->part_range.second - j);
 						inters += cnt;
 						for (int k = 0; k < cnt; k++) {
 							sfmm::load(xsrc, parts[j + k], k);
@@ -538,11 +598,13 @@ public:
 		if (children.size()) {
 			if (dchecklist.size() || echecklist.size()) {
 				if (threads_avail-- >= 0) {
-					auto fut = std::async([this, expansion](std::vector<check_type> dchecklist, std::vector<check_type> echecklist ) {
-						size_t flops = children[LEFT].compute_cell_gravity(expansion, std::move(dchecklist), std::move(echecklist));
-						threads_avail++;
-						return flops;
-					}, dchecklist, echecklist);
+					auto fut = std::async(
+						[this, expansion](std::vector<check_type> dchecklist, std::vector<check_type> echecklist) {
+							size_t flops = children[LEFT].compute_cell_gravity(expansion, std::move(dchecklist), std::move(echecklist));
+							threads_avail++;
+							return flops;
+						},
+						dchecklist, echecklist);
 					flops += children[RIGHT].compute_cell_gravity(expansion, std::move(dchecklist), std::move(echecklist));
 					flops += fut.get();
 				} else {
@@ -557,7 +619,7 @@ public:
 			for (int i = part_range.first; i < part_range.second; i += V::size()) {
 				force_type<V> F;
 				F.init();
-				const int cnt = std::min((int) V::size(), part_range.second - i);
+				const int cnt = std::min((int)V::size(), part_range.second - i);
 				for (int j = 0; j < cnt; j++) {
 					sfmm::load(xsrc, parts[j + i], j);
 				}
@@ -578,13 +640,13 @@ public:
 		double pnorm = 0.0;
 		force_type<T> f;
 		f.init();
-		P2P(f, masses.empty() ? T(0) : masses[0], { 0, 0, 0 });
+		P2P(f, masses.empty() ? T(0) : masses[0], {0, 0, 0});
 		double pot0 = f.potential;
 		for (int i = 0; i < parts.size(); i++) {
 			if (rand1() > sample_odds) {
 				continue;
 			}
-			const auto& snk_part = parts[i];
+			const auto &snk_part = parts[i];
 			force_type<T> fa;
 			fa.init();
 			fa.potential = -pot0;
@@ -592,16 +654,16 @@ public:
 			std::vector<std::future<void>> futs;
 			std::mutex mutex;
 			for (int proc = 0; proc < nthreads; proc++) {
-				const int b = (size_t) proc * parts.size() / nthreads;
-				const int e = (size_t) (proc + 1) * parts.size() / nthreads;
-				futs.push_back(std::async([i,b,e,&fa,&mutex,snk_part]() {
+				const int b = (size_t)proc * parts.size() / nthreads;
+				const int e = (size_t)(proc + 1) * parts.size() / nthreads;
+				futs.push_back(std::async([i, b, e, &fa, &mutex, snk_part]() {
 					sfmm::vec3<FV> xsrc, xsnk;
 					force_type<V> fe;
 					force_type<V> f;
 					xsnk = sfmm::vec3<FV>(parts[i]);
 					for (int j = b; j < e; j += sfmm::simd_size<FV>()) {
-						int cnt = std::min((int) sfmm::simd_size<FV>(), e - j);
-						for( int k = j; k < j + cnt; k++) {
+						int cnt = std::min((int)sfmm::simd_size<FV>(), e - j);
+						for (int k = j; k < j + cnt; k++) {
 							sfmm::load(xsrc, parts[k], k - j);
 						}
 						f.init();
@@ -618,7 +680,7 @@ public:
 					}
 				}));
 			}
-			for (auto& f : futs) {
+			for (auto &f : futs) {
 				f.get();
 			}
 			double famag = 0.0;
@@ -654,8 +716,7 @@ public:
 
 		// q = A rho^2 exp(-(rho^2 + z^2) / sigma^2)
 		// V = -1/4 (q_{,rho rho} + q_{,zz})
-		const T lap_q = A * e * (T(2) - (T(10) * rho2 + T(2) * z0 * z0) / s2 +
-			T(4) * rho2 * r2 / (s2 * s2));
+		const T lap_q = A * e * (T(2) - (T(10) * rho2 + T(2) * z0 * z0) / s2 + T(4) * rho2 * r2 / (s2 * s2));
 		return -T(0.25) * lap_q;
 	}
 
@@ -667,7 +728,7 @@ public:
 		chi.resize(0);
 		sourceV.resize(0);
 		volume.resize(0);
-		const int N = 96;
+		const int N = TEST_SIZE;
 		const T dx = T(1) / N;
 		const T dV = dx * dx * dx;
 		for (int i = 0; i < N; i++) {
@@ -705,7 +766,7 @@ public:
 			denom += volume[i] * sourceV[i] * chi[i];
 		}
 		const T C = -(T(4) * T(M_PI) * target_mass + W) / denom;
-		for (auto& c : chi) {
+		for (auto &c : chi) {
 			c *= C;
 		}
 		return W;
@@ -717,45 +778,100 @@ public:
 		}
 	}
 
-	static void iterate_brill(int iterations = 40, T target_mass = T(0.01), T omega = T(0.25)) {
-		std::vector<T> chi_old;
-		std::vector<T> chi_next;
-		chi_old.resize(parts.size());
-		chi_next.resize(parts.size());
+	enum class gravity_method { fmm, bruteforce };
 
+	static void iterate_brill(gravity_method method, int iterations = 40, T target_mass = T(0.01), T omega = T(0.25)) {
+		std::vector<T> chi_old(parts.size());
+		std::vector<T> chi_next(parts.size());
+		const char *name = method == gravity_method::fmm ? "FMM" : "brute";
 		for (int iter = 0; iter < iterations; iter++) {
-			// Normalize the current iterate before using it as the physical chi.
 			normalize_chi(target_mass);
 			chi_old = chi;
-
 			update_masses();
-			reset_counters();
-			for (auto& f : forces) {
+			for (auto &f : forces) {
 				f.init();
 			}
-			form_trees();
-			compute_gravity();
+			auto const t0 = std::chrono::steady_clock::now();
 
-			// The FMM potential is the unnormalized next tilde_chi.
-			for (int i = 0; i < parts.size(); i++) {
-				chi[i] = forces[i].potential;
+			size_t flops = 0;
+			if (method == gravity_method::fmm) {
+				reset_counters();
+				flops += form_trees();
+				flops += compute_gravity();
+			} else {
+				flops += compute_gravity_bruteforce();
 			}
 
-			// Normalize the next iterate before measuring convergence.
+			auto const t1 = std::chrono::steady_clock::now();
+			const double seconds = std::chrono::duration<double>(t1 - t0).count();
+			for (size_t i = 0; i < parts.size(); i++) {
+				chi[i] = forces[i].potential;
+			}
 			normalize_chi(target_mass);
 			chi_next = chi;
-
 			T l2 = 0;
 			T norm = 0;
-			for (int i = 0; i < parts.size(); i++) {
+			for (size_t i = 0; i < parts.size(); i++) {
 				const T damped = (T(1) - omega) * chi_old[i] + omega * chi_next[i];
 				l2 += sfmm::sqr(damped - chi_old[i]);
 				norm += sfmm::sqr(damped);
 				chi[i] = damped;
 			}
-			printf("brill iter %02i rel_update = %.12e\n", iter, std::sqrt(l2 / norm));
+			const T rel_update = norm > T(0) ? std::sqrt(l2 / norm) : T(0);
+			printf("%s iter %02i rel_update = %.12e flops = %zu time = %.6f s\n", name, iter, double(rel_update), flops, seconds);
 		}
 		normalize_chi(target_mass);
+	}
+
+	static void compare_final_chi(const std::vector<T> &chi_fmm, const std::vector<T> &chi_brute) {
+		if (chi_fmm.size() != chi_brute.size()) {
+			fprintf(stderr, "chi size mismatch: FMM=%zu brute=%zu\n", chi_fmm.size(), chi_brute.size());
+			abort();
+		}
+		T error2 = 0;
+		T norm2 = 0;
+		T max_abs = 0;
+		T max_rel = 0;
+		size_t max_index = 0;
+		for (size_t i = 0; i < chi_fmm.size(); i++) {
+			const T diff = chi_fmm[i] - chi_brute[i];
+			const T abs_diff = std::abs(diff);
+			error2 += diff * diff;
+			norm2 += chi_brute[i] * chi_brute[i];
+			if (abs_diff > max_abs) {
+				max_abs = abs_diff;
+				max_index = i;
+			}
+			const T denom = std::abs(chi_brute[i]);
+			if (denom > std::numeric_limits<T>::epsilon()) {
+				max_rel = std::max(max_rel, abs_diff / denom);
+			}
+		}
+		const T rel_l2 = norm2 > T(0) ? std::sqrt(error2 / norm2) : T(0);
+		printf("FMM vs brute final chi:\n");
+		printf("  relative L2      = %.12e\n", double(rel_l2));
+		printf("  maximum absolute = %.12e\n", double(max_abs));
+		printf("  maximum relative = %.12e\n", double(max_rel));
+		printf("  maximum index    = %zu\n", max_index);
+		if (!chi_fmm.empty()) {
+			printf("  chi_fmm          = %.12e\n", double(chi_fmm[max_index]));
+			printf("  chi_brute        = %.12e\n", double(chi_brute[max_index]));
+		}
+	}
+
+	static void run_brill_comparison(int iterations = 40, T target_mass = T(0.01), T omega = T(0.25)) {
+		// Build the tree once to establish the final particle permutation before
+		// saving the common initial iterate used by both solvers.
+		form_trees();
+		const std::vector<T> chi_initial = chi;
+		chi = chi_initial;
+		iterate_brill(gravity_method::fmm, iterations, target_mass, omega);
+		const std::vector<T> chi_fmm = chi;
+		chi = chi_initial;
+		iterate_brill(gravity_method::bruteforce, iterations, target_mass, omega);
+		const std::vector<T> chi_brute = chi;
+		compare_final_chi(chi_fmm, chi_brute);
+		chi = chi_fmm;
 	}
 
 	static size_t particle_count() {
@@ -763,85 +879,83 @@ public:
 	}
 
 	static void show_counters() {
-		printf("Node count = %lli\n", (long long) node_count);
-		printf("P2P = %lli (%e)\n", (long long) p2p, (long long) p2p / (double) node_count);
-		printf("P2L = %lli (%e)\n", (long long) p2l, (long long) p2l / (double) node_count);
-		printf("M2P = %lli (%e)\n", (long long) m2p, (long long) m2p / (double) node_count);
-		printf("M2L = %lli (%e)\n", (long long) m2l, (long long) m2l / (double) node_count);
-		printf("P2P_ewald = %lli (%e)\n", (long long) p2p_ewald, (long long) p2p_ewald / (double) node_count);
-		printf("P2L_ewald = %lli (%e)\n", (long long) p2l_ewald, (long long) p2l_ewald / (double) node_count);
-		printf("M2P_ewald = %lli (%e)\n", (long long) m2p_ewald, (long long) m2p_ewald / (double) node_count);
-		printf("M2L_ewald = %lli (%e)\n", (long long) m2l_ewald, (long long) m2l_ewald / (double) node_count);
+		printf("Node count = %lli\n", (long long)node_count);
+		printf("P2P = %lli (%e)\n", (long long)p2p, (long long)p2p / (double)node_count);
+		printf("P2L = %lli (%e)\n", (long long)p2l, (long long)p2l / (double)node_count);
+		printf("M2P = %lli (%e)\n", (long long)m2p, (long long)m2p / (double)node_count);
+		printf("M2L = %lli (%e)\n", (long long)m2l, (long long)m2l / (double)node_count);
+		printf("P2P_ewald = %lli (%e)\n", (long long)p2p_ewald, (long long)p2p_ewald / (double)node_count);
+		printf("P2L_ewald = %lli (%e)\n", (long long)p2l_ewald, (long long)p2l_ewald / (double)node_count);
+		printf("M2P_ewald = %lli (%e)\n", (long long)m2p_ewald, (long long)m2p_ewald / (double)node_count);
+		printf("M2L_ewald = %lli (%e)\n", (long long)m2l_ewald, (long long)m2l_ewald / (double)node_count);
 	}
 
 	static void reset_counters() {
 		node_count = p2p = m2p = p2l = m2l = p2p_ewald = m2p_ewald = p2l_ewald = m2l_ewald = 0;
 	}
+};
 
-}
-;
-
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<sfmm::vec3<FT>> tree<T, V, FT, FV, ORDER, FLAGS>::parts;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<sfmm::force_type<T>> tree<T, V, FT, FV, ORDER, FLAGS>::forces;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<T> tree<T, V, FT, FV, ORDER, FLAGS>::masses;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<T> tree<T, V, FT, FV, ORDER, FLAGS>::chi;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<T> tree<T, V, FT, FV, ORDER, FLAGS>::sourceV;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<T> tree<T, V, FT, FV, ORDER, FLAGS>::volume;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
-const T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = 0.55;
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
+const T tree<T, V, FT, FV, ORDER, FLAGS>::theta_max = 0.7;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<int> tree<T, V, FT, FV, ORDER, FLAGS>::threads_avail(2 * std::thread::hardware_concurrency() - 1);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 const T tree<T, V, FT, FV, ORDER, FLAGS>::hsoft = 1e-6;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 const int tree<T, V, FT, FV, ORDER, FLAGS>::Ngrid = 1;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::vector<tree<T, V, FT, FV, ORDER, FLAGS>> tree<T, V, FT, FV, ORDER, FLAGS>::forest;
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2p(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2p(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2l(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2l(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2p_ewald(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2p_ewald(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::p2l_ewald(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::m2l_ewald(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 std::atomic<long long> tree<T, V, FT, FV, ORDER, FLAGS>::node_count(0);
 
-template<class T, class V, class FT, class FV, int ORDER, int FLAGS>
+template <class T, class V, class FT, class FV, int ORDER, int FLAGS>
 struct run_tests {
 	void operator()() const {
 		using tree_type = tree<T, V, FT, FV, ORDER, FLAGS>;
@@ -849,7 +963,7 @@ struct run_tests {
 		tree_type::initialize();
 		printf("Brill source particles = %zu, order = %i\n", tree_type::particle_count(), ORDER);
 		tree_type::sort_grid();
-		tree_type::iterate_brill();
+		tree_type::run_brill_comparison();
 		tree_type::show_counters();
 		tree_type::reset_counters();
 		run_tests<T, V, FT, FV, ORDER + 1, FLAGS> run;
@@ -857,7 +971,7 @@ struct run_tests {
 	}
 };
 
-template<class T, class V, class FT, class FV, int FLAGS>
+template <class T, class V, class FT, class FV, int FLAGS>
 struct run_tests<T, V, FT, FV, PMAX + 1, FLAGS> {
 	void operator()() const {
 	}
@@ -882,7 +996,7 @@ void ewald() {
 	 }*/
 }
 
-void random_unit(double& x, double& y, double& z) {
+void random_unit(double &x, double &y, double &z) {
 	const double theta = acos(2 * rand1() - 1.0);
 	const double phi = rand1() * 2.0 * M_PI;
 	x = cos(phi) * sin(theta);
@@ -890,7 +1004,7 @@ void random_unit(double& x, double& y, double& z) {
 	z = cos(theta);
 }
 
-template<int P>
+template <int P>
 void test2() {
 	/*sfmm::vec3<double> dx0;
 	 sfmm::vec3<double> dx1;
@@ -984,16 +1098,16 @@ int main(int argc, char **argv) {
 
 	sfmm::vec3<double> t;
 	sfmm::vec3<float> t1(t);
-//	ewald();
-//	return 0;
-//return 0;
-//test2<5>();
-//test2<6>();
-//test2<7>();
-//test2<8>();
-//	 return 0;
-//ewald();
-//return 0;
+	//	ewald();
+	//	return 0;
+	// return 0;
+	// test2<5>();
+	// test2<6>();
+	// test2<7>();
+	// test2<8>();
+	//	 return 0;
+	// ewald();
+	// return 0;
 	run_tests<float, simd::simd_f32, sfmm::fixed32, sfmm::simd_fixed32, PMIN, sfmmWithBestOptimization> run5;
 	run_tests<double, simd::simd_f64, sfmm::fixed64, sfmm::simd_fixed64, PMIN, sfmmWithDoubleRotationOptimization> run4;
 	run5();
